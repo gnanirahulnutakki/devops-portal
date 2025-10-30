@@ -53,7 +53,7 @@ yarn install
 
 **⚠️ Important**: Always use `./start-with-env.sh` to start the portal. This ensures GitHub tokens and environment variables are properly loaded. Using `yarn dev` directly will result in mock data mode.
 
-**For detailed startup instructions, see [START_GUIDE.md](./START_GUIDE.md)**
+**For detailed startup instructions, see [Development Guide](docs/development/START_GUIDE.md)**
 
 ### Access
 
@@ -162,36 +162,48 @@ For comprehensive deployment instructions including:
 - Database backups and disaster recovery
 - Monitoring and troubleshooting
 
-**See the complete [Deployment Guide](./DEPLOY_GUIDE.md)**
+**See the complete [Deployment Guide](docs/deployment/DEPLOY_GUIDE.md)**
 
 ## 📖 Documentation
 
+### 📚 Complete Documentation Index
+**[Documentation Index](docs/index.md)** - Complete documentation organized by topic and audience
+
 ### Getting Started
-- **[Startup Guide](./START_GUIDE.md)** - How to start with GitHub integration (READ THIS FIRST!)
-- [User Guide](./docs/guides/user-guide.md) - Daily usage and operations
-- [Quick Start](./docs/getting-started.md) - Get up and running
+- **[Development Guide](docs/development/START_GUIDE.md)** - How to start with GitHub integration (READ THIS FIRST!)
+- **[Quickstart](docs/deployment/QUICKSTART.md)** - Get up and running in 5 minutes
+- [User Guide](docs/guides/user-guide.md) - Daily usage and operations
+- [Getting Started](docs/getting-started.md) - New user guide
 
 ### Deployment
-- **[Deployment Guide](./DEPLOY_GUIDE.md)** - Docker build, Helm installation, Kubernetes deployment
+- **[Complete Deployment Guide](docs/deployment/DEPLOY_GUIDE.md)** - Docker build, Helm installation, Kubernetes deployment
+- **[Quick Deploy Guide](docs/deployment/QUICK_DEPLOY.md)** - Fast deployment for testing
+- [Helm Chart Documentation](deployment/helm/README.md) - Kubernetes Helm deployment
+- [Docker Documentation](deployment/docker/README.md) - Docker and Docker Compose
 
-### Administration
-- [Admin & Operations Guide](./docs/guides/admin-guide.md) - Installation, deployment, security
-- [Troubleshooting Guide](./docs/guides/troubleshooting.md) - Common issues and solutions
-- [Bulk Operations Guide](./docs/guides/bulk-operations.md) - Mass update procedures
+### Architecture & Design
+- [Production Architecture](docs/architecture/PRODUCTION-ARCHITECTURE.md) - Production deployment architecture
+- [Project Structure](docs/architecture/PROJECT-STRUCTURE.md) - Codebase organization
+- [Infrastructure Analysis](docs/architecture/RLI-USE2-ANALYSIS.md) - RLI USE2 cluster analysis
 
-### Reference
-- [API Reference](./docs/reference/api-reference.md) - REST API documentation
-- [FAQ](./docs/reference/faq.md) - Frequently asked questions
-- [Documentation Index](./docs/README.md) - Complete documentation overview
+### Operations & Administration
+- [Admin & Operations Guide](docs/guides/admin-guide.md) - Installation, deployment, security
+- [Security & Reliability](docs/operations/SECURITY_AND_RELIABILITY.md) - Security best practices
+- [Troubleshooting Guide](docs/guides/troubleshooting.md) - Common issues and solutions
+- [Bulk Operations Guide](docs/guides/bulk-operations.md) - Mass update procedures
+
+### Development
+- [Implementation Status](docs/development/IMPLEMENTATION-STATUS.md) - Current development progress
+- [Next Steps](docs/development/NEXT-STEPS.md) - Planned features and roadmap
+- [Mock Data Testing](docs/development/MOCK_DATA_TESTING_GUIDE.md) - Testing with mock data
+- [PR Integration](docs/development/PR_INTEGRATION_SUMMARY.md) - Pull request workflow
+
+### API Reference
+- [API Reference](docs/reference/api-reference.md) - REST API documentation
+- [FAQ](docs/reference/faq.md) - Frequently asked questions
 
 ### In-App Documentation
 Complete documentation is also available at http://localhost:3000/documentation when the portal is running.
-
-### Implementation Details
-- [Implementation Roadmap](../backstage-implementation/05-IMPLEMENTATION-ROADMAP.md)
-- [Architecture](../backstage-implementation/03-ARCHITECTURE.md)
-- [Requirements](../backstage-implementation/02-REQUIREMENTS.md)
-- [Knowledge Base](../backstage-implementation/04-KNOWLEDGE-BASE.md)
 
 ## 🤝 Contributing
 
