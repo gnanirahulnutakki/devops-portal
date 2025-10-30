@@ -205,6 +205,26 @@ For comprehensive deployment instructions including:
 ### In-App Documentation
 Complete documentation is also available at http://localhost:3000/documentation when the portal is running.
 
+## 🔄 Continuous Integration
+
+### Automated Docker Builds
+
+Every push to `main` or `develop` automatically:
+- ✅ Builds Docker image
+- ✅ Pushes to Docker Hub: `rahulnutakki/devprotal`
+- ✅ Creates multiple tags (latest, branch, SHA, date)
+- ✅ Scans for security vulnerabilities
+- ✅ Updates GitHub Security tab
+
+**Docker Hub:** https://hub.docker.com/r/rahulnutakki/devprotal
+
+**Pull latest image:**
+```bash
+docker pull rahulnutakki/devprotal:latest
+```
+
+**GitHub Actions:** [View Workflows](.github/workflows/README.md)
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -212,6 +232,7 @@ Complete documentation is also available at http://localhost:3000/documentation 
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+6. GitHub Actions will automatically build and validate your changes
 
 ## 📝 License
 
