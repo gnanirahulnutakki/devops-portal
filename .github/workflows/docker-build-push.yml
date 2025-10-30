@@ -31,6 +31,11 @@ env:
   DOCKER_IMAGE: rahulnutakki/devprotal
   DOCKERFILE_PATH: deployment/docker/Dockerfile
 
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
 jobs:
   build-and-push:
     name: Build and Push Docker Image
