@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "backstage-gitops.fullname" . }}-config
+  labels:
+    {{- include "backstage-gitops.labels" . | nindent 4 }}
+data:
+  app-config.production.yaml: |
+    app:
+      baseUrl: {{ .Values.backstage.baseUrl }}
+
+    backend:
+      baseUrl: {{ .Values.backstage.baseUrl }}
+      listen:
+        port: 7007
+        host: 0.0.0.0
+      cors:
+        origin: {{ .Values.backstage.baseUrl }}
+        methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+        credentials: true
+      database:
+        client: pg
+        connection:
+          host: ${POSTGRES_HOST}
+          port: ${POSTGRES_PORT}
+          user: ${POSTGRES_USER}
+          password: ${POSTGRES_PASSWORD}
+          database: ${POSTGRES_DB}
+          ssl:
+            require: false
+            rejectUnauthorized: false
+      cache:
+        store: memory
+      reading:
+        allow:
+          - host: '*.githubusercontent.com'
+          - host: 'raw.githubusercontent.com'
+
+    integrations:
+      github:
+        - host: github.com
+          token: ${GITHUB_TOKEN}
+
+    gitops:
+      github:
+        organization: ${GITHUB_ORG}
+        token: ${GITHUB_TOKEN}
+      {{- if .Values.argocd.enabled }}
+      argocd:
+        enabled: true
+        url: {{ .Values.argocd.url }}
+        token: ${ARGOCD_TOKEN}
+      {{- end }}
+
+    catalog:
+      rules:
+        - allow: [Component, System, API, Resource, Location]
+      locations: []
+
+    auth:
+      environment: production
+      providers: {}
+
+    scaffolder:
+      defaultAuthor:
+        name: Backstage GitOps
+        email: backstage@radiantlogic.com
+      defaultCommitMessage: 'Changes from Backstage GitOps Portal'
+
+    {{- if .Values.argocd.enabled }}
+    proxy:
+      '/argocd/api':
+        target: {{ .Values.argocd.url }}/api/v1/
+        changeOrigin: true
+        secure: false
+        headers:
+          Authorization: Bearer ${ARGOCD_TOKEN}
+    {{- end }}
+
+    logging:
+      level: ${LOG_LEVEL}
+      format: json

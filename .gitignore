@@ -1,0 +1,75 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+.nyc_output
+*.test.js
+*.test.ts
+*.test.tsx
+*.spec.js
+*.spec.ts
+*.spec.tsx
+**/__tests__/
+**/__mocks__/
+
+# Production builds
+dist/
+dist-types/
+build/
+*.tsbuildinfo
+
+# Misc
+.DS_Store
+*.pem
+
+# Sensitive - Never commit these!
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.claude/
+
+# Logs - Keep them local
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+backend.log
+frontend.log
+docker-build*.log
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Backstage specific
+.backstage/
+
+# Temporary files
+tmp/
+temp/
+.cache/
+
+# Docker (optional - we want to keep Dockerfile and docker-compose)
+# Uncomment if you don't want Docker files in repo
+# Dockerfile
+# docker-compose.yml
+
+# Yarn
+yarn-error.log
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz

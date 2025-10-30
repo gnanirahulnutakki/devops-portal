@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-gitops-config
+  namespace: duploservices-qa4
+data:
+  app-config.production.yaml: |
+    app:
+      baseUrl: https://backstage-qa.radiantlogic.com
+
+    backend:
+      baseUrl: https://backstage-qa.radiantlogic.com
+      listen:
+        port: 7007
+        host: 0.0.0.0
+      cors:
+        origin: https://backstage-qa.radiantlogic.com
+        methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+        credentials: true
+      database:
+        client: pg
+        connection: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+      cache:
+        store: memory
+      reading:
+        allow:
+          - host: '*.githubusercontent.com'
+          - host: 'raw.githubusercontent.com'
+
+    integrations:
+      github:
+        - host: github.com
+          token: ${GITHUB_TOKEN}
+
+    gitops:
+      github:
+        organization: ${GITHUB_ORG}
+        token: ${GITHUB_TOKEN}
+      argocd:
+        enabled: true
+        url: https://argocd-qa.radiantlogic.com
+        token: ${ARGOCD_TOKEN}
+
+    catalog:
+      rules:
+        - allow: [Component, System, API, Resource, Location]
+      locations: []
+
+    auth:
+      environment: production
+      providers: {}
+
+    scaffolder:
+      defaultAuthor:
+        name: Backstage GitOps
+        email: backstage@radiantlogic.com
+      defaultCommitMessage: 'Changes from Backstage GitOps Portal'
+    proxy:
+      '/argocd/api':
+        target: https://argocd-qa.radiantlogic.com/api/v1/
+        changeOrigin: true
+        secure: false
+        headers:
+          Authorization: Bearer ${ARGOCD_TOKEN}
+
+    logging:
+      level: ${LOG_LEVEL}
+      format: json

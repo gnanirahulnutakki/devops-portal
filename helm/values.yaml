@@ -1,0 +1,134 @@
+# Default values for backstage-gitops
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 2
+
+image:
+  repository: backstage-gitops
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: "backstage-gitops"
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 7007
+  annotations: {}
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: backstage-gitops.radiantlogic.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: backstage-gitops-tls
+      hosts:
+        - backstage-gitops.radiantlogic.com
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+livenessProbe:
+  httpGet:
+    path: /healthcheck
+    port: 7007
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthcheck
+    port: 7007
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# PostgreSQL Configuration
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "14"
+  storage:
+    size: 10Gi
+    storageClass: gp3
+  host: postgres-service
+  port: 5432
+  database: backstage
+  username: backstage
+  # Password should be set in secrets
+
+# GitHub Configuration
+github:
+  organization: radiantlogic-saas
+  # Token should be set in secrets
+
+# ArgoCD Configuration
+argocd:
+  enabled: true
+  url: https://argocd.radiantlogic.com
+  # Token should be set in secrets
+
+# Backstage App Configuration
+backstage:
+  baseUrl: https://backstage-gitops.radiantlogic.com
+  logLevel: info
+
+# Secret references
+secrets:
+  name: backstage-secrets
+  githubToken:
+    key: GITHUB_TOKEN
+  argoCdToken:
+    key: ARGOCD_TOKEN
+  postgresPassword:
+    key: POSTGRES_PASSWORD

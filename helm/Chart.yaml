@@ -1,0 +1,18 @@
+apiVersion: v2
+name: backstage-gitops
+description: Backstage GitOps Management Portal for multi-branch configuration management
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - backstage
+  - gitops
+  - argocd
+  - kubernetes
+home: https://github.com/radiantlogic-saas/backstage-gitops
+sources:
+  - https://github.com/radiantlogic-saas/backstage-gitops
+maintainers:
+  - name: Platform Team
+    email: platform@radiantlogic.com
+dependencies: []

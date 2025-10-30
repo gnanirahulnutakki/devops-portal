@@ -1,0 +1,139 @@
+███████╗██╗   ██╗ ██████╗ ██████╗███████╗███████╗███████╗
+██╔════╝██║   ██║██╔════╝██╔════╝██╔════╝██╔════╝██╔════╝
+███████╗██║   ██║██║     ██║     █████╗  ███████╗███████╗
+╚════██║██║   ██║██║     ██║     ██╔══╝  ╚════██║╚════██║
+███████║╚██████╔╝╚██████╗╚██████╗███████╗███████║███████║
+╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝╚══════╝╚══════╝╚══════╝
+
+🎉 Backstage GitOps Portal has been successfully deployed!
+
+Chart Name:     {{ .Chart.Name }}
+Chart Version:  {{ .Chart.Version }}
+App Version:    {{ .Chart.AppVersion }}
+Release Name:   {{ .Release.Name }}
+Namespace:      {{ .Release.Namespace }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 DEPLOYMENT SUMMARY
+
+{{- if .Values.postgres.enabled }}
+✓ PostgreSQL database deployed as StatefulSet
+{{- else }}
+⚠ Using external PostgreSQL at {{ .Values.postgres.host }}:{{ .Values.postgres.port }}
+{{- end }}
+
+✓ Backstage application deployed with {{ .Values.replicaCount }} replica(s)
+
+{{- if .Values.autoscaling.enabled }}
+✓ Horizontal Pod Autoscaling enabled (min: {{ .Values.autoscaling.minReplicas }}, max: {{ .Values.autoscaling.maxReplicas }})
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+✓ Ingress enabled with {{ .Values.ingress.className }} class
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🌐 ACCESS YOUR DEPLOYMENT
+
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  External URL: https://{{ $host.host }}
+{{- end }}
+{{- else }}
+  Get the application URL by running these commands:
+
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "backstage-gitops.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+
+  echo "Visit http://127.0.0.1:7007 to use your application"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 7007:$CONTAINER_PORT
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔍 VERIFY DEPLOYMENT STATUS
+
+  # Check deployment status
+  kubectl get deployment {{ include "backstage-gitops.fullname" . }} -n {{ .Release.Namespace }}
+
+  # Check pod status
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "backstage-gitops.name" . }}
+
+  # View application logs
+  kubectl logs -f deployment/{{ include "backstage-gitops.fullname" . }} -n {{ .Release.Namespace }}
+
+{{- if .Values.postgres.enabled }}
+  # Check PostgreSQL status
+  kubectl get statefulset {{ include "backstage-gitops.postgres.fullname" . }} -n {{ .Release.Namespace }}
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚙️  CONFIGURATION
+
+GitHub Organization: {{ .Values.github.organization }}
+{{- if .Values.argocd.enabled }}
+ArgoCD Integration: Enabled ({{ .Values.argocd.url }})
+{{- else }}
+ArgoCD Integration: Disabled
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚠️  IMPORTANT NEXT STEPS
+
+{{- $secretName := .Values.secrets.name }}
+{{- $namespace := .Release.Namespace }}
+
+1. Verify that the secret '{{ $secretName }}' exists and contains valid credentials:
+
+   kubectl get secret {{ $secretName }} -n {{ $namespace }}
+
+   If the secret doesn't exist or needs to be updated:
+
+   kubectl create secret generic {{ $secretName }} \
+     --namespace {{ $namespace }} \
+     --from-literal={{ .Values.secrets.githubToken.key }}='your_github_pat_token' \
+     --from-literal={{ .Values.secrets.postgresPassword.key }}='your_postgres_password' \
+     {{- if .Values.argocd.enabled }}
+     --from-literal={{ .Values.secrets.argoCdToken.key }}='your_argocd_token' \
+     {{- end }}
+     --dry-run=client -o yaml | kubectl apply -f -
+
+2. If you updated secrets, restart the deployment to pick up changes:
+
+   kubectl rollout restart deployment/{{ include "backstage-gitops.fullname" . }} -n {{ $namespace }}
+
+3. Monitor the rollout:
+
+   kubectl rollout status deployment/{{ include "backstage-gitops.fullname" . }} -n {{ $namespace }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📚 DOCUMENTATION
+
+For more information, visit:
+  • Deployment Guide: See DEPLOY_GUIDE.md in the project repository
+  • Troubleshooting: Check logs and events if pods are not running
+  • Configuration: Review helm/values.yaml for all available options
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 TROUBLESHOOTING
+
+If pods are not starting:
+
+  # Describe pod to see events
+  kubectl describe pod -n {{ $namespace }} -l app.kubernetes.io/name={{ include "backstage-gitops.name" . }}
+
+  # Check for image pull errors
+  kubectl get events -n {{ $namespace }} --sort-by='.lastTimestamp'
+
+  # Verify secrets are properly configured
+  kubectl get secret {{ $secretName }} -n {{ $namespace }} -o yaml
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Happy GitOps-ing! 🚀

@@ -1,0 +1,66 @@
+{
+  "name": "@internal/plugin-gitops-backend",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "license": "MIT",
+  "private": true,
+  "publishConfig": {
+    "access": "public",
+    "main": "dist/index.cjs.js",
+    "types": "dist/index.d.ts"
+  },
+  "backstage": {
+    "role": "backend-plugin",
+    "pluginId": "gitops",
+    "pluginPackages": [
+      "@internal/plugin-gitops",
+      "@internal/plugin-gitops-backend"
+    ]
+  },
+  "scripts": {
+    "start": "backstage-cli package start",
+    "build": "backstage-cli package build",
+    "lint": "backstage-cli package lint",
+    "test": "backstage-cli package test",
+    "clean": "backstage-cli package clean",
+    "prepack": "backstage-cli package prepack",
+    "postpack": "backstage-cli package postpack",
+    "migrate:make": "knex migrate:make -x ts --migrations-directory ./migrations",
+    "migrate:latest": "knex migrate:latest --knexfile ./knexfile.ts",
+    "migrate:rollback": "knex migrate:rollback --knexfile ./knexfile.ts"
+  },
+  "dependencies": {
+    "@backstage/backend-common": "^0.19.0",
+    "@backstage/backend-plugin-api": "^0.6.0",
+    "@backstage/config": "^1.1.0",
+    "@backstage/plugin-auth-node": "^0.3.0",
+    "@octokit/graphql": "^7.0.0",
+    "@octokit/plugin-retry": "^6.0.0",
+    "@octokit/plugin-throttling": "^8.0.0",
+    "@octokit/rest": "^20.0.0",
+    "axios": "^1.13.1",
+    "express": "^4.18.2",
+    "express-promise-router": "^4.1.0",
+    "joi": "^17.11.0",
+    "knex": "^3.0.0",
+    "luxon": "^3.4.0",
+    "pg": "^8.11.0",
+    "uuid": "^13.0.0",
+    "winston": "^3.11.0",
+    "yn": "^4.0.0"
+  },
+  "devDependencies": {
+    "@backstage/backend-test-utils": "^0.3.0",
+    "@backstage/cli": "^0.25.0",
+    "@types/express": "^4.17.6",
+    "@types/luxon": "^3.3.0",
+    "@types/supertest": "^2.0.12",
+    "supertest": "^6.2.4"
+  },
+  "files": [
+    "dist",
+    "config.d.ts",
+    "migrations/**/*.{js,d.ts}"
+  ]
+}
