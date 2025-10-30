@@ -64,12 +64,19 @@ yarn install
 
 ```
 backstage-gitops/
+├── packages/
+│   ├── app/                      # Frontend application
+│   └── backend/                  # Backend application
 ├── plugins/
-│   ├── gitops/              # Frontend plugin
-│   └── gitops-backend/      # Backend plugin
-├── helm/                    # Helm chart for deployment
-├── docs/                    # Documentation
-└── scripts/                 # Utility scripts
+│   ├── gitops/                   # Frontend plugin
+│   └── gitops-backend/           # Backend plugin
+├── deployment/
+│   ├── helm/                     # Helm chart for Kubernetes
+│   └── docker/                   # Docker and Docker Compose
+├── docs/                         # Documentation
+├── scripts/                      # Utility scripts
+├── app-config.yaml              # Backstage configuration
+└── start-with-env.sh            # Development startup script
 ```
 
 ## 🔧 Configuration
@@ -109,14 +116,16 @@ The Backstage GitOps Portal can be deployed using Docker and Kubernetes/Helm.
 
 ```bash
 # Build the Docker image
-docker build -t backstage-gitops:latest .
+docker build -f deployment/docker/Dockerfile -t backstage-gitops:latest .
 
 # Run with Docker Compose (includes PostgreSQL)
-docker-compose up -d
+docker-compose -f deployment/docker/docker-compose.yml up -d
 
 # Check logs
-docker-compose logs -f backstage
+docker-compose -f deployment/docker/docker-compose.yml logs -f backstage
 ```
+
+**📖 Full Docker Guide:** [deployment/docker/README.md](deployment/docker/README.md)
 
 ### Kubernetes Deployment with Helm
 
@@ -132,14 +141,16 @@ kubectl create secret generic backstage-secrets \
   --from-literal=ARGOCD_TOKEN='your_argocd_token'
 
 # Step 3: Install with Helm
-helm install backstage-gitops ./helm \
+helm install backstage-gitops ./deployment/helm \
   --namespace backstage \
-  --values custom-values.yaml
+  --values deployment/helm/values-qa.yaml
 
 # Step 4: Verify deployment
 kubectl get pods -n backstage
 kubectl logs -f deployment/backstage-gitops -n backstage
 ```
+
+**📖 Full Helm Guide:** [deployment/helm/README.md](deployment/helm/README.md)
 
 ### Production Deployment
 
