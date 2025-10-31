@@ -34,7 +34,8 @@ securityContext:
 service:
   type: ClusterIP
   port: 80
-  targetPort: 7007
+  # Note: targetPort is now automatically set to the named port "http" (7007)
+  # This ensures proper port-forwarding: kubectl port-forward svc/<name> 7007:80
   annotations: {}
 
 ingress:
