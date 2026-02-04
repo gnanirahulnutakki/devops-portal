@@ -5,6 +5,15 @@ interface CreatePullRequestDialogProps {
     repository: string;
     currentBranch: string;
     onPullRequestCreated?: (pullRequest: any) => void;
+    allowBranchCreation?: boolean;
+    fileContent?: {
+        path: string;
+        content?: string;
+        sha: string;
+    };
+    commitMessage?: string;
+    fieldPath?: string;
+    fieldValue?: string;
 }
 export declare const CreatePullRequestDialog: React.FC<CreatePullRequestDialogProps>;
 export {};

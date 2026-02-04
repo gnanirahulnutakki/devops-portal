@@ -5,12 +5,20 @@ import { ArgoCDService } from '../services/ArgoCDService';
 import { AuditService } from '../services/AuditService';
 import { BulkOperationService } from '../services/BulkOperationService';
 import { GrafanaService } from '../services/GrafanaService';
+import { HealthService } from '../services/HealthService';
 import { listRepositoriesSchema, listBranchesSchema, getFileTreeSchema, getFileContentSchema, updateFileSchema, listArgoCDAppsSchema, syncArgoCDAppSchema, getBulkOperationSchema, listBulkOperationsSchema, listAuditLogsSchema, validate, } from '../validation/schemas';
 import { asyncHandler } from '../errors';
+import { requestLoggerMiddleware, getUserContext } from '../middleware/requestLogger';
+import { generalRateLimiter, bulkOperationsRateLimiter, syncRateLimiter } from '../middleware/rateLimiter';
+import { securityHeadersMiddleware } from '../middleware/securityHeaders';
 export async function createRouter(options) {
     const { logger, config, database } = options;
     const router = Router();
-    router.use(express.json());
+    // Security middleware
+    router.use(securityHeadersMiddleware());
+    router.use(express.json({ limit: '10mb' })); // Limit request body size
+    router.use(requestLoggerMiddleware());
+    router.use(generalRateLimiter);
     // Get database connection
     const knex = await database.getClient();
     // Initialize services
@@ -44,12 +52,51 @@ export async function createRouter(options) {
     }
     const auditService = new AuditService({ database: knex });
     const bulkOperationService = new BulkOperationService(knex, githubService, auditService);
-    logger.info('GitOps backend plugin initializing with all services');
-    // Health check endpoint
-    router.get('/health', (_, response) => {
-        logger.info('Health check requested');
-        response.json({ status: 'ok' });
+    // Initialize health service
+    const healthService = new HealthService({
+        database: knex,
+        githubToken: githubToken,
+        githubOrg: githubOrg,
+        argoCDUrl: argoCDUrl,
+        argoCDToken: argoCDToken,
+        grafanaUrl: grafanaUrl,
+        grafanaToken: grafanaToken,
     });
+    logger.info('GitOps backend plugin initializing with all services');
+    // ===========================================================================
+    // Health Check Endpoints
+    // ===========================================================================
+    /**
+     * GET /health
+     * Comprehensive health check with dependency status
+     */
+    router.get('/health', asyncHandler(async (req, res) => {
+        const detailed = req.query.detailed === 'true';
+        if (detailed) {
+            const health = await healthService.getHealth();
+            res.status(health.status === 'healthy' ? 200 : health.status === 'degraded' ? 200 : 503)
+                .json(health);
+        }
+        else {
+            res.json({ status: 'ok' });
+        }
+    }));
+    /**
+     * GET /health/live
+     * Kubernetes liveness probe - is the service running?
+     */
+    router.get('/health/live', asyncHandler(async (_, res) => {
+        const liveness = await healthService.getLiveness();
+        res.json(liveness);
+    }));
+    /**
+     * GET /health/ready
+     * Kubernetes readiness probe - is the service ready for traffic?
+     */
+    router.get('/health/ready', asyncHandler(async (_, res) => {
+        const readiness = await healthService.getReadiness();
+        res.status(readiness.ready ? 200 : 503).json(readiness);
+    }));
     // ===========================================================================
     // Repository Operations
     // ===========================================================================
@@ -140,9 +187,10 @@ export async function createRouter(options) {
     // ===========================================================================
     /**
      * POST /repositories/:repo/files/update
-     * Update file across multiple branches
+     * Update file across multiple branches (BULK OPERATION)
      */
-    router.post('/repositories/:repo/files/update', asyncHandler(async (req, res) => {
+    router.post('/repositories/:repo/files/update', bulkOperationsRateLimiter, // Apply stricter rate limit for bulk ops
+    asyncHandler(async (req, res) => {
         const { repo } = req.params;
         logger.info(`POST /repositories/${repo}/files/update`);
         // Validate request
@@ -150,9 +198,12 @@ export async function createRouter(options) {
             repository: repo,
             ...req.body,
         });
+        // Get user context from request
+        const userContext = getUserContext(req);
         // Create bulk update operation
         const operationId = await bulkOperationService.createBulkUpdate({
-            user_id: 'default-user',
+            user_id: userContext.userId,
+            user_email: userContext.userEmail,
             repository: params.repository,
             branches: params.branches,
             file_path: params.path,
@@ -161,6 +212,8 @@ export async function createRouter(options) {
             committer: params.committer,
             fieldPath: params.fieldPath,
             fieldValue: params.fieldValue,
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent'],
         });
         res.status(202).json({
             operation_id: operationId,
@@ -276,7 +329,8 @@ export async function createRouter(options) {
      * POST /argocd/sync
      * Sync ArgoCD applications
      */
-    router.post('/argocd/sync', asyncHandler(async (req, res) => {
+    router.post('/argocd/sync', syncRateLimiter, // Apply sync-specific rate limit
+    asyncHandler(async (req, res) => {
         logger.info('POST /argocd/sync');
         // Validate request
         const params = validate(syncArgoCDAppSchema, req.body);
@@ -285,16 +339,20 @@ export async function createRouter(options) {
             prune: params.prune,
             dryRun: params.dryRun,
         });
-        // Log to audit
+        // Get user context and log to audit
+        const userContext = getUserContext(req);
         for (const result of results) {
             await auditService.logSync({
-                user_id: 'default-user',
+                user_id: userContext.userId,
+                user_email: userContext.userEmail,
                 resource_type: 'argocd_app',
                 resource_id: result.application,
                 argocd_app_name: result.application,
                 sync_status: result.status,
                 status: result.status === 'Syncing' || result.status === 'Synced' ? 'success' : 'failure',
                 error_message: result.status !== 'Syncing' && result.status !== 'Synced' ? result.message : undefined,
+                ip_address: req.ip,
+                user_agent: req.headers['user-agent'],
             });
         }
         res.json({
@@ -404,6 +462,26 @@ export async function createRouter(options) {
         res.json({ comparison });
     }));
     /**
+     * POST /repositories/:repo/branches
+     * Create a new branch from an existing branch
+     */
+    router.post('/repositories/:repo/branches', asyncHandler(async (req, res) => {
+        const { repo } = req.params;
+        const { branch, from_branch } = req.body;
+        logger.info(`POST /repositories/${repo}/branches - Creating branch "${branch}" from "${from_branch}"`);
+        if (!branch || !from_branch) {
+            res.status(400).json({
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Missing required fields: branch, from_branch',
+                },
+            });
+            return;
+        }
+        const result = await githubService.createBranch(repo, branch, from_branch);
+        res.status(201).json({ branch: result });
+    }));
+    /**
      * GET /repositories/:repo/pulls
      * List pull requests
      */
@@ -438,6 +516,57 @@ export async function createRouter(options) {
         res.status(201).json({ pull });
     }));
     /**
+     * POST /repositories/:repo/pulls/with-changes
+     * Create a pull request with file changes (synchronous workflow)
+     * This endpoint creates a new branch, commits changes, and creates a PR in one operation
+     */
+    router.post('/repositories/:repo/pulls/with-changes', asyncHandler(async (req, res) => {
+        const { repo } = req.params;
+        const { title, body, head, base, newBranchName, baseBranch, filePath, content, fieldPath, fieldValue, commitMessage, } = req.body;
+        logger.info(`POST /repositories/${repo}/pulls/with-changes - Creating PR with changes`);
+        // Validate required fields
+        if (!title || !base || !newBranchName || !baseBranch || !filePath || !commitMessage) {
+            res.status(400).json({
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Missing required fields',
+                },
+            });
+            return;
+        }
+        // Step 1: Create new branch
+        await githubService.createBranch(repo, newBranchName, baseBranch);
+        // Step 2: Get the file to obtain its SHA
+        const fileContent = await githubService.getFileContent(repo, newBranchName, filePath);
+        // Step 3: Prepare content for commit
+        let contentToCommit;
+        if (fieldPath && fieldValue) {
+            // Field-level update: parse YAML, update field, serialize
+            const { updateYamlField } = await import('../utils/yamlUtils');
+            const currentContent = Buffer.from(fileContent.content, 'base64').toString('utf-8');
+            contentToCommit = updateYamlField(currentContent, fieldPath, fieldValue);
+        }
+        else if (content) {
+            // Full content update
+            contentToCommit = content;
+        }
+        else {
+            throw new Error('Either content or fieldPath/fieldValue must be provided');
+        }
+        // Step 4: Commit changes synchronously
+        await githubService.updateFile({
+            repository: repo,
+            branch: newBranchName,
+            path: filePath,
+            content: Buffer.from(contentToCommit).toString('base64'),
+            message: commitMessage,
+            sha: fileContent.sha,
+        });
+        // Step 5: Create pull request
+        const pull = await githubService.createPullRequest(repo, title, newBranchName, base, body);
+        res.status(201).json({ pull });
+    }));
+    /**
      * GET /repositories/:repo/pulls/:number
      * Get pull request details
      */
@@ -469,9 +598,11 @@ export async function createRouter(options) {
         const { commit_title, commit_message, merge_method } = req.body;
         logger.info(`POST /repositories/${repo}/pulls/${number}/merge`);
         const result = await githubService.mergePullRequest(repo, parseInt(number, 10), commit_title, commit_message, merge_method || 'merge');
-        // Log to audit
+        // Get user context and log to audit
+        const userContext = getUserContext(req);
         await auditService.log({
-            user_id: 'default-user',
+            user_id: userContext.userId,
+            user_email: userContext.userEmail,
             operation: 'commit',
             resource_type: 'repository',
             resource_id: repo,
@@ -482,6 +613,8 @@ export async function createRouter(options) {
                 merge_method: merge_method || 'merge',
             },
             status: result.merged ? 'success' : 'failure',
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent'],
         });
         res.json({ result });
     }));
@@ -524,6 +657,81 @@ export async function createRouter(options) {
         }
         const result = await githubService.assignPullRequest(repo, parseInt(number, 10), assignees);
         res.json({ result });
+    }));
+    /**
+     * GET /repositories/:repo/pulls/:number/comments
+     * Get comments for a pull request
+     */
+    router.get('/repositories/:repo/pulls/:number/comments', asyncHandler(async (req, res) => {
+        const { repo, number } = req.params;
+        logger.info(`GET /repositories/${repo}/pulls/${number}/comments`);
+        const comments = await githubService.getPullRequestComments(repo, parseInt(number, 10));
+        res.json({ comments });
+    }));
+    /**
+     * POST /repositories/:repo/pulls/:number/comments
+     * Add a comment to a pull request
+     */
+    router.post('/repositories/:repo/pulls/:number/comments', asyncHandler(async (req, res) => {
+        const { repo, number } = req.params;
+        const { body } = req.body;
+        logger.info(`POST /repositories/${repo}/pulls/${number}/comments`);
+        if (!body || typeof body !== 'string') {
+            res.status(400).json({
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'body is required and must be a string',
+                },
+            });
+            return;
+        }
+        const comment = await githubService.addPullRequestComment(repo, parseInt(number, 10), body);
+        // Get user context and log to audit
+        const userContext = getUserContext(req);
+        await auditService.log({
+            user_id: userContext.userId,
+            user_email: userContext.userEmail,
+            operation: 'update',
+            resource_type: 'repository',
+            resource_id: `${repo}/pull/${number}`,
+            repository: repo,
+            branch: `PR #${number}`,
+            metadata: { action: 'add_pr_comment', pull_number: number, comment_id: comment.id },
+            status: 'success',
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent'],
+        });
+        res.status(201).json({ comment });
+    }));
+    /**
+     * GET /repositories/:repo/pulls/:number/status-checks
+     * Get status checks for a pull request
+     */
+    router.get('/repositories/:repo/pulls/:number/status-checks', asyncHandler(async (req, res) => {
+        const { repo, number } = req.params;
+        logger.info(`GET /repositories/${repo}/pulls/${number}/status-checks`);
+        const checks = await githubService.getPullRequestStatusChecks(repo, parseInt(number, 10));
+        res.json({ checks });
+    }));
+    /**
+     * GET /repositories/:repo/pulls/:number/reviews
+     * Get reviews for a pull request
+     */
+    router.get('/repositories/:repo/pulls/:number/reviews', asyncHandler(async (req, res) => {
+        const { repo, number } = req.params;
+        logger.info(`GET /repositories/${repo}/pulls/${number}/reviews`);
+        const reviews = await githubService.getPullRequestReviews(repo, parseInt(number, 10));
+        res.json({ reviews });
+    }));
+    /**
+     * GET /repositories/:repo/pulls/:number/timeline
+     * Get timeline events for a pull request
+     */
+    router.get('/repositories/:repo/pulls/:number/timeline', asyncHandler(async (req, res) => {
+        const { repo, number } = req.params;
+        logger.info(`GET /repositories/${repo}/pulls/${number}/timeline`);
+        const events = await githubService.getPullRequestTimeline(repo, parseInt(number, 10));
+        res.json({ events });
     }));
     logger.info('GitOps backend plugin initialized with all endpoints');
     return router;

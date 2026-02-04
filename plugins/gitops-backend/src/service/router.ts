@@ -9,6 +9,9 @@ import { AuditService } from '../services/AuditService';
 import { BulkOperationService } from '../services/BulkOperationService';
 import { GrafanaService } from '../services/GrafanaService';
 import { HealthService } from '../services/HealthService';
+import { GitLabService } from '../services/GitLabService';
+import { UptimeKumaService } from '../services/UptimeKumaService';
+import { AuthTokenService } from '../services/AuthTokenService';
 import {
   listRepositoriesSchema,
   listBranchesSchema,
@@ -92,6 +95,46 @@ export async function createRouter(
   } else {
     logger.info('Grafana integration disabled or not configured');
   }
+
+  // Initialize GitLab service
+  const gitlabEnabled = config.getOptionalBoolean('gitops.gitlab.enabled') || false;
+  const gitlabUrl = config.getOptionalString('gitops.gitlab.baseUrl') || 'https://gitlab.com';
+  const gitlabToken = config.getOptionalString('gitops.gitlab.token') || '';
+
+  let gitlabService: GitLabService | null = null;
+  if (gitlabEnabled && gitlabToken) {
+    gitlabService = new GitLabService({
+      baseUrl: gitlabUrl,
+      token: gitlabToken,
+    });
+    logger.info(`GitLab integration enabled: ${gitlabUrl}`);
+  } else {
+    logger.info('GitLab integration disabled or not configured');
+  }
+
+  // Initialize Uptime Kuma service
+  const uptimeKumaEnabled = config.getOptionalBoolean('gitops.uptimeKuma.enabled') || false;
+  const uptimeKumaUrl = config.getOptionalString('gitops.uptimeKuma.baseUrl') || '';
+  const uptimeKumaApiKey = config.getOptionalString('gitops.uptimeKuma.apiKey') || '';
+
+  let uptimeKumaService: UptimeKumaService | null = null;
+  if (uptimeKumaEnabled && uptimeKumaUrl) {
+    uptimeKumaService = new UptimeKumaService({
+      baseUrl: uptimeKumaUrl,
+      apiKey: uptimeKumaApiKey,
+    });
+    logger.info(`Uptime Kuma integration enabled: ${uptimeKumaUrl}`);
+  } else {
+    logger.info('Uptime Kuma integration disabled or not configured');
+  }
+
+  // Initialize Auth Token service for OAuth-based access
+  const allowUnauthenticated = config.getOptionalBoolean('gitops.auth.allowUnauthenticated') ?? true;
+  const authTokenService = new AuthTokenService({
+    fallbackGitHubToken: githubToken,
+    fallbackGitLabToken: gitlabToken,
+    allowUnauthenticated,
+  });
 
   const auditService = new AuditService({ database: knex });
   const bulkOperationService = new BulkOperationService(knex, githubService, auditService);
@@ -627,6 +670,544 @@ export async function createRouter(
         dashboards,
         total: dashboards.length,
       });
+    })
+  );
+
+  // ===========================================================================
+  // GitLab Operations
+  // ===========================================================================
+
+  /**
+   * GET /gitlab/projects
+   * List GitLab projects
+   */
+  router.get(
+    '/gitlab/projects',
+    asyncHandler(async (req, res) => {
+      logger.info('GET /gitlab/projects');
+
+      if (!gitlabService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitLab integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const { search, page, per_page } = req.query;
+      const projects = await gitlabService.listProjects({
+        search: search as string,
+        page: page ? parseInt(page as string, 10) : undefined,
+        perPage: per_page ? parseInt(per_page as string, 10) : undefined,
+      });
+
+      res.json({
+        projects,
+        total: projects.length,
+      });
+    })
+  );
+
+  /**
+   * GET /gitlab/projects/:projectId
+   * Get GitLab project details
+   */
+  router.get(
+    '/gitlab/projects/:projectId',
+    asyncHandler(async (req, res) => {
+      const { projectId } = req.params;
+      logger.info(`GET /gitlab/projects/${projectId}`);
+
+      if (!gitlabService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitLab integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const project = await gitlabService.getProject(projectId);
+      res.json({ project });
+    })
+  );
+
+  /**
+   * GET /gitlab/projects/:projectId/branches
+   * List GitLab project branches
+   */
+  router.get(
+    '/gitlab/projects/:projectId/branches',
+    asyncHandler(async (req, res) => {
+      const { projectId } = req.params;
+      logger.info(`GET /gitlab/projects/${projectId}/branches`);
+
+      if (!gitlabService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitLab integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const branches = await gitlabService.listBranches(projectId);
+      res.json({ branches, total: branches.length });
+    })
+  );
+
+  /**
+   * GET /gitlab/projects/:projectId/tree
+   * Get GitLab project file tree
+   */
+  router.get(
+    '/gitlab/projects/:projectId/tree',
+    asyncHandler(async (req, res) => {
+      const { projectId } = req.params;
+      const { ref, path, recursive } = req.query;
+      logger.info(`GET /gitlab/projects/${projectId}/tree`);
+
+      if (!gitlabService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitLab integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const tree = await gitlabService.getTree(projectId, {
+        ref: ref as string,
+        path: path as string,
+        recursive: recursive === 'true',
+      });
+      res.json({ tree, total: tree.length });
+    })
+  );
+
+  /**
+   * GET /gitlab/projects/:projectId/files
+   * Get GitLab file content
+   */
+  router.get(
+    '/gitlab/projects/:projectId/files',
+    asyncHandler(async (req, res) => {
+      const { projectId } = req.params;
+      const { path, ref } = req.query;
+      logger.info(`GET /gitlab/projects/${projectId}/files?path=${path}`);
+
+      if (!gitlabService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitLab integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      if (!path) {
+        res.status(400).json({
+          error: { code: 'VALIDATION_ERROR', message: 'path is required' },
+        });
+        return;
+      }
+
+      const file = await gitlabService.getFile(projectId, path as string, ref as string);
+      const content = Buffer.from(file.content, 'base64').toString('utf-8');
+      res.json({ ...file, decodedContent: content });
+    })
+  );
+
+  /**
+   * PUT /gitlab/projects/:projectId/files
+   * Update GitLab file
+   */
+  router.put(
+    '/gitlab/projects/:projectId/files',
+    asyncHandler(async (req, res) => {
+      const { projectId } = req.params;
+      const { path, content, branch, commitMessage } = req.body;
+      logger.info(`PUT /gitlab/projects/${projectId}/files`);
+
+      if (!gitlabService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitLab integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const result = await gitlabService.updateFile(projectId, path, content, {
+        branch,
+        commitMessage,
+      });
+
+      // Audit log
+      const userContext = getUserContext(req);
+      await auditService.log({
+        user_id: userContext.userId,
+        user_email: userContext.userEmail,
+        operation: 'commit',
+        resource_type: 'gitlab_file',
+        resource_id: `${projectId}/${path}`,
+        repository: projectId.toString(),
+        branch,
+        file_path: path,
+        status: 'success',
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+      });
+
+      res.json({ result });
+    })
+  );
+
+  /**
+   * GET /gitlab/projects/:projectId/merge_requests
+   * List GitLab merge requests
+   */
+  router.get(
+    '/gitlab/projects/:projectId/merge_requests',
+    asyncHandler(async (req, res) => {
+      const { projectId } = req.params;
+      const { state } = req.query;
+      logger.info(`GET /gitlab/projects/${projectId}/merge_requests`);
+
+      if (!gitlabService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitLab integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const mergeRequests = await gitlabService.listMergeRequests(projectId, {
+        state: state as any,
+      });
+      res.json({ mergeRequests, total: mergeRequests.length });
+    })
+  );
+
+  /**
+   * POST /gitlab/projects/:projectId/merge_requests
+   * Create GitLab merge request
+   */
+  router.post(
+    '/gitlab/projects/:projectId/merge_requests',
+    asyncHandler(async (req, res) => {
+      const { projectId } = req.params;
+      const { sourceBranch, targetBranch, title, description } = req.body;
+      logger.info(`POST /gitlab/projects/${projectId}/merge_requests`);
+
+      if (!gitlabService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitLab integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const mergeRequest = await gitlabService.createMergeRequest(projectId, {
+        sourceBranch,
+        targetBranch,
+        title,
+        description,
+      });
+      res.status(201).json({ mergeRequest });
+    })
+  );
+
+  /**
+   * GET /gitlab/projects/:projectId/pipelines
+   * List GitLab pipelines
+   */
+  router.get(
+    '/gitlab/projects/:projectId/pipelines',
+    asyncHandler(async (req, res) => {
+      const { projectId } = req.params;
+      const { ref, status } = req.query;
+      logger.info(`GET /gitlab/projects/${projectId}/pipelines`);
+
+      if (!gitlabService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitLab integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const pipelines = await gitlabService.listPipelines(projectId, {
+        ref: ref as string,
+        status: status as string,
+      });
+      res.json({ pipelines, total: pipelines.length });
+    })
+  );
+
+  /**
+   * GET /gitlab/health
+   * Check GitLab service health
+   */
+  router.get(
+    '/gitlab/health',
+    asyncHandler(async (_, res) => {
+      if (!gitlabService) {
+        res.json({ healthy: false, message: 'GitLab integration not configured' });
+        return;
+      }
+
+      const health = await gitlabService.healthCheck();
+      res.json(health);
+    })
+  );
+
+  // ===========================================================================
+  // Uptime Kuma Operations
+  // ===========================================================================
+
+  /**
+   * GET /uptime-kuma/monitors
+   * List all Uptime Kuma monitors
+   */
+  router.get(
+    '/uptime-kuma/monitors',
+    asyncHandler(async (req, res) => {
+      logger.info('GET /uptime-kuma/monitors');
+
+      if (!uptimeKumaService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'Uptime Kuma integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const monitors = await uptimeKumaService.getMonitors();
+      res.json({ monitors, total: monitors.length });
+    })
+  );
+
+  /**
+   * GET /uptime-kuma/monitors/:id
+   * Get Uptime Kuma monitor details with status
+   */
+  router.get(
+    '/uptime-kuma/monitors/:id',
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      logger.info(`GET /uptime-kuma/monitors/${id}`);
+
+      if (!uptimeKumaService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'Uptime Kuma integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const status = await uptimeKumaService.getMonitorStatus(parseInt(id, 10));
+      res.json(status);
+    })
+  );
+
+  /**
+   * GET /uptime-kuma/stats
+   * Get Uptime Kuma overall statistics
+   */
+  router.get(
+    '/uptime-kuma/stats',
+    asyncHandler(async (_, res) => {
+      logger.info('GET /uptime-kuma/stats');
+
+      if (!uptimeKumaService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'Uptime Kuma integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const stats = await uptimeKumaService.getStats();
+      res.json(stats);
+    })
+  );
+
+  /**
+   * GET /uptime-kuma/dashboard
+   * Get Uptime Kuma dashboard summary
+   */
+  router.get(
+    '/uptime-kuma/dashboard',
+    asyncHandler(async (_, res) => {
+      logger.info('GET /uptime-kuma/dashboard');
+
+      if (!uptimeKumaService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'Uptime Kuma integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const summary = await uptimeKumaService.getDashboardSummary();
+      res.json(summary);
+    })
+  );
+
+  /**
+   * GET /uptime-kuma/status-pages
+   * List Uptime Kuma status pages
+   */
+  router.get(
+    '/uptime-kuma/status-pages',
+    asyncHandler(async (_, res) => {
+      logger.info('GET /uptime-kuma/status-pages');
+
+      if (!uptimeKumaService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'Uptime Kuma integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      const statusPages = await uptimeKumaService.getStatusPages();
+      res.json({ statusPages, total: statusPages.length });
+    })
+  );
+
+  /**
+   * GET /uptime-kuma/health
+   * Check Uptime Kuma service health
+   */
+  router.get(
+    '/uptime-kuma/health',
+    asyncHandler(async (_, res) => {
+      if (!uptimeKumaService) {
+        res.json({ healthy: false, message: 'Uptime Kuma integration not configured' });
+        return;
+      }
+
+      const health = await uptimeKumaService.healthCheck();
+      res.json(health);
+    })
+  );
+
+  /**
+   * POST /uptime-kuma/monitors/:id/pause
+   * Pause a monitor
+   */
+  router.post(
+    '/uptime-kuma/monitors/:id/pause',
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      logger.info(`POST /uptime-kuma/monitors/${id}/pause`);
+
+      if (!uptimeKumaService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'Uptime Kuma integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      await uptimeKumaService.pauseMonitor(parseInt(id, 10));
+      res.json({ success: true, message: `Monitor ${id} paused` });
+    })
+  );
+
+  /**
+   * POST /uptime-kuma/monitors/:id/resume
+   * Resume a monitor
+   */
+  router.post(
+    '/uptime-kuma/monitors/:id/resume',
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      logger.info(`POST /uptime-kuma/monitors/${id}/resume`);
+
+      if (!uptimeKumaService) {
+        res.status(503).json({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'Uptime Kuma integration is not enabled or configured',
+          },
+        });
+        return;
+      }
+
+      await uptimeKumaService.resumeMonitor(parseInt(id, 10));
+      res.json({ success: true, message: `Monitor ${id} resumed` });
+    })
+  );
+
+  // ===========================================================================
+  // Auth Token Operations (for OAuth-based access)
+  // ===========================================================================
+
+  /**
+   * GET /auth/user
+   * Get current authenticated user info
+   */
+  router.get(
+    '/auth/user',
+    asyncHandler(async (req, res) => {
+      const user = await authTokenService.getUserFromRequest(req);
+      
+      if (!user) {
+        res.json({ authenticated: false });
+        return;
+      }
+
+      res.json({
+        authenticated: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          displayName: user.displayName,
+          provider: user.provider,
+          hasGitHubToken: !!user.tokens.github,
+          hasGitLabToken: !!user.tokens.gitlab,
+        },
+      });
+    })
+  );
+
+  /**
+   * GET /auth/organizations
+   * Get organizations the user has access to
+   */
+  router.get(
+    '/auth/organizations',
+    asyncHandler(async (req, res) => {
+      const orgs = await authTokenService.getUserOrganizations(req);
+      res.json({ organizations: orgs });
     })
   );
 

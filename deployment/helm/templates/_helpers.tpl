@@ -41,11 +41,20 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
-Selector labels
+Selector labels - base labels used by all resources
 */}}
 {{- define "backstage-gitops.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "backstage-gitops.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+App selector labels - includes component label for app pods only
+This ensures the Service and Deployment only target app pods, not postgres
+*/}}
+{{- define "backstage-gitops.appSelectorLabels" -}}
+{{ include "backstage-gitops.selectorLabels" . }}
+app.kubernetes.io/component: app
 {{- end }}
 
 {{/*

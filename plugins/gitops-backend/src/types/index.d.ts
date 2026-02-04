@@ -497,22 +497,4 @@ export interface AssignPullRequestRequest {
     pull_number: number;
     assignees: string[];
 }
-export declare class GitOpsError extends Error {
-    statusCode: number;
-    code?: string;
-    details?: any;
-    constructor(message: string, statusCode?: number, code?: string, details?: any);
-}
-export declare class GitHubError extends GitOpsError {
-    constructor(message: string, statusCode?: number, details?: any);
-}
-export declare class ArgoCDError extends GitOpsError {
-    constructor(message: string, statusCode?: number, details?: any);
-}
-export declare class ValidationError extends GitOpsError {
-    constructor(message: string, details?: any);
-}
-export declare class NotFoundError extends GitOpsError {
-    constructor(message: string, details?: any);
-}
 //# sourceMappingURL=index.d.ts.map

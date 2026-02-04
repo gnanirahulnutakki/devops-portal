@@ -33,47 +33,122 @@ auth:
   providers:
     guest:
       dangerouslyAllowOutsideDevelopment: true
-    # GitHub OAuth
+    
+    # GitHub OAuth - enables using user's token for repo access
     github:
       development:
         clientId: ${GITHUB_OAUTH_CLIENT_ID}
         clientSecret: ${GITHUB_OAUTH_CLIENT_SECRET}
         ## uncomment if using GitHub Enterprise
         # enterpriseInstanceUrl: ${GITHUB_ENTERPRISE_URL}
+        ## Scopes for repo access (uncomment to customize)
+        # scope: read:user user:email repo read:org workflow
+        signIn:
+          resolvers:
+            - resolver: usernameMatchingUserEntityName
+    
     # Google OAuth
     google:
       development:
         clientId: ${GOOGLE_OAUTH_CLIENT_ID}
         clientSecret: ${GOOGLE_OAUTH_CLIENT_SECRET}
-    # Microsoft OAuth (Azure AD) via oauth2 provider
-    oauth2:
+        signIn:
+          resolvers:
+            - resolver: emailMatchingUserEntityProfileEmail
+    
+    # Microsoft OAuth (Azure AD)
+    microsoft:
       development:
         clientId: ${MICROSOFT_OAUTH_CLIENT_ID}
         clientSecret: ${MICROSOFT_OAUTH_CLIENT_SECRET}
-        authorizationUrl: https://login.microsoftonline.com/${MICROSOFT_TENANT_ID}/oauth2/v2.0/authorize
-        tokenUrl: https://login.microsoftonline.com/${MICROSOFT_TENANT_ID}/oauth2/v2.0/token
-        scope: openid email profile
+        tenantId: ${MICROSOFT_TENANT_ID}
+        signIn:
+          resolvers:
+            - resolver: emailMatchingUserEntityProfileEmail
+    
+    # GitLab OAuth
+    gitlab:
+      development:
+        clientId: ${GITLAB_OAUTH_CLIENT_ID}
+        clientSecret: ${GITLAB_OAUTH_CLIENT_SECRET}
+        ## uncomment for self-hosted GitLab
+        # baseUrl: ${GITLAB_BASE_URL}
+        signIn:
+          resolvers:
+            - resolver: usernameMatchingUserEntityName
+    
+    # Generic OIDC for enterprise SSO (Okta, Auth0, Keycloak, etc.)
+    oidc:
+      development:
+        metadataUrl: ${OIDC_METADATA_URL}
+        clientId: ${OIDC_CLIENT_ID}
+        clientSecret: ${OIDC_CLIENT_SECRET}
+        prompt: auto
+        signIn:
+          resolvers:
+            - resolver: emailMatchingUserEntityProfileEmail
 
 integrations:
   github:
     - host: github.com
       token: ${GITHUB_TOKEN}
+    ## GitHub Enterprise (uncomment if needed)
+    # - host: github.mycompany.com
+    #   token: ${GITHUB_ENTERPRISE_TOKEN}
+    #   apiBaseUrl: https://github.mycompany.com/api/v3
+  gitlab:
+    - host: gitlab.com
+      token: ${GITLAB_TOKEN}
+    ## Self-hosted GitLab (uncomment if needed)
+    # - host: gitlab.mycompany.com
+    #   token: ${GITLAB_ENTERPRISE_TOKEN}
+    #   apiBaseUrl: https://gitlab.mycompany.com/api/v4
 
 # GitOps Plugin Configuration
 gitops:
+  # GitHub Configuration
   github:
     organization: radiantlogic-saas
+    # Static token (fallback when user OAuth not available)
     token: ${GITHUB_TOKEN}
+    # Use user's OAuth token when available (enables user-scoped access)
+    useOAuthToken: true
+  
+  # GitLab Configuration
+  gitlab:
+    enabled: ${GITLAB_ENABLED:-false}
+    baseUrl: ${GITLAB_BASE_URL:-https://gitlab.com}
+    token: ${GITLAB_TOKEN}
+    # Use user's OAuth token when available
+    useOAuthToken: true
+  
+  # Authentication settings
   auth:
+    # Allow unauthenticated access (uses static tokens)
     allowUnauthenticated: true
+    # Require authentication for write operations
+    requireAuthForWrites: false
+  
+  # ArgoCD Configuration
   argocd:
     enabled: true
     url: ${ARGOCD_URL}
     token: ${ARGOCD_TOKEN}
+  
+  # Grafana Configuration
   grafana:
     enabled: true
     url: ${GRAFANA_URL}
     token: ${GRAFANA_TOKEN}
+  
+  # Uptime Kuma Configuration
+  uptimeKuma:
+    enabled: ${UPTIME_KUMA_ENABLED:-false}
+    baseUrl: ${UPTIME_KUMA_URL}
+    apiKey: ${UPTIME_KUMA_API_KEY}
+    # Or use username/password
+    # username: ${UPTIME_KUMA_USERNAME}
+    # password: ${UPTIME_KUMA_PASSWORD}
 
 catalog:
   import:

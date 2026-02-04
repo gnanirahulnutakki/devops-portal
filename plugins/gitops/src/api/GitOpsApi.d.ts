@@ -2,7 +2,7 @@ import { DiscoveryApi, FetchApi } from '@backstage/core-plugin-api';
 /**
  * GitOps API Reference
  */
-export declare const gitOpsApiRef: import("@backstage/core-plugin-api").ApiRef<GitOpsApi>;
+export declare const gitOpsApiRef: import("@backstage/frontend-plugin-api").ApiRef<GitOpsApi>;
 /**
  * Types
  */

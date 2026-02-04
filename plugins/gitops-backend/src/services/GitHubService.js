@@ -254,6 +254,38 @@ export class GitHubService {
         }
     }
     /**
+     * Create a new branch from an existing branch
+     */
+    async createBranch(repository, newBranchName, fromBranch) {
+        if (this.useMockData) {
+            return this.getMockCreateBranch(repository, newBranchName, fromBranch);
+        }
+        try {
+            // First, get the SHA of the from_branch
+            const { data: refData } = await this.octokit.git.getRef({
+                owner: this.config.organization,
+                repo: repository,
+                ref: `heads/${fromBranch}`,
+            });
+            const sha = refData.object.sha;
+            // Create the new branch
+            const { data } = await this.octokit.git.createRef({
+                owner: this.config.organization,
+                repo: repository,
+                ref: `refs/heads/${newBranchName}`,
+                sha: sha,
+            });
+            return {
+                ref: data.ref,
+                sha: data.object.sha,
+                url: data.url,
+            };
+        }
+        catch (error) {
+            throw new GitHubError(`Failed to create branch ${newBranchName} from ${fromBranch} in ${repository}: ${error.message}`, error.status || 500, error);
+        }
+    }
+    /**
      * List pull requests
      */
     async listPullRequests(repository, state = 'open', sort = 'created', direction = 'desc') {
@@ -375,6 +407,134 @@ export class GitHubService {
         }
         catch (error) {
             throw new GitHubError(`Failed to assign pull request #${pullNumber} in ${repository}: ${error.message}`, error.status || 500, error);
+        }
+    }
+    /**
+     * Get PR comments
+     */
+    async getPullRequestComments(repository, pullNumber) {
+        if (this.useMockData) {
+            return this.getMockComments(repository, pullNumber);
+        }
+        try {
+            const { data } = await this.octokit.issues.listComments({
+                owner: this.config.organization,
+                repo: repository,
+                issue_number: pullNumber,
+            });
+            return data;
+        }
+        catch (error) {
+            throw new GitHubError(`Failed to get comments for PR #${pullNumber} in ${repository}: ${error.message}`, error.status || 500, error);
+        }
+    }
+    /**
+     * Add comment to PR
+     */
+    async addPullRequestComment(repository, pullNumber, body) {
+        if (this.useMockData) {
+            return this.getMockAddComment(repository, pullNumber, body);
+        }
+        try {
+            const { data } = await this.octokit.issues.createComment({
+                owner: this.config.organization,
+                repo: repository,
+                issue_number: pullNumber,
+                body,
+            });
+            return data;
+        }
+        catch (error) {
+            throw new GitHubError(`Failed to add comment to PR #${pullNumber} in ${repository}: ${error.message}`, error.status || 500, error);
+        }
+    }
+    /**
+     * Get PR status checks
+     */
+    async getPullRequestStatusChecks(repository, pullNumber) {
+        if (this.useMockData) {
+            return this.getMockStatusChecks(repository, pullNumber);
+        }
+        try {
+            // First get the PR to get the head SHA
+            const pr = await this.getPullRequest(repository, pullNumber);
+            const { data } = await this.octokit.repos.getCombinedStatusForRef({
+                owner: this.config.organization,
+                repo: repository,
+                ref: pr.head.sha,
+            });
+            // Also get check runs
+            const { data: checkRuns } = await this.octokit.checks.listForRef({
+                owner: this.config.organization,
+                repo: repository,
+                ref: pr.head.sha,
+            });
+            // Combine statuses and check runs
+            const checks = [
+                ...data.statuses.map((status) => ({
+                    id: status.id,
+                    name: status.context,
+                    context: status.context,
+                    state: status.state,
+                    description: status.description,
+                    target_url: status.target_url,
+                    created_at: status.created_at,
+                    updated_at: status.updated_at,
+                })),
+                ...checkRuns.check_runs.map((check) => ({
+                    id: check.id,
+                    name: check.name,
+                    context: check.name,
+                    state: check.status === 'completed' ? check.conclusion : check.status,
+                    description: check.output?.title || check.name,
+                    target_url: check.html_url,
+                    created_at: check.started_at,
+                    updated_at: check.completed_at || check.started_at,
+                    conclusion: check.conclusion,
+                })),
+            ];
+            return checks;
+        }
+        catch (error) {
+            throw new GitHubError(`Failed to get status checks for PR #${pullNumber} in ${repository}: ${error.message}`, error.status || 500, error);
+        }
+    }
+    /**
+     * Get PR reviews
+     */
+    async getPullRequestReviews(repository, pullNumber) {
+        if (this.useMockData) {
+            return this.getMockReviews(repository, pullNumber);
+        }
+        try {
+            const { data } = await this.octokit.pulls.listReviews({
+                owner: this.config.organization,
+                repo: repository,
+                pull_number: pullNumber,
+            });
+            return data;
+        }
+        catch (error) {
+            throw new GitHubError(`Failed to get reviews for PR #${pullNumber} in ${repository}: ${error.message}`, error.status || 500, error);
+        }
+    }
+    /**
+     * Get PR timeline events
+     */
+    async getPullRequestTimeline(repository, pullNumber) {
+        if (this.useMockData) {
+            return this.getMockTimeline(repository, pullNumber);
+        }
+        try {
+            const { data } = await this.octokit.issues.listEventsForTimeline({
+                owner: this.config.organization,
+                repo: repository,
+                issue_number: pullNumber,
+            });
+            return data;
+        }
+        catch (error) {
+            throw new GitHubError(`Failed to get timeline for PR #${pullNumber} in ${repository}: ${error.message}`, error.status || 500, error);
         }
     }
     // ==========================================================================
@@ -748,6 +908,14 @@ metadata:
             merged: false,
         };
     }
+    getMockCreateBranch(repository, newBranchName, fromBranch) {
+        console.log(`[GitHubService] Mock: Creating branch "${newBranchName}" from "${fromBranch}" in ${repository}`);
+        return {
+            ref: `refs/heads/${newBranchName}`,
+            sha: `mock-sha-${Date.now()}`,
+            url: `https://api.github.com/repos/${this.config.organization}/${repository}/git/refs/heads/${newBranchName}`,
+        };
+    }
     getMockPullRequests(repository, state) {
         const prs = [
             {
@@ -871,6 +1039,149 @@ metadata:
                 type: 'User',
             })),
         };
+    }
+    getMockComments(repository, pullNumber) {
+        return [
+            {
+                id: 1,
+                user: {
+                    login: 'developer1',
+                    avatar_url: 'https://github.com/identicons/dev1.png',
+                },
+                body: 'Looks good to me! 👍',
+                created_at: new Date(Date.now() - 3600000).toISOString(),
+                updated_at: new Date(Date.now() - 3600000).toISOString(),
+                html_url: `https://github.com/${this.config.organization}/${repository}/pull/${pullNumber}#issuecomment-1`,
+            },
+            {
+                id: 2,
+                user: {
+                    login: 'reviewer1',
+                    avatar_url: 'https://github.com/identicons/reviewer1.png',
+                },
+                body: 'Could you also update the documentation for this change?',
+                created_at: new Date(Date.now() - 1800000).toISOString(),
+                updated_at: new Date(Date.now() - 1800000).toISOString(),
+                html_url: `https://github.com/${this.config.organization}/${repository}/pull/${pullNumber}#issuecomment-2`,
+            },
+        ];
+    }
+    getMockAddComment(repository, pullNumber, body) {
+        return {
+            id: Date.now(),
+            user: {
+                login: 'current-user',
+                avatar_url: 'https://github.com/identicons/current-user.png',
+            },
+            body,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            html_url: `https://github.com/${this.config.organization}/${repository}/pull/${pullNumber}#issuecomment-${Date.now()}`,
+        };
+    }
+    getMockStatusChecks(repository, pullNumber) {
+        return [
+            {
+                id: 1,
+                name: 'CI / Build',
+                context: 'continuous-integration/jenkins/pr-merge',
+                state: 'success',
+                description: 'Build passed',
+                target_url: 'https://jenkins.example.com/job/build/123',
+                created_at: new Date(Date.now() - 7200000).toISOString(),
+                updated_at: new Date(Date.now() - 3600000).toISOString(),
+            },
+            {
+                id: 2,
+                name: 'Tests',
+                context: 'continuous-integration/jenkins/tests',
+                state: 'success',
+                description: 'All tests passed',
+                target_url: 'https://jenkins.example.com/job/tests/123',
+                created_at: new Date(Date.now() - 7200000).toISOString(),
+                updated_at: new Date(Date.now() - 3600000).toISOString(),
+            },
+            {
+                id: 3,
+                name: 'Code Quality',
+                context: 'sonarcloud',
+                state: 'pending',
+                description: 'Code quality analysis in progress',
+                target_url: 'https://sonarcloud.io/dashboard?id=project',
+                created_at: new Date(Date.now() - 1800000).toISOString(),
+                updated_at: new Date(Date.now() - 900000).toISOString(),
+            },
+        ];
+    }
+    getMockReviews(repository, pullNumber) {
+        return [
+            {
+                id: 1,
+                user: {
+                    login: 'reviewer1',
+                    avatar_url: 'https://github.com/identicons/reviewer1.png',
+                },
+                state: 'APPROVED',
+                body: 'Great work! Changes look good.',
+                submitted_at: new Date(Date.now() - 5400000).toISOString(),
+            },
+            {
+                id: 2,
+                user: {
+                    login: 'reviewer2',
+                    avatar_url: 'https://github.com/identicons/reviewer2.png',
+                },
+                state: 'COMMENTED',
+                body: 'Just a few minor suggestions.',
+                submitted_at: new Date(Date.now() - 3600000).toISOString(),
+            },
+        ];
+    }
+    getMockTimeline(repository, pullNumber) {
+        return [
+            {
+                id: '1',
+                type: 'commit',
+                user: {
+                    login: 'developer1',
+                    avatar_url: 'https://github.com/identicons/dev1.png',
+                },
+                created_at: new Date(Date.now() - 86400000).toISOString(),
+                message: 'Update FID version to 8.1.2',
+                commit_id: 'abc123',
+            },
+            {
+                id: '2',
+                type: 'comment',
+                user: {
+                    login: 'reviewer1',
+                    avatar_url: 'https://github.com/identicons/reviewer1.png',
+                },
+                created_at: new Date(Date.now() - 72000000).toISOString(),
+                message: 'Looks good to me!',
+            },
+            {
+                id: '3',
+                type: 'review',
+                user: {
+                    login: 'reviewer1',
+                    avatar_url: 'https://github.com/identicons/reviewer1.png',
+                },
+                created_at: new Date(Date.now() - 5400000).toISOString(),
+                state: 'approved',
+            },
+            {
+                id: '4',
+                type: 'commit',
+                user: {
+                    login: 'developer1',
+                    avatar_url: 'https://github.com/identicons/dev1.png',
+                },
+                created_at: new Date(Date.now() - 3600000).toISOString(),
+                message: 'Address review comments',
+                commit_id: 'def456',
+            },
+        ];
     }
 }
 //# sourceMappingURL=GitHubService.js.map

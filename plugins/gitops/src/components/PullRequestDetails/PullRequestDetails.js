@@ -8,6 +8,10 @@ import PersonAddIcon from '@material-ui/icons/PersonAdd';
 import CloseIcon from '@material-ui/icons/Close';
 import { configApiRef, useApi } from '@backstage/core-plugin-api';
 import { DiffViewer } from '../DiffViewer';
+import { PRComments } from '../PRComments';
+import { PRStatusChecks } from '../PRStatusChecks';
+import { PRTimeline } from '../PRTimeline';
+import { PRReviewStatus } from '../PRReviewStatus';
 const useStyles = makeStyles((theme) => ({
     header: {
         display: 'flex',
@@ -203,7 +207,7 @@ export const PullRequestDetails = ({ repository, pullNumber, onClose, }) => {
         if (!pr)
             return null;
         if (pr.state === 'closed' && pr.merged) {
-            return (React.createElement(Chip, { icon: React.createElement(CheckCircleIcon, null), label: "Merged", style: { backgroundColor: '#6f42c1', color: 'white' } }));
+            return (React.createElement(Chip, { icon: React.createElement(CheckCircleIcon, null), label: "Merged", style: { backgroundColor: '#09143F', color: 'white' } }));
         }
         else if (pr.state === 'closed') {
             return React.createElement(Chip, { label: "Closed", color: "secondary" });
@@ -267,6 +271,12 @@ export const PullRequestDetails = ({ repository, pullNumber, onClose, }) => {
                             React.createElement(Chip, { label: pr.base?.ref, variant: "outlined" })))),
                 React.createElement(Card, { className: classes.section },
                     React.createElement(CardContent, null,
+                        React.createElement(PRStatusChecks, { repository: repository, pullNumber: pullNumber }))),
+                React.createElement(Card, { className: classes.section },
+                    React.createElement(CardContent, null,
+                        React.createElement(PRReviewStatus, { repository: repository, pullNumber: pullNumber }))),
+                React.createElement(Card, { className: classes.section },
+                    React.createElement(CardContent, null,
                         React.createElement(Typography, { variant: "h6", className: classes.sectionTitle },
                             "Changes (",
                             files.length,
@@ -275,6 +285,12 @@ export const PullRequestDetails = ({ repository, pullNumber, onClose, }) => {
                             React.createElement(Chip, { label: `+${pr.additions || 0} additions`, size: "small", style: { backgroundColor: '#28a745', color: 'white', marginRight: 8 } }),
                             React.createElement(Chip, { label: `-${pr.deletions || 0} deletions`, size: "small", style: { backgroundColor: '#d73a49', color: 'white' } })),
                         React.createElement(DiffViewer, { files: files }))),
+                React.createElement(Card, { className: classes.section },
+                    React.createElement(CardContent, null,
+                        React.createElement(PRComments, { repository: repository, pullNumber: pullNumber }))),
+                React.createElement(Card, { className: classes.section },
+                    React.createElement(CardContent, null,
+                        React.createElement(PRTimeline, { repository: repository, pullNumber: pullNumber }))),
                 pr.state === 'open' && (React.createElement(Card, { className: classes.section },
                     React.createElement(CardContent, null,
                         React.createElement(Typography, { variant: "h6", className: classes.sectionTitle }, "Merge Pull Request"),

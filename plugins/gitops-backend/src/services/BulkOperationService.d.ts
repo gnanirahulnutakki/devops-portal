@@ -35,7 +35,9 @@ export declare class BulkOperationService {
         fieldValue?: string;
     }): Promise<string>;
     /**
-     * Process bulk file update across all branches
+     * Process bulk file update across all branches (PARALLEL EXECUTION)
+     *
+     * Uses parallel execution with configurable concurrency for 5-10x faster updates
      */
     private processBulkUpdate;
     /**

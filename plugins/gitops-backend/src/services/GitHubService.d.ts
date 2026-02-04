@@ -39,6 +39,10 @@ export declare class GitHubService {
      */
     createPullRequest(repository: string, title: string, head: string, base: string, body?: string): Promise<any>;
     /**
+     * Create a new branch from an existing branch
+     */
+    createBranch(repository: string, newBranchName: string, fromBranch: string): Promise<any>;
+    /**
      * List pull requests
      */
     listPullRequests(repository: string, state?: 'open' | 'closed' | 'all', sort?: 'created' | 'updated' | 'popularity' | 'long-running', direction?: 'asc' | 'desc'): Promise<any[]>;
@@ -62,6 +66,26 @@ export declare class GitHubService {
      * Assign pull request to users
      */
     assignPullRequest(repository: string, pullNumber: number, assignees: string[]): Promise<any>;
+    /**
+     * Get PR comments
+     */
+    getPullRequestComments(repository: string, pullNumber: number): Promise<any[]>;
+    /**
+     * Add comment to PR
+     */
+    addPullRequestComment(repository: string, pullNumber: number, body: string): Promise<any>;
+    /**
+     * Get PR status checks
+     */
+    getPullRequestStatusChecks(repository: string, pullNumber: number): Promise<any[]>;
+    /**
+     * Get PR reviews
+     */
+    getPullRequestReviews(repository: string, pullNumber: number): Promise<any[]>;
+    /**
+     * Get PR timeline events
+     */
+    getPullRequestTimeline(repository: string, pullNumber: number): Promise<any[]>;
     private getMockRepositories;
     private getMockBranches;
     private getMockFileTree;
@@ -69,11 +93,17 @@ export declare class GitHubService {
     private getMockUpdateFileResponse;
     private getMockComparison;
     private getMockPullRequest;
+    private getMockCreateBranch;
     private getMockPullRequests;
     private getMockPullRequestDetails;
     private getMockPullRequestFiles;
     private getMockMergeResult;
     private getMockAddReviewersResult;
     private getMockAssignResult;
+    private getMockComments;
+    private getMockAddComment;
+    private getMockStatusChecks;
+    private getMockReviews;
+    private getMockTimeline;
 }
 //# sourceMappingURL=GitHubService.d.ts.map

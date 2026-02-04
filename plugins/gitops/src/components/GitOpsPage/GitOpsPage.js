@@ -7,7 +7,7 @@ import { AuditLogViewer } from '../AuditLogViewer';
 import { PRManagement } from '../PRManagement';
 export const GitOpsPage = () => {
     return (React.createElement(Page, { themeId: "tool" },
-        React.createElement(Header, { title: "GitOps Management Portal", subtitle: "Manage multi-branch configurations and ArgoCD deployments" }),
+        React.createElement(Header, { title: "RadiantLogic DevOps Management Portal", subtitle: "Manage multi-branch configurations and ArgoCD deployments" }),
         React.createElement(Content, null,
             React.createElement(TabbedLayout, null,
                 React.createElement(TabbedLayout.Route, { path: "/", title: "Repository Browser" },

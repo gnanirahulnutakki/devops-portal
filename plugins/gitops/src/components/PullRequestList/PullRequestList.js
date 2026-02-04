@@ -93,7 +93,7 @@ export const PullRequestList = ({ repository, onPullRequestClick, }) => {
     };
     const getStateChip = (pr) => {
         if (pr.state === 'closed' && pr.merged) {
-            return (React.createElement(Chip, { icon: React.createElement(CheckCircleIcon, null), label: "Merged", size: "small", style: { backgroundColor: '#6f42c1', color: 'white' } }));
+            return (React.createElement(Chip, { icon: React.createElement(CheckCircleIcon, null), label: "Merged", size: "small", style: { backgroundColor: '#09143F', color: 'white' } }));
         }
         else if (pr.state === 'closed') {
             return React.createElement(Chip, { label: "Closed", size: "small", color: "secondary" });
