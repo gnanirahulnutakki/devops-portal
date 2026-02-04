@@ -71,12 +71,16 @@ spec:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data
           resources:
+            {{- if .Values.postgres.resources }}
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+            {{- else }}
             requests:
               cpu: 250m
               memory: 256Mi
             limits:
               cpu: 500m
               memory: 512Mi
+            {{- end }}
   volumeClaimTemplates:
     - metadata:
         name: postgres-data

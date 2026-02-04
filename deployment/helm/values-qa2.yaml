@@ -1,0 +1,163 @@
+# Values for qa2 deployment
+# Cluster: self-managed-test-dev01
+# Namespace: duploservices-qa2
+# NodeSelector required: tenantname pointing to namespace
+
+replicaCount: 1
+
+image:
+  repository: rahulnutakki/devprotal
+  pullPolicy: Always
+  tag: "latest"
+
+nameOverride: "devops-portal"
+fullnameOverride: "devops-portal"
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: "devops-portal"
+
+# CRITICAL: NodeSelector for DuploCloud tenant scheduling
+nodeSelector:
+  tenantname: duploservices-qa2
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "7007"
+  prometheus.io/path: "/api/gitops/health?detailed=true"
+
+podSecurityContext:
+  fsGroup: 65534
+
+securityContext:
+  # Use the same UID/GID as image assets (nobody)
+  runAsNonRoot: true
+  runAsUser: 65534
+  runAsGroup: 65534
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+
+service:
+  type: ClusterIP
+  port: 7007
+  annotations: {}
+
+# Disable ingress for initial testing - use port-forward
+ingress:
+  enabled: false
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+appDist:
+  writable: true
+
+autoscaling:
+  enabled: false
+
+tolerations: []
+
+affinity: {}
+
+# Updated health check paths to use new endpoints
+livenessProbe:
+  httpGet:
+    path: /api/gitops/health
+    port: 7007
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/gitops/health
+    port: 7007
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# PostgreSQL Configuration - use internal deployment
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "14"
+  storage:
+    size: 5Gi
+    storageClass: duploservices-qa2-encrypted-gp3
+  host: ""  # Auto-generated
+  port: 5432
+  database: backstage
+  username: backstage
+  ssl:
+    enabled: false
+    rejectUnauthorized: false
+  # NodeSelector for PostgreSQL
+  nodeSelector:
+    tenantname: duploservices-qa2
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# GitHub Configuration
+github:
+  organization: radiantlogic-saas
+  # Token from secret
+
+# ArgoCD Configuration - disabled for initial testing
+argocd:
+  enabled: false
+  url: ""
+  # Token from secret
+
+# GitOps auth configuration
+gitopsAuth:
+  allowUnauthenticated: true
+
+# Grafana Configuration - disabled for initial testing
+grafana:
+  enabled: false
+  url: ""
+
+# Backstage App Configuration
+backstage:
+  baseUrl: http://localhost:7007
+  logLevel: debug
+  
+# Environment variables for the container
+extraEnv:
+  - name: NODE_ENV
+    value: "development"
+  - name: LOG_LEVEL
+    value: "debug"
+  - name: AUTH_SESSION_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: backstage-secrets
+        key: AUTH_SESSION_SECRET
+        optional: true
+
+# Secret references - create this secret before deploying
+secrets:
+  create: false
+  name: backstage-secrets
+  githubToken:
+    key: GITHUB_TOKEN
+  argoCdToken:
+    key: ARGOCD_TOKEN
+  postgresPassword:
+    key: POSTGRES_PASSWORD

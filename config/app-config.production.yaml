@@ -45,6 +45,8 @@ gitops:
   github:
     organization: ${GITHUB_ORG}
     token: ${GITHUB_TOKEN}
+  auth:
+    allowUnauthenticated: false
 
   argocd:
     enabled: ${ARGOCD_ENABLED}

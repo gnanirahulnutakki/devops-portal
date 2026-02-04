@@ -29,6 +29,20 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       initContainers:
+        {{- if .Values.appDist.writable }}
+        - name: copy-app-dist
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /app-dist
+              cp -R /app/packages/app/dist/. /app-dist/
+          volumeMounts:
+            - name: app-dist
+              mountPath: /app-dist
+        {{- end }}
         - name: wait-for-postgres
           image: busybox:1.36
           command:
@@ -99,6 +113,9 @@ spec:
                   name: {{ .Values.secrets.name }}
                   key: {{ .Values.secrets.argoCdToken.key }}
             {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "backstage-gitops.fullname" . }}-config
@@ -107,10 +124,18 @@ spec:
               mountPath: /app/app-config.production.yaml
               subPath: app-config.production.yaml
               readOnly: true
+            {{- if .Values.appDist.writable }}
+            - name: app-dist
+              mountPath: /app/packages/app/dist
+            {{- end }}
       volumes:
         - name: app-config
           configMap:
             name: {{ include "backstage-gitops.fullname" . }}-config
+        {{- if .Values.appDist.writable }}
+        - name: app-dist
+          emptyDir: {}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

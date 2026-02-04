@@ -1,0 +1,147 @@
+# Values for saasops1 deployment
+# Namespace: duploservices-saasops1
+# NodeSelector required: tenantname pointing to namespace
+
+replicaCount: 1
+
+image:
+  repository: rahulnutakki/devprotal
+  pullPolicy: Always
+  tag: "latest"
+
+nameOverride: "devops-portal"
+fullnameOverride: "devops-portal"
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: "devops-portal"
+
+# CRITICAL: NodeSelector for DuploCloud tenant scheduling
+nodeSelector:
+  tenantname: duploservices-saasops1
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "7007"
+  prometheus.io/path: "/api/gitops/health?detailed=true"
+
+podSecurityContext:
+  fsGroup: 65534
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  runAsGroup: 65534
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+
+service:
+  type: ClusterIP
+  port: 7007
+  annotations: {}
+
+ingress:
+  enabled: false
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+appDist:
+  writable: true
+
+autoscaling:
+  enabled: false
+
+tolerations: []
+affinity: {}
+
+livenessProbe:
+  httpGet:
+    path: /api/gitops/health
+    port: 7007
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/gitops/health
+    port: 7007
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "14"
+  storage:
+    size: 5Gi
+    storageClass: duploservices-saasops1-encrypted-gp3
+  host: ""
+  port: 5432
+  database: backstage
+  username: backstage
+  ssl:
+    enabled: false
+    rejectUnauthorized: false
+  nodeSelector:
+    tenantname: duploservices-saasops1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+github:
+  organization: radiantlogic-saas
+
+argocd:
+  enabled: false
+  url: ""
+
+gitopsAuth:
+  allowUnauthenticated: true
+
+grafana:
+  enabled: false
+  url: ""
+
+backstage:
+  baseUrl: http://localhost:7007
+  logLevel: debug
+
+extraEnv:
+  - name: NODE_ENV
+    value: "development"
+  - name: LOG_LEVEL
+    value: "debug"
+  - name: AUTH_SESSION_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: backstage-secrets
+        key: AUTH_SESSION_SECRET
+        optional: true
+
+secrets:
+  create: false
+  name: backstage-secrets
+  githubToken:
+    key: GITHUB_TOKEN
+  argoCdToken:
+    key: ARGOCD_TOKEN
+  postgresPassword:
+    key: POSTGRES_PASSWORD

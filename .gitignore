@@ -6,20 +6,22 @@ node_modules/
 # Testing
 /coverage
 .nyc_output
-*.test.js
-*.test.ts
-*.test.tsx
-*.spec.js
-*.spec.ts
-*.spec.tsx
-**/__tests__/
-**/__mocks__/
 
 # Production builds
 dist/
 dist-types/
 build/
 *.tsbuildinfo
+
+# Compiled TypeScript in src directories (should only exist in dist/)
+plugins/**/src/**/*.js
+plugins/**/src/**/*.js.map
+plugins/**/src/**/*.d.ts
+plugins/**/src/**/*.d.ts.map
+packages/**/src/**/*.js
+packages/**/src/**/*.js.map
+packages/**/src/**/*.d.ts
+packages/**/src/**/*.d.ts.map
 
 # Misc
 .DS_Store

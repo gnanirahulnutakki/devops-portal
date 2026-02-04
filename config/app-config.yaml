@@ -64,6 +64,8 @@ gitops:
   github:
     organization: radiantlogic-saas
     token: ${GITHUB_TOKEN}
+  auth:
+    allowUnauthenticated: true
   argocd:
     enabled: true
     url: ${ARGOCD_URL}

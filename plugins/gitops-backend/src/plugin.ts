@@ -33,12 +33,19 @@ export const gitopsPlugin = createBackendPlugin({
           }),
         );
 
-        // Allow unauthenticated access for Phase 0 development
-        // TODO: Add proper authentication in Phase 2
+        // Auth policy: allow unauthenticated in dev unless explicitly disabled
+        const allowUnauthenticated =
+          config.getOptionalBoolean('gitops.auth.allowUnauthenticated') ??
+          process.env.NODE_ENV !== 'production';
+
         httpRouter.addAuthPolicy({
           path: '/',
-          allow: 'unauthenticated',
+          allow: allowUnauthenticated ? 'unauthenticated' : 'authenticated',
         });
+
+        logger.info(
+          `GitOps auth policy: ${allowUnauthenticated ? 'unauthenticated' : 'authenticated'}`,
+        );
       },
     });
   },

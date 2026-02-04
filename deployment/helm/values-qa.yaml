@@ -76,6 +76,9 @@ postgres:
   port: 5432
   database: backstage
   username: backstage
+  ssl:
+    enabled: false
+    rejectUnauthorized: false
   nodeSelector:
     tenantname: duploservices-qa4
 
@@ -88,6 +91,10 @@ argocd:
   enabled: true
   url: https://argocd-qa.radiantlogic.com
 
+# GitOps auth configuration
+gitopsAuth:
+  allowUnauthenticated: true
+
 # Backstage App Configuration
 backstage:
   baseUrl: https://backstage-qa.radiantlogic.com
@@ -95,6 +102,7 @@ backstage:
 
 # Secret references
 secrets:
+  create: false
   name: backstage-secrets
   githubToken:
     key: GITHUB_TOKEN

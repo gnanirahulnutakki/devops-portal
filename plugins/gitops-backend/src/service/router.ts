@@ -8,6 +8,7 @@ import { ArgoCDService } from '../services/ArgoCDService';
 import { AuditService } from '../services/AuditService';
 import { BulkOperationService } from '../services/BulkOperationService';
 import { GrafanaService } from '../services/GrafanaService';
+import { HealthService } from '../services/HealthService';
 import {
   listRepositoriesSchema,
   listBranchesSchema,
@@ -22,6 +23,9 @@ import {
   validate,
 } from '../validation/schemas';
 import { asyncHandler } from '../errors';
+import { requestLoggerMiddleware, getUserContext } from '../middleware/requestLogger';
+import { generalRateLimiter, bulkOperationsRateLimiter, syncRateLimiter } from '../middleware/rateLimiter';
+import { securityHeadersMiddleware } from '../middleware/securityHeaders';
 import type {
   ListRepositoriesRequest,
   ListBranchesRequest,
@@ -45,7 +49,12 @@ export async function createRouter(
   const { logger, config, database } = options;
 
   const router = Router();
-  router.use(express.json());
+  
+  // Security middleware
+  router.use(securityHeadersMiddleware());
+  router.use(express.json({ limit: '10mb' })); // Limit request body size
+  router.use(requestLoggerMiddleware());
+  router.use(generalRateLimiter);
 
   // Get database connection
   const knex = await database.getClient();
@@ -86,14 +95,57 @@ export async function createRouter(
 
   const auditService = new AuditService({ database: knex });
   const bulkOperationService = new BulkOperationService(knex, githubService, auditService);
+  
+  // Initialize health service
+  const healthService = new HealthService({
+    database: knex,
+    githubToken: githubToken,
+    githubOrg: githubOrg,
+    argoCDUrl: argoCDUrl,
+    argoCDToken: argoCDToken,
+    grafanaUrl: grafanaUrl,
+    grafanaToken: grafanaToken,
+  });
 
   logger.info('GitOps backend plugin initializing with all services');
 
-  // Health check endpoint
-  router.get('/health', (_, response) => {
-    logger.info('Health check requested');
-    response.json({ status: 'ok' });
-  });
+  // ===========================================================================
+  // Health Check Endpoints
+  // ===========================================================================
+
+  /**
+   * GET /health
+   * Comprehensive health check with dependency status
+   */
+  router.get('/health', asyncHandler(async (req, res) => {
+    const detailed = req.query.detailed === 'true';
+    
+    if (detailed) {
+      const health = await healthService.getHealth();
+      res.status(health.status === 'healthy' ? 200 : health.status === 'degraded' ? 200 : 503)
+         .json(health);
+    } else {
+      res.json({ status: 'ok' });
+    }
+  }));
+
+  /**
+   * GET /health/live
+   * Kubernetes liveness probe - is the service running?
+   */
+  router.get('/health/live', asyncHandler(async (_, res) => {
+    const liveness = await healthService.getLiveness();
+    res.json(liveness);
+  }));
+
+  /**
+   * GET /health/ready
+   * Kubernetes readiness probe - is the service ready for traffic?
+   */
+  router.get('/health/ready', asyncHandler(async (_, res) => {
+    const readiness = await healthService.getReadiness();
+    res.status(readiness.ready ? 200 : 503).json(readiness);
+  }));
 
   // ===========================================================================
   // Repository Operations
@@ -230,10 +282,11 @@ export async function createRouter(
 
   /**
    * POST /repositories/:repo/files/update
-   * Update file across multiple branches
+   * Update file across multiple branches (BULK OPERATION)
    */
   router.post(
     '/repositories/:repo/files/update',
+    bulkOperationsRateLimiter, // Apply stricter rate limit for bulk ops
     asyncHandler(async (req, res) => {
       const { repo } = req.params;
       logger.info(`POST /repositories/${repo}/files/update`);
@@ -244,9 +297,13 @@ export async function createRouter(
         ...req.body,
       });
 
+      // Get user context from request
+      const userContext = getUserContext(req);
+      
       // Create bulk update operation
       const operationId = await bulkOperationService.createBulkUpdate({
-        user_id: 'default-user', // TODO: Get from auth context
+        user_id: userContext.userId,
+        user_email: userContext.userEmail,
         repository: params.repository,
         branches: params.branches,
         file_path: params.path,
@@ -255,6 +312,8 @@ export async function createRouter(
         committer: params.committer,
         fieldPath: params.fieldPath,
         fieldValue: params.fieldValue,
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
       });
 
       res.status(202).json({
@@ -417,6 +476,7 @@ export async function createRouter(
    */
   router.post(
     '/argocd/sync',
+    syncRateLimiter, // Apply sync-specific rate limit
     asyncHandler(async (req, res) => {
       logger.info('POST /argocd/sync');
 
@@ -429,16 +489,20 @@ export async function createRouter(
         dryRun: params.dryRun,
       });
 
-      // Log to audit
+      // Get user context and log to audit
+      const userContext = getUserContext(req);
       for (const result of results) {
         await auditService.logSync({
-          user_id: 'default-user', // TODO: Get from auth context
+          user_id: userContext.userId,
+          user_email: userContext.userEmail,
           resource_type: 'argocd_app',
           resource_id: result.application,
           argocd_app_name: result.application,
           sync_status: result.status,
           status: result.status === 'Syncing' || result.status === 'Synced' ? 'success' : 'failure',
           error_message: result.status !== 'Syncing' && result.status !== 'Synced' ? result.message : undefined,
+          ip_address: req.ip,
+          user_agent: req.headers['user-agent'],
         });
       }
 
@@ -793,9 +857,11 @@ export async function createRouter(
         merge_method || 'merge'
       );
 
-      // Log to audit
+      // Get user context and log to audit
+      const userContext = getUserContext(req);
       await auditService.log({
-        user_id: 'default-user', // TODO: Get from auth context
+        user_id: userContext.userId,
+        user_email: userContext.userEmail,
         operation: 'commit',
         resource_type: 'repository',
         resource_id: repo,
@@ -806,6 +872,8 @@ export async function createRouter(
           merge_method: merge_method || 'merge',
         },
         status: result.merged ? 'success' : 'failure',
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
       });
 
       res.json({ result });
@@ -921,13 +989,20 @@ export async function createRouter(
         body
       );
 
-      // Log to audit
-      await auditService.logAction({
-        user_id: 'default-user', // TODO: Get from auth context
-        action: 'add_pr_comment',
+      // Get user context and log to audit
+      const userContext = getUserContext(req);
+      await auditService.log({
+        user_id: userContext.userId,
+        user_email: userContext.userEmail,
+        operation: 'update',
+        resource_type: 'repository',
+        resource_id: `${repo}/pull/${number}`,
         repository: repo,
         branch: `PR #${number}`,
-        details: { pull_number: number, comment_id: comment.id },
+        metadata: { action: 'add_pr_comment', pull_number: number, comment_id: comment.id },
+        status: 'success',
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
       });
 
       res.status(201).json({ comment });

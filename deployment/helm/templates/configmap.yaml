@@ -26,9 +26,13 @@ data:
           user: ${POSTGRES_USER}
           password: ${POSTGRES_PASSWORD}
           database: ${POSTGRES_DB}
+          {{- if .Values.postgres.ssl.enabled }}
           ssl:
-            require: false
-            rejectUnauthorized: false
+            require: true
+            rejectUnauthorized: {{ .Values.postgres.ssl.rejectUnauthorized | default true }}
+          {{- else }}
+          ssl: false
+          {{- end }}
       cache:
         store: memory
       reading:
@@ -45,6 +49,8 @@ data:
       github:
         organization: ${GITHUB_ORG}
         token: ${GITHUB_TOKEN}
+      auth:
+        allowUnauthenticated: {{ .Values.gitopsAuth.allowUnauthenticated | default false }}
       {{- if .Values.argocd.enabled }}
       argocd:
         enabled: true
