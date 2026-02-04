@@ -5,9 +5,13 @@ const backend = createBackend();
 // App backend (required for serving the frontend)
 backend.add(import('@backstage/plugin-app-backend'));
 
-// Auth backend - temporarily disabled due to tokenManager dependency issue
-// Will enable once we resolve the service dependency
-// backend.add(import('@backstage/plugin-auth-backend'));
+// Auth backend with all providers
+backend.add(import('@backstage/plugin-auth-backend'));
+backend.add(import('@backstage/plugin-auth-backend-module-github-provider'));
+backend.add(import('@backstage/plugin-auth-backend-module-google-provider'));
+backend.add(import('@backstage/plugin-auth-backend-module-microsoft-provider'));
+backend.add(import('@backstage/plugin-auth-backend-module-gitlab-provider'));
+backend.add(import('@backstage/plugin-auth-backend-module-guest-provider'));
 
 // Custom GitOps plugin
 backend.add(import('@internal/plugin-gitops-backend'));

@@ -42,8 +42,8 @@ import { GitOpsPage, GrafanaPage, S3Page, DocumentationPage } from '@internal/pl
 // Import custom Radiant Logic themes
 import { radiantLogicTheme, radiantLogicDarkTheme } from './theme';
 
-// Import custom SignIn page (disabled for now)
-// import { SignInPage } from './components/auth/SignInPage';
+// Import custom SignIn page
+import { SignInPage } from './components/auth/SignInPage';
 
 const app = createApp({
   apis,
@@ -65,10 +65,10 @@ const app = createApp({
       ),
     },
   ],
-  // Temporarily disable OAuth - uncomment when ready
-  // components: {
-  //   SignInPage,
-  // },
+  // OAuth Sign-In Page
+  components: {
+    SignInPage,
+  },
   bindRoutes({ bind }) {
     bind(catalogPlugin.externalRoutes, {
       createComponent: scaffolderPlugin.routes.root,
