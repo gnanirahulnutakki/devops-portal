@@ -3,7 +3,7 @@ import { createBackend } from '@backstage/backend-defaults';
 const backend = createBackend();
 
 // App backend (required for serving the frontend)
-backend.add(import('@backstage/plugin-app-backend/alpha'));
+backend.add(import('@backstage/plugin-app-backend'));
 
 // Auth backend - temporarily disabled due to tokenManager dependency issue
 // Will enable once we resolve the service dependency

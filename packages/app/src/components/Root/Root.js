@@ -7,6 +7,7 @@ import CreateComponentIcon from '@material-ui/icons/AddCircleOutline';
 import GitHubIcon from '@material-ui/icons/GitHub';
 import DashboardIcon from '@material-ui/icons/Dashboard';
 import CloudIcon from '@material-ui/icons/Cloud';
+import MenuBookIcon from '@material-ui/icons/MenuBook';
 import LogoFull from './LogoFull';
 import LogoIcon from './LogoIcon';
 import { Settings as SidebarSettings, UserSettingsSignInAvatar, } from '@backstage/plugin-user-settings';
@@ -49,7 +50,8 @@ export const Root = ({ children }) => (React.createElement(SidebarPage, null,
             React.createElement(SidebarScrollWrapper, null,
                 React.createElement(SidebarItem, { icon: GitHubIcon, to: "gitops", text: "GitOps" }),
                 React.createElement(SidebarItem, { icon: DashboardIcon, to: "grafana", text: "Grafana" }),
-                React.createElement(SidebarItem, { icon: CloudIcon, to: "s3", text: "S3 Browser" }))),
+                React.createElement(SidebarItem, { icon: CloudIcon, to: "s3", text: "S3 Browser" }),
+                React.createElement(SidebarItem, { icon: MenuBookIcon, to: "documentation", text: "Documentation" }))),
         React.createElement(SidebarSpace, null),
         React.createElement(SidebarDivider, null),
         React.createElement(SidebarGroup, { label: "Settings", icon: React.createElement(UserSettingsSignInAvatar, null), to: "/settings" },

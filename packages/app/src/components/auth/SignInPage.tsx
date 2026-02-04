@@ -1,14 +1,16 @@
 import React from 'react';
 import { SignInPage as BackstageSignInPage } from '@backstage/core-components';
 import {
+  SignInPageProps,
   githubAuthApiRef,
   googleAuthApiRef,
-  oauth2AuthApiRef,
+  microsoftAuthApiRef,
 } from '@backstage/core-plugin-api';
 
-export const SignInPage = () => {
+export const SignInPage = (props: SignInPageProps) => {
   return (
     <BackstageSignInPage
+      {...props}
       title="GitOps Management Portal"
       align="center"
       providers={[
@@ -25,10 +27,10 @@ export const SignInPage = () => {
           apiRef: googleAuthApiRef,
         },
         {
-          id: 'oauth2-auth-provider',
+          id: 'microsoft-auth-provider',
           title: 'Microsoft',
           message: 'Sign in using Microsoft Azure AD',
-          apiRef: oauth2AuthApiRef,
+          apiRef: microsoftAuthApiRef,
         },
       ]}
     />
