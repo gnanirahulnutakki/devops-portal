@@ -3,7 +3,7 @@
 # https://backstage.io/docs/deployment/docker/
 
 # Stage 1 - Create yarn install skeleton layer
-FROM node:20-bookworm-slim AS packages
+FROM node:22-bookworm-slim AS packages
 
 WORKDIR /app
 COPY package.json yarn.lock ./
@@ -15,7 +15,7 @@ COPY plugins/gitops/package.json ./plugins/gitops/
 COPY plugins/gitops-backend/package.json ./plugins/gitops-backend/
 
 # Stage 2 - Install dependencies and build packages
-FROM node:20-bookworm-slim AS build
+FROM node:22-bookworm-slim AS build
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -57,7 +57,7 @@ RUN mkdir -p packages/backend/dist/skeleton packages/backend/dist/bundle && \
     tar xzf packages/backend/dist/bundle.tar.gz -C packages/backend/dist/bundle
 
 # Stage 3 - Build the production image
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 # Install runtime dependencies including Python for node-gyp
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
