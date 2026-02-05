@@ -6,6 +6,8 @@
     "target": "ES2020",
     "declaration": true,
     "declarationMap": true,
+    "declarationDir": "dist-types",
+    "emitDeclarationOnly": true,
     "sourceMap": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -13,7 +15,12 @@
     "resolveJsonModule": true,
     "jsx": "react",
     "incremental": true,
-    "composite": true
+    "composite": true,
+    "rootDir": "."
   },
+  "include": [
+    "packages/*/src/**/*",
+    "plugins/*/src/**/*"
+  ],
   "exclude": ["node_modules", "**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"]
 }

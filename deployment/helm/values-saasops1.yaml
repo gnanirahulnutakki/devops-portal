@@ -12,7 +12,7 @@ replicaCount: 1
 image:
   repository: rahulnutakki/backstage-gitops
   pullPolicy: Always
-  tag: "v4"
+  tag: "v5"
 
 nameOverride: "devops-portal"
 fullnameOverride: "devops-portal"
@@ -44,7 +44,7 @@ securityContext:
   readOnlyRootFilesystem: false
 
 service:
-  type: ClusterIP
+  type: NodePort
   port: 80
   targetPort: 7007
   annotations: {}
@@ -57,13 +57,13 @@ service:
 # Then update the host to: devops-portal.<ALB-IP>.nip.io
 # Or use the script: ./deployment/scripts/update-nip-io-host.sh
 ingress:
-  enabled: true
+  enabled: false  # Using DuploCloud-managed ingress instead
   className: alb
   
   # ALB-specific configuration for Duplo
   alb:
     scheme: internet-facing
-    targetType: ip
+    targetType: instance
     # Certificate ARN from ACM (optional - for HTTPS with custom domain)
     # certificateArn: arn:aws:acm:us-west-2:ACCOUNT_ID:certificate/CERT_ID
     # Duplo tags (required for proper resource tracking)
@@ -78,10 +78,8 @@ ingress:
   annotations: {}
   
   hosts:
-    # Using nip.io for dynamic DNS - update after ALB is created
-    # Format: <app-name>.<ALB-IP>.nip.io
-    # Example: devops-portal.52-10-20-30.nip.io
-    - host: devops-portal.nip.io
+    # ALB hostname
+    - host: k8s-duploser-devopspo-3b20235a3e-1597318634.us-west-2.elb.amazonaws.com
       paths:
         - path: /
           pathType: Prefix
@@ -182,6 +180,18 @@ auth:
   microsoft:
     enabled: false
 
+# ============================================================================
+# Local Authentication (Username/Password)
+# ============================================================================
+localAuth:
+  enabled: true
+  passwordPolicy:
+    minLength: 12
+    requireUppercase: true
+    requireLowercase: true
+    requireDigit: true
+    requireSpecial: true
+
 gitopsAuth:
   allowUnauthenticated: false
 
@@ -197,7 +207,7 @@ grafana:
 # ============================================================================
 # Note: baseUrl will be updated after ingress is created with nip.io
 backstage:
-  baseUrl: http://devops-portal.nip.io
+  baseUrl: https://devops-portal.dev01.radiantlogic.io
   logLevel: info
 
 # ============================================================================

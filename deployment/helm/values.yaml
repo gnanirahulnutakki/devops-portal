@@ -254,6 +254,127 @@ auth:
     # For self-hosted GitLab:
     # baseUrl: https://gitlab.mycompany.com
 
+# ============================================================================
+# Local Authentication (Username/Password)
+# ============================================================================
+# Enterprise local authentication with:
+# - bcrypt password hashing (cost factor 12)
+# - JWT session tokens with configurable expiry
+# - TOTP 2FA support (Google Authenticator compatible)
+# - Three-tier RBAC (user, readwrite, admin)
+# - Account lockout protection
+localAuth:
+  enabled: false
+
+  # Password Policy
+  passwordPolicy:
+    minLength: 12
+    requireUppercase: true
+    requireLowercase: true
+    requireDigit: true
+    requireSpecial: true
+
+  # Session Configuration
+  session:
+    # JWT token expiry in seconds (default: 24 hours)
+    maxAge: 86400
+    # Refresh threshold - allow refresh when this many seconds remain
+    refreshThreshold: 3600
+    # Secure cookie flag (should be true in production with HTTPS)
+    secure: true
+
+  # Account Lockout (brute force protection)
+  lockout:
+    maxAttempts: 5
+    durationSeconds: 900  # 15 minutes
+
+  # Two-Factor Authentication
+  twoFactor:
+    # Enable 2FA feature
+    enabled: true
+    # Require 2FA for all users (false = optional per-user)
+    required: false
+    # Issuer name shown in authenticator apps
+    issuer: "DevOps Portal"
+    # Trusted device duration in seconds (default: 30 days)
+    trustedDeviceDuration: 2592000
+
+# ============================================================================
+# OAuth Connectors (like ChatGPT plugins)
+# ============================================================================
+# Allow users to connect their external accounts (GitHub, GitLab, etc.)
+# for user-scoped access to repositories and resources.
+# Tokens are encrypted at rest with AES-256-GCM.
+connectors:
+  enabled: true
+
+  # GitHub Connector
+  github:
+    enabled: true
+    # Scopes to request during OAuth
+    scopes:
+      - repo
+      - read:org
+      - workflow
+      - read:user
+      - user:email
+
+  # GitLab Connector
+  gitlab:
+    enabled: false
+    scopes:
+      - read_user
+      - read_api
+      - read_repository
+
+  # Microsoft/Azure AD Connector
+  microsoft:
+    enabled: false
+    scopes:
+      - User.Read
+      - profile
+      - email
+
+  # Google Connector
+  google:
+    enabled: false
+    scopes:
+      - profile
+      - email
+      - openid
+
+# ============================================================================
+# Orchestrator (Task Management)
+# ============================================================================
+# Central task coordination for async operations:
+# - Bulk updates across repositories
+# - Deployment orchestration
+# - Long-running tasks with progress tracking
+# - WebSocket real-time updates
+orchestrator:
+  enabled: true
+
+  # Number of worker threads for task processing
+  workers: 3
+
+  # Default task timeout in seconds (1 hour)
+  defaultTimeout: 3600
+
+  # Default retry attempts for failed tasks
+  defaultRetries: 3
+
+  # Task retention in days (completed/failed tasks)
+  taskRetention: 7
+
+  # Cleanup interval in seconds
+  cleanupInterval: 3600
+
+  # WebSocket configuration for real-time updates
+  websocket:
+    enabled: true
+    # Path for WebSocket connections
+    path: /api/orchestrator/ws
+
 # GitOps Plugin Authentication Settings
 gitopsAuth:
   # Allow unauthenticated API access (uses static tokens)
@@ -448,6 +569,18 @@ secrets:
   # Uptime Kuma (optional)
   uptimeKumaApiKey:
     key: UPTIME_KUMA_API_KEY
+
+  # Local Auth (optional - for username/password authentication)
+  localAuthJwtSecret:
+    key: LOCAL_AUTH_JWT_SECRET
+
+  # Connector Encryption (optional - for OAuth token encryption)
+  connectorEncryptionKey:
+    key: CONNECTOR_ENCRYPTION_KEY
+
+  # 2FA Encryption (optional - for TOTP secret encryption)
+  twoFactorEncryptionKey:
+    key: TOTP_ENCRYPTION_KEY
   
   # ============================================================================
   # Sealed Secrets Configuration (provider: sealed-secrets)

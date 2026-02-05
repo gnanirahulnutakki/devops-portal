@@ -13,9 +13,11 @@ import {
   LinearProgress,
   Link,
   makeStyles,
+  Button,
 } from '@material-ui/core';
 import { InfoCard } from '@backstage/core-components';
-import { useApi, configApiRef } from '@backstage/core-plugin-api';
+import { useApi, githubAuthApiRef } from '@backstage/core-plugin-api';
+import { gitOpsApiRef } from '../../api/GitOpsApi';
 import RefreshIcon from '@material-ui/icons/Refresh';
 import MergeTypeIcon from '@material-ui/icons/MergeType';
 import GitHubIcon from '@material-ui/icons/GitHub';
@@ -23,6 +25,7 @@ import OpenInNewIcon from '@material-ui/icons/OpenInNew';
 import CheckCircleIcon from '@material-ui/icons/CheckCircle';
 import ErrorIcon from '@material-ui/icons/Error';
 import ScheduleIcon from '@material-ui/icons/Schedule';
+import PersonIcon from '@material-ui/icons/Person';
 
 const useStyles = makeStyles((theme) => ({
   listItem: {
@@ -128,52 +131,110 @@ export const MyPullRequestsWidget: React.FC<MyPullRequestsWidgetProps> = ({
   refreshInterval = 120,
 }) => {
   const classes = useStyles();
-  const config = useApi(configApiRef);
-  const backendUrl = config.getString('backend.baseUrl');
+  
+  // Use the GitOps API (which handles OAuth token internally)
+  const gitOpsApi = useApi(gitOpsApiRef);
+  
+  // Get GitHub auth API for OAuth token (for sign-in flow)
+  let githubAuthApi: any = null;
+  try {
+    githubAuthApi = useApi(githubAuthApiRef);
+  } catch (e) {
+    // GitHub auth not available
+  }
 
   const [loading, setLoading] = useState(true);
   const [pullRequests, setPullRequests] = useState<PullRequest[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [githubUser, setGithubUser] = useState<{ login: string; avatar_url: string; name?: string } | null>(null);
 
   const fetchPullRequests = useCallback(async () => {
     setLoading(true);
     setError(null);
     
     try {
-      // Get repositories first
-      const reposRes = await fetch(`${backendUrl}/api/gitops/repositories`);
-      if (!reposRes.ok) throw new Error('Failed to fetch repositories');
-      const reposData = await reposRes.json();
+      // Check if user is authenticated with GitHub
+      const authenticated = await gitOpsApi.isGitHubAuthenticated();
       
-      // Fetch PRs from each repository
-      const allPRs: PullRequest[] = [];
-      
-      for (const repo of (reposData.repositories || []).slice(0, 5)) {
-        try {
-          const prsRes = await fetch(
-            `${backendUrl}/api/gitops/repositories/${encodeURIComponent(repo.name)}/pulls?state=open`
-          );
-          if (prsRes.ok) {
-            const prsData = await prsRes.json();
-            allPRs.push(...(prsData.pulls || []));
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch PRs for ${repo.name}:`, err);
-        }
+      if (!authenticated) {
+        setIsAuthenticated(false);
+        setLoading(false);
+        return;
       }
+      
+      setIsAuthenticated(true);
+      
+      // Use the gitOpsApi which handles the OAuth token internally
+      try {
+        // Fetch user profile
+        const userResult = await gitOpsApi.getUserProfile();
+        if (userResult.user) {
+          setGithubUser(userResult.user);
+        }
+      } catch (profileErr) {
+        console.debug('[MyPullRequestsWidget] Could not fetch user profile:', profileErr);
+      }
+      
+      // Use the user-centric pull requests endpoint
+      const prsResult = await gitOpsApi.getUserPullRequests({
+        filter: filter as any,
+        state: 'open',
+        per_page: maxItems,
+      });
+      
+      // Transform the response to match our interface
+      const transformedPRs: PullRequest[] = (prsResult.pullRequests || []).map((pr: any) => ({
+        id: pr.id,
+        number: pr.number,
+        title: pr.title,
+        html_url: pr.html_url,
+        state: pr.state,
+        draft: pr.draft,
+        merged: false,
+        user: pr.user,
+        base: {
+          ref: 'main',
+          repo: {
+            name: pr.repository?.name || 'unknown',
+            full_name: pr.repository?.full_name || 'unknown',
+          },
+        },
+        head: { ref: 'feature' },
+        created_at: pr.created_at,
+        updated_at: pr.updated_at,
+        requested_reviewers: [],
+        review_comments: pr.comments,
+      }));
 
-      // Sort by updated_at and limit
-      const sorted = allPRs
-        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-        .slice(0, maxItems);
-
-      setPullRequests(sorted);
+      setPullRequests(transformedPRs.slice(0, maxItems));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      // Check if it's an auth error
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      if (errMsg.includes('authentication required') || errMsg.includes('not logged in')) {
+        setIsAuthenticated(false);
+      } else {
+        setError(errMsg);
+      }
     } finally {
       setLoading(false);
     }
-  }, [backendUrl, maxItems, filter]);
+  }, [gitOpsApi, maxItems, filter]);
+
+  // Handle GitHub sign-in
+  const handleSignIn = async () => {
+    if (githubAuthApi) {
+      try {
+        // This will trigger the OAuth flow
+        await githubAuthApi.getAccessToken(['repo', 'read:org', 'user']);
+        // Clear the token cache and refresh
+        gitOpsApi.clearTokenCache();
+        fetchPullRequests();
+      } catch (e) {
+        console.error('Failed to sign in with GitHub:', e);
+      }
+    }
+  };
 
   useEffect(() => {
     fetchPullRequests();
@@ -227,7 +288,21 @@ export const MyPullRequestsWidget: React.FC<MyPullRequestsWidgetProps> = ({
 
   return (
     <InfoCard
-      title="My Pull Requests"
+      title={
+        <Box display="flex" alignItems="center" style={{ gap: 8 }}>
+          <MergeTypeIcon />
+          <span>My Pull Requests</span>
+          {githubUser && (
+            <Chip
+              size="small"
+              avatar={<Avatar src={githubUser.avatar_url} />}
+              label={githubUser.login}
+              variant="outlined"
+              style={{ marginLeft: 8 }}
+            />
+          )}
+        </Box>
+      }
       action={
         <Box display="flex" alignItems="center">
           {loading && <LinearProgress style={{ width: 60, marginRight: 8 }} />}
@@ -239,13 +314,32 @@ export const MyPullRequestsWidget: React.FC<MyPullRequestsWidgetProps> = ({
         </Box>
       }
     >
-      {error && (
+      {/* Show sign-in prompt if not authenticated */}
+      {isAuthenticated === false && (
+        <Box className={classes.emptyState}>
+          <PersonIcon style={{ fontSize: 48, color: '#ccc', marginBottom: 8 }} />
+          <Typography color="textSecondary" gutterBottom>
+            Sign in with GitHub to see your pull requests
+          </Typography>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<GitHubIcon />}
+            onClick={handleSignIn}
+            style={{ marginTop: 8 }}
+          >
+            Sign in with GitHub
+          </Button>
+        </Box>
+      )}
+
+      {error && isAuthenticated !== false && (
         <Typography color="error" style={{ padding: 16 }}>
           {error}
         </Typography>
       )}
 
-      {!loading && pullRequests.length === 0 && !error && (
+      {!loading && pullRequests.length === 0 && !error && isAuthenticated && (
         <Box className={classes.emptyState}>
           <MergeTypeIcon style={{ fontSize: 48, color: '#ccc', marginBottom: 8 }} />
           <Typography color="textSecondary">

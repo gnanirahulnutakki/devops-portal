@@ -347,7 +347,7 @@ export const MaturityScorecard: React.FC<MaturityScorecardProps> = ({
 
   if (compact) {
     return (
-      <Box display="flex" alignItems="center" gap={2}>
+      <Box display="flex" alignItems="center" style={{ gap: 16 }}>
         <Box 
           className={`${classes.gradeCircle} ${getGradeClass(maturity.letter)}`}
           style={{ width: 60, height: 60 }}
@@ -433,7 +433,7 @@ export const MaturityScorecard: React.FC<MaturityScorecardProps> = ({
                           {category.name}
                         </Typography>
                       </div>
-                      <Box display="flex" alignItems="center" gap={1}>
+                      <Box display="flex" alignItems="center" style={{ gap: 8 }}>
                         <Typography variant="body2">
                           {category.score}/{category.maxScore}
                         </Typography>

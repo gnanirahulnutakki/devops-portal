@@ -1433,4 +1433,479 @@ metadata:
       },
     ];
   }
+
+  // ============================================================================
+  // User-Centric GitHub Operations
+  // ============================================================================
+
+  /**
+   * Get authenticated user profile
+   */
+  async getAuthenticatedUser(): Promise<any> {
+    if (this.useMockData) {
+      return this.getMockAuthenticatedUser();
+    }
+
+    try {
+      const { data } = await this.octokit!.users.getAuthenticated();
+      return data;
+    } catch (error: any) {
+      throw new GitHubError(
+        `Failed to get authenticated user: ${error.message}`,
+        error.status || 500,
+        error
+      );
+    }
+  }
+
+  /**
+   * Get all repositories the user has access to
+   */
+  async getUserRepositories(options: {
+    type?: 'all' | 'owner' | 'member';
+    sort?: 'created' | 'updated' | 'pushed' | 'full_name';
+    per_page?: number;
+    page?: number;
+  } = {}): Promise<any[]> {
+    if (this.useMockData) {
+      return this.getMockUserRepositories(options);
+    }
+
+    try {
+      const { data } = await this.octokit!.repos.listForAuthenticatedUser({
+        type: options.type || 'all',
+        sort: options.sort || 'updated',
+        per_page: options.per_page || 50,
+        page: options.page || 1,
+      });
+
+      return data.map(repo => ({
+        id: repo.id,
+        name: repo.name,
+        full_name: repo.full_name,
+        owner: {
+          login: repo.owner.login,
+          avatar_url: repo.owner.avatar_url,
+          type: repo.owner.type,
+        },
+        private: repo.private,
+        description: repo.description,
+        default_branch: repo.default_branch,
+        html_url: repo.html_url,
+        language: repo.language,
+        stargazers_count: repo.stargazers_count,
+        forks_count: repo.forks_count,
+        open_issues_count: repo.open_issues_count,
+        created_at: repo.created_at,
+        updated_at: repo.updated_at,
+        pushed_at: repo.pushed_at,
+      }));
+    } catch (error: any) {
+      throw new GitHubError(
+        `Failed to list user repositories: ${error.message}`,
+        error.status || 500,
+        error
+      );
+    }
+  }
+
+  /**
+   * Get pull requests created by, assigned to, or requesting review from the user
+   */
+  async getUserPullRequests(options: {
+    filter?: 'all' | 'created' | 'assigned' | 'review_requested';
+    state?: 'open' | 'closed' | 'all';
+    per_page?: number;
+  } = {}): Promise<any[]> {
+    if (this.useMockData) {
+      return this.getMockUserPullRequests(options);
+    }
+
+    try {
+      // Build search query based on filter
+      const user = await this.getAuthenticatedUser();
+      let searchQuery = `is:pr`;
+
+      switch (options.filter) {
+        case 'created':
+          searchQuery += ` author:${user.login}`;
+          break;
+        case 'assigned':
+          searchQuery += ` assignee:${user.login}`;
+          break;
+        case 'review_requested':
+          searchQuery += ` review-requested:${user.login}`;
+          break;
+        default:
+          // 'all' - combine all filters
+          searchQuery += ` involves:${user.login}`;
+      }
+
+      if (options.state && options.state !== 'all') {
+        searchQuery += ` is:${options.state}`;
+      }
+
+      const { data } = await this.octokit!.search.issuesAndPullRequests({
+        q: searchQuery,
+        sort: 'updated',
+        order: 'desc',
+        per_page: options.per_page || 50,
+      });
+
+      return data.items.map(pr => ({
+        id: pr.id,
+        number: pr.number,
+        title: pr.title,
+        state: pr.state,
+        html_url: pr.html_url,
+        user: {
+          login: pr.user?.login,
+          avatar_url: pr.user?.avatar_url,
+        },
+        repository: {
+          name: pr.repository_url?.split('/').pop(),
+          full_name: pr.repository_url?.split('repos/')[1],
+          html_url: pr.repository_url?.replace('api.github.com/repos', 'github.com'),
+        },
+        labels: pr.labels?.map(l => ({
+          name: typeof l === 'string' ? l : l.name,
+          color: typeof l === 'string' ? undefined : l.color,
+        })),
+        created_at: pr.created_at,
+        updated_at: pr.updated_at,
+        closed_at: pr.closed_at,
+        draft: pr.draft,
+        comments: pr.comments,
+      }));
+    } catch (error: any) {
+      throw new GitHubError(
+        `Failed to list user pull requests: ${error.message}`,
+        error.status || 500,
+        error
+      );
+    }
+  }
+
+  /**
+   * Get issues created by or assigned to the user
+   */
+  async getUserIssues(options: {
+    filter?: 'all' | 'created' | 'assigned';
+    state?: 'open' | 'closed' | 'all';
+    per_page?: number;
+  } = {}): Promise<any[]> {
+    if (this.useMockData) {
+      return this.getMockUserIssues(options);
+    }
+
+    try {
+      const user = await this.getAuthenticatedUser();
+      let searchQuery = `is:issue`;
+
+      switch (options.filter) {
+        case 'created':
+          searchQuery += ` author:${user.login}`;
+          break;
+        case 'assigned':
+          searchQuery += ` assignee:${user.login}`;
+          break;
+        default:
+          searchQuery += ` involves:${user.login}`;
+      }
+
+      if (options.state && options.state !== 'all') {
+        searchQuery += ` is:${options.state}`;
+      }
+
+      const { data } = await this.octokit!.search.issuesAndPullRequests({
+        q: searchQuery,
+        sort: 'updated',
+        order: 'desc',
+        per_page: options.per_page || 50,
+      });
+
+      return data.items.map(issue => ({
+        id: issue.id,
+        number: issue.number,
+        title: issue.title,
+        state: issue.state,
+        html_url: issue.html_url,
+        user: {
+          login: issue.user?.login,
+          avatar_url: issue.user?.avatar_url,
+        },
+        repository: {
+          name: issue.repository_url?.split('/').pop(),
+          full_name: issue.repository_url?.split('repos/')[1],
+        },
+        labels: issue.labels?.map(l => ({
+          name: typeof l === 'string' ? l : l.name,
+          color: typeof l === 'string' ? undefined : l.color,
+        })),
+        created_at: issue.created_at,
+        updated_at: issue.updated_at,
+        closed_at: issue.closed_at,
+        comments: issue.comments,
+      }));
+    } catch (error: any) {
+      throw new GitHubError(
+        `Failed to list user issues: ${error.message}`,
+        error.status || 500,
+        error
+      );
+    }
+  }
+
+  /**
+   * Get organizations the user belongs to
+   */
+  async getUserOrganizations(): Promise<any[]> {
+    if (this.useMockData) {
+      return this.getMockUserOrganizations();
+    }
+
+    try {
+      const { data } = await this.octokit!.orgs.listForAuthenticatedUser({
+        per_page: 100,
+      });
+
+      return data.map(org => ({
+        id: org.id,
+        login: org.login,
+        description: org.description,
+        avatar_url: org.avatar_url,
+        url: org.url,
+      }));
+    } catch (error: any) {
+      throw new GitHubError(
+        `Failed to list user organizations: ${error.message}`,
+        error.status || 500,
+        error
+      );
+    }
+  }
+
+  /**
+   * Get repositories starred by the user
+   */
+  async getUserStarredRepos(options: {
+    per_page?: number;
+    page?: number;
+  } = {}): Promise<any[]> {
+    if (this.useMockData) {
+      return this.getMockUserRepositories({ ...options, type: 'all' }).slice(0, 5);
+    }
+
+    try {
+      const { data } = await this.octokit!.activity.listReposStarredByAuthenticatedUser({
+        per_page: options.per_page || 30,
+        page: options.page || 1,
+      });
+
+      return data.map((repo: any) => ({
+        id: repo.id,
+        name: repo.name,
+        full_name: repo.full_name,
+        owner: {
+          login: repo.owner.login,
+          avatar_url: repo.owner.avatar_url,
+        },
+        description: repo.description,
+        html_url: repo.html_url,
+        language: repo.language,
+        stargazers_count: repo.stargazers_count,
+        forks_count: repo.forks_count,
+      }));
+    } catch (error: any) {
+      throw new GitHubError(
+        `Failed to list starred repos: ${error.message}`,
+        error.status || 500,
+        error
+      );
+    }
+  }
+
+  // ============================================================================
+  // Mock Data for User-Centric Operations
+  // ============================================================================
+
+  private getMockAuthenticatedUser(): any {
+    return {
+      id: 12345678,
+      login: 'gnanirahulnutakki',
+      name: 'Rahul Nutakki',
+      email: 'rahul@radiantlogic.com',
+      avatar_url: 'https://avatars.githubusercontent.com/u/12345678',
+      html_url: 'https://github.com/gnanirahulnutakki',
+      bio: 'DevOps Engineer at RadiantLogic',
+      company: 'RadiantLogic',
+      location: 'United States',
+      public_repos: 15,
+      public_gists: 3,
+      followers: 42,
+      following: 28,
+      created_at: '2018-01-15T00:00:00Z',
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  private getMockUserRepositories(options: any): any[] {
+    const repos = [
+      {
+        id: 1,
+        name: 'helm-v8',
+        full_name: 'radiantlogic-devops/helm-v8',
+        owner: { login: 'radiantlogic-devops', avatar_url: 'https://github.com/identicons/devops.png', type: 'Organization' },
+        private: false,
+        description: 'FID and ZooKeeper Helm charts',
+        default_branch: 'main',
+        html_url: 'https://github.com/radiantlogic-devops/helm-v8',
+        language: 'Mustache',
+        stargazers_count: 12,
+        forks_count: 5,
+        open_issues_count: 3,
+        created_at: '2023-01-15T00:00:00Z',
+        updated_at: new Date().toISOString(),
+        pushed_at: new Date(Date.now() - 3600000).toISOString(),
+      },
+      {
+        id: 2,
+        name: 'eoc-mcp',
+        full_name: 'gnanirahulnutakki/eoc-mcp',
+        owner: { login: 'gnanirahulnutakki', avatar_url: 'https://github.com/identicons/user.png', type: 'User' },
+        private: false,
+        description: 'EOC MCP Server with 128 tools',
+        default_branch: 'main',
+        html_url: 'https://github.com/gnanirahulnutakki/eoc-mcp',
+        language: 'TypeScript',
+        stargazers_count: 8,
+        forks_count: 2,
+        open_issues_count: 1,
+        created_at: '2024-06-01T00:00:00Z',
+        updated_at: new Date().toISOString(),
+        pushed_at: new Date(Date.now() - 1800000).toISOString(),
+      },
+      {
+        id: 3,
+        name: 'devops-portal',
+        full_name: 'gnanirahulnutakki/devops-portal',
+        owner: { login: 'gnanirahulnutakki', avatar_url: 'https://github.com/identicons/user.png', type: 'User' },
+        private: false,
+        description: 'Backstage-based DevOps Portal',
+        default_branch: 'main',
+        html_url: 'https://github.com/gnanirahulnutakki/devops-portal',
+        language: 'TypeScript',
+        stargazers_count: 15,
+        forks_count: 3,
+        open_issues_count: 5,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: new Date().toISOString(),
+        pushed_at: new Date().toISOString(),
+      },
+    ];
+
+    return repos.slice(0, options.per_page || 50);
+  }
+
+  private getMockUserPullRequests(options: any): any[] {
+    return [
+      {
+        id: 101,
+        number: 42,
+        title: 'feat: Add Grafana integration',
+        state: 'open',
+        html_url: 'https://github.com/gnanirahulnutakki/devops-portal/pull/42',
+        user: { login: 'gnanirahulnutakki', avatar_url: 'https://github.com/identicons/user.png' },
+        repository: { name: 'devops-portal', full_name: 'gnanirahulnutakki/devops-portal', html_url: 'https://github.com/gnanirahulnutakki/devops-portal' },
+        labels: [{ name: 'enhancement', color: 'a2eeef' }],
+        created_at: new Date(Date.now() - 86400000).toISOString(),
+        updated_at: new Date(Date.now() - 3600000).toISOString(),
+        closed_at: null,
+        draft: false,
+        comments: 3,
+      },
+      {
+        id: 102,
+        number: 38,
+        title: 'fix: Resolve ArgoCD sync issues',
+        state: 'open',
+        html_url: 'https://github.com/radiantlogic-devops/helm-v8/pull/38',
+        user: { login: 'gnanirahulnutakki', avatar_url: 'https://github.com/identicons/user.png' },
+        repository: { name: 'helm-v8', full_name: 'radiantlogic-devops/helm-v8', html_url: 'https://github.com/radiantlogic-devops/helm-v8' },
+        labels: [{ name: 'bug', color: 'd73a4a' }],
+        created_at: new Date(Date.now() - 172800000).toISOString(),
+        updated_at: new Date(Date.now() - 7200000).toISOString(),
+        closed_at: null,
+        draft: false,
+        comments: 5,
+      },
+      {
+        id: 103,
+        number: 15,
+        title: 'chore: Update dependencies',
+        state: 'open',
+        html_url: 'https://github.com/gnanirahulnutakki/eoc-mcp/pull/15',
+        user: { login: 'gnanirahulnutakki', avatar_url: 'https://github.com/identicons/user.png' },
+        repository: { name: 'eoc-mcp', full_name: 'gnanirahulnutakki/eoc-mcp', html_url: 'https://github.com/gnanirahulnutakki/eoc-mcp' },
+        labels: [{ name: 'dependencies', color: '0366d6' }],
+        created_at: new Date(Date.now() - 259200000).toISOString(),
+        updated_at: new Date(Date.now() - 43200000).toISOString(),
+        closed_at: null,
+        draft: true,
+        comments: 1,
+      },
+    ];
+  }
+
+  private getMockUserIssues(options: any): any[] {
+    return [
+      {
+        id: 201,
+        number: 12,
+        title: 'Add support for multiple Grafana instances',
+        state: 'open',
+        html_url: 'https://github.com/gnanirahulnutakki/devops-portal/issues/12',
+        user: { login: 'user1', avatar_url: 'https://github.com/identicons/user1.png' },
+        repository: { name: 'devops-portal', full_name: 'gnanirahulnutakki/devops-portal' },
+        labels: [{ name: 'feature', color: '7057ff' }],
+        created_at: new Date(Date.now() - 604800000).toISOString(),
+        updated_at: new Date(Date.now() - 86400000).toISOString(),
+        closed_at: null,
+        comments: 4,
+      },
+      {
+        id: 202,
+        number: 8,
+        title: 'Documentation improvements needed',
+        state: 'open',
+        html_url: 'https://github.com/gnanirahulnutakki/eoc-mcp/issues/8',
+        user: { login: 'gnanirahulnutakki', avatar_url: 'https://github.com/identicons/user.png' },
+        repository: { name: 'eoc-mcp', full_name: 'gnanirahulnutakki/eoc-mcp' },
+        labels: [{ name: 'documentation', color: '0075ca' }],
+        created_at: new Date(Date.now() - 1209600000).toISOString(),
+        updated_at: new Date(Date.now() - 172800000).toISOString(),
+        closed_at: null,
+        comments: 2,
+      },
+    ];
+  }
+
+  private getMockUserOrganizations(): any[] {
+    return [
+      {
+        id: 1001,
+        login: 'radiantlogic-devops',
+        description: 'RadiantLogic DevOps Organization',
+        avatar_url: 'https://github.com/identicons/radiantlogic.png',
+        url: 'https://api.github.com/orgs/radiantlogic-devops',
+      },
+      {
+        id: 1002,
+        login: 'radiantlogic-saas',
+        description: 'RadiantLogic SaaS Infrastructure',
+        avatar_url: 'https://github.com/identicons/saas.png',
+        url: 'https://api.github.com/orgs/radiantlogic-saas',
+      },
+    ];
+  }
 }

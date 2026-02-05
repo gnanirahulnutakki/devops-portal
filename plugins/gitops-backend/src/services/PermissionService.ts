@@ -2,13 +2,17 @@ import { Request } from 'express';
 
 /**
  * Permission definitions for DevOps Portal operations
- * 
- * Roles:
- * - admin: Full access to all operations
- * - operator: Can perform deployments, syncs, and restarts
- * - developer: Can view, create PRs, but limited deployment access
- * - viewer: Read-only access
- * 
+ *
+ * Three-Tier RBAC Model:
+ * - USER (viewer): Read-only access to dashboards, repos, and deployments
+ * - READWRITE (developer/operator): Read + write access, create PRs, trigger deployments
+ * - ADMIN: Full access including user management, settings, and audit logs
+ *
+ * Legacy roles (for backward compatibility):
+ * - operator: Maps to READWRITE
+ * - developer: Maps to READWRITE
+ * - viewer: Maps to USER
+ *
  * Permissions follow the format: resource.action
  */
 
@@ -17,55 +21,155 @@ export enum Permission {
   REPO_READ = 'repository.read',
   REPO_WRITE = 'repository.write',
   REPO_DELETE = 'repository.delete',
-  
+
   // Branch operations
   BRANCH_CREATE = 'branch.create',
   BRANCH_DELETE = 'branch.delete',
-  
+
   // File operations
   FILE_READ = 'file.read',
   FILE_WRITE = 'file.write',
   FILE_BULK_UPDATE = 'file.bulk_update',
-  
+
   // Pull request operations
   PR_CREATE = 'pullrequest.create',
   PR_MERGE = 'pullrequest.merge',
   PR_APPROVE = 'pullrequest.approve',
   PR_COMMENT = 'pullrequest.comment',
-  
+
   // ArgoCD operations
   ARGOCD_READ = 'argocd.read',
   ARGOCD_SYNC = 'argocd.sync',
   ARGOCD_ROLLBACK = 'argocd.rollback',
   ARGOCD_DELETE = 'argocd.delete',
-  
+
   // GitHub Actions operations
   ACTIONS_READ = 'actions.read',
   ACTIONS_TRIGGER = 'actions.trigger',
   ACTIONS_CANCEL = 'actions.cancel',
   ACTIONS_RERUN = 'actions.rerun',
-  
+
   // Grafana operations
   GRAFANA_READ = 'grafana.read',
   GRAFANA_EDIT = 'grafana.edit',
-  
+
   // Admin operations
   ADMIN_USERS = 'admin.users',
   ADMIN_SETTINGS = 'admin.settings',
   ADMIN_AUDIT = 'admin.audit',
+
+  // User management (admin only)
+  USERS_READ = 'users.read',
+  USERS_CREATE = 'users.create',
+  USERS_UPDATE = 'users.update',
+  USERS_DELETE = 'users.delete',
+  USERS_RESET_PASSWORD = 'users.reset_password',
+
+  // Connector management
+  CONNECTORS_READ = 'connectors.read',
+  CONNECTORS_MANAGE = 'connectors.manage',
+
+  // Orchestrator/Task management
+  TASKS_READ = 'tasks.read',
+  TASKS_CREATE = 'tasks.create',
+  TASKS_CANCEL = 'tasks.cancel',
+  TASKS_MANAGE = 'tasks.manage',
 }
 
+/**
+ * Role definitions
+ *
+ * Three-tier model:
+ * - USER: Read-only (maps to old 'viewer')
+ * - READWRITE: Read + write (maps to old 'developer'/'operator')
+ * - ADMIN: Full access
+ */
 export enum Role {
+  // Three-tier RBAC (primary)
+  USER = 'user',
+  READWRITE = 'readwrite',
   ADMIN = 'admin',
+
+  // Legacy roles (backward compatibility)
   OPERATOR = 'operator',
   DEVELOPER = 'developer',
   VIEWER = 'viewer',
 }
 
+// Map local auth roles to internal roles
+export type LocalAuthRole = 'user' | 'readwrite' | 'admin';
+
+export function mapLocalAuthRole(localRole: LocalAuthRole): Role {
+  switch (localRole) {
+    case 'admin': return Role.ADMIN;
+    case 'readwrite': return Role.READWRITE;
+    case 'user': return Role.USER;
+    default: return Role.USER;
+  }
+}
+
 // Role to permissions mapping
 const rolePermissions: Record<Role, Permission[]> = {
-  [Role.ADMIN]: Object.values(Permission), // Admin has all permissions
-  
+  // ============================================================
+  // Three-Tier RBAC (Primary)
+  // ============================================================
+
+  // ADMIN: Full access to everything
+  [Role.ADMIN]: Object.values(Permission),
+
+  // READWRITE: Read + Write access, deployments, tasks
+  [Role.READWRITE]: [
+    // Repository
+    Permission.REPO_READ,
+    Permission.REPO_WRITE,
+    Permission.BRANCH_CREATE,
+    Permission.BRANCH_DELETE,
+    // Files
+    Permission.FILE_READ,
+    Permission.FILE_WRITE,
+    Permission.FILE_BULK_UPDATE,
+    // Pull Requests
+    Permission.PR_CREATE,
+    Permission.PR_MERGE,
+    Permission.PR_APPROVE,
+    Permission.PR_COMMENT,
+    // ArgoCD
+    Permission.ARGOCD_READ,
+    Permission.ARGOCD_SYNC,
+    Permission.ARGOCD_ROLLBACK,
+    // GitHub Actions
+    Permission.ACTIONS_READ,
+    Permission.ACTIONS_TRIGGER,
+    Permission.ACTIONS_CANCEL,
+    Permission.ACTIONS_RERUN,
+    // Grafana
+    Permission.GRAFANA_READ,
+    Permission.GRAFANA_EDIT,
+    // Connectors (own)
+    Permission.CONNECTORS_READ,
+    Permission.CONNECTORS_MANAGE,
+    // Tasks
+    Permission.TASKS_READ,
+    Permission.TASKS_CREATE,
+    Permission.TASKS_CANCEL,
+  ],
+
+  // USER: Read-only access
+  [Role.USER]: [
+    Permission.REPO_READ,
+    Permission.FILE_READ,
+    Permission.ARGOCD_READ,
+    Permission.ACTIONS_READ,
+    Permission.GRAFANA_READ,
+    Permission.CONNECTORS_READ,
+    Permission.TASKS_READ,
+  ],
+
+  // ============================================================
+  // Legacy Roles (Backward Compatibility)
+  // ============================================================
+
+  // OPERATOR maps to READWRITE
   [Role.OPERATOR]: [
     Permission.REPO_READ,
     Permission.REPO_WRITE,
@@ -85,8 +189,14 @@ const rolePermissions: Record<Role, Permission[]> = {
     Permission.ACTIONS_CANCEL,
     Permission.ACTIONS_RERUN,
     Permission.GRAFANA_READ,
+    Permission.CONNECTORS_READ,
+    Permission.CONNECTORS_MANAGE,
+    Permission.TASKS_READ,
+    Permission.TASKS_CREATE,
+    Permission.TASKS_CANCEL,
   ],
-  
+
+  // DEVELOPER maps to READWRITE (slightly less privileged)
   [Role.DEVELOPER]: [
     Permission.REPO_READ,
     Permission.BRANCH_CREATE,
@@ -98,14 +208,21 @@ const rolePermissions: Record<Role, Permission[]> = {
     Permission.ACTIONS_READ,
     Permission.ACTIONS_TRIGGER,
     Permission.GRAFANA_READ,
+    Permission.CONNECTORS_READ,
+    Permission.CONNECTORS_MANAGE,
+    Permission.TASKS_READ,
+    Permission.TASKS_CREATE,
   ],
-  
+
+  // VIEWER maps to USER
   [Role.VIEWER]: [
     Permission.REPO_READ,
     Permission.FILE_READ,
     Permission.ARGOCD_READ,
     Permission.ACTIONS_READ,
     Permission.GRAFANA_READ,
+    Permission.CONNECTORS_READ,
+    Permission.TASKS_READ,
   ],
 };
 
@@ -116,6 +233,8 @@ export interface UserPermissionContext {
   roles: Role[];
   permissions: Permission[];
   groups?: string[];
+  authType?: 'local' | 'oauth' | 'guest';
+  localAuthRole?: LocalAuthRole;
 }
 
 export interface PermissionServiceConfig {
@@ -144,8 +263,28 @@ export class PermissionService {
 
   /**
    * Get user permissions from request
+   * Supports both local auth and OAuth users
    */
   getUserPermissions(req: Request): UserPermissionContext {
+    // Check for local auth user first (set by LocalAuthService middleware)
+    const localUser = (req as any).localUser;
+    if (localUser) {
+      const localRole = localUser.role as LocalAuthRole;
+      const role = mapLocalAuthRole(localRole);
+      const permissions = this.getPermissionsForRoles([role]);
+
+      return {
+        userId: localUser.id,
+        email: localUser.email,
+        displayName: localUser.displayName || localUser.username,
+        roles: [role],
+        permissions,
+        groups: [],
+        authType: 'local',
+        localAuthRole: localRole,
+      };
+    }
+
     // Extract user info from request headers (set by auth middleware)
     const userId = req.headers['x-backstage-user-id'] as string || 'anonymous';
     const email = req.headers['x-backstage-user-email'] as string;
@@ -155,9 +294,15 @@ export class PermissionService {
 
     // Determine roles
     const roles = this.determineRoles(userId, email, groups);
-    
+
     // Get permissions for roles
     const permissions = this.getPermissionsForRoles(roles);
+
+    // Determine auth type
+    let authType: 'local' | 'oauth' | 'guest' = 'oauth';
+    if (userId === 'anonymous' || userId === 'guest') {
+      authType = 'guest';
+    }
 
     return {
       userId,
@@ -166,6 +311,7 @@ export class PermissionService {
       roles,
       permissions,
       groups,
+      authType,
     };
   }
 

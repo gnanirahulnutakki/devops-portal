@@ -1,4 +1,4 @@
-import { createApiRef, DiscoveryApi, FetchApi } from '@backstage/core-plugin-api';
+import { createApiRef, DiscoveryApi, FetchApi, OAuthApi } from '@backstage/core-plugin-api';
 
 /**
  * GitOps API Reference
@@ -89,27 +89,145 @@ export interface ArgoCDApplication {
 
 /**
  * GitOps API Client
+ *
+ * Uses the user's GitHub OAuth token for API calls when available.
+ * This enables user-scoped access to repositories based on their GitHub permissions.
+ * 
+ * Authentication Flow:
+ * 1. User logs in via GitHub OAuth in Backstage
+ * 2. Backstage stores the OAuth token
+ * 3. This API retrieves the token via githubAuthApi.getAccessToken()
+ * 4. Token is sent to backend via x-github-token header
+ * 5. Backend uses token for GitHub API calls (user sees only repos they have access to)
  */
 export class GitOpsApi {
   private readonly discoveryApi: DiscoveryApi;
   private readonly fetchApi: FetchApi;
+  private readonly githubAuthApi?: OAuthApi;
+  private cachedToken: string | null = null;
+  private tokenExpiry: number = 0;
 
-  constructor(options: { discoveryApi: DiscoveryApi; fetchApi: FetchApi }) {
+  constructor(options: {
+    discoveryApi: DiscoveryApi;
+    fetchApi: FetchApi;
+    githubAuthApi?: OAuthApi;
+  }) {
     this.discoveryApi = options.discoveryApi;
     this.fetchApi = options.fetchApi;
+    this.githubAuthApi = options.githubAuthApi;
   }
 
   private async getBaseUrl(): Promise<string> {
     return await this.discoveryApi.getBaseUrl('gitops');
   }
 
+  /**
+   * Get the user's GitHub OAuth token if available.
+   * Uses caching to avoid repeated token requests.
+   * 
+   * Required OAuth scopes:
+   * - repo: Full control of private repositories
+   * - read:org: Read org and team membership  
+   * - workflow: Update GitHub Actions workflows
+   * - user: Read user profile data
+   */
+  private async getGitHubToken(): Promise<string | undefined> {
+    if (!this.githubAuthApi) {
+      console.debug('[GitOpsApi] No githubAuthApi available - user not logged in with GitHub');
+      return undefined;
+    }
+
+    // Check cache (tokens are typically valid for 1 hour)
+    const now = Date.now();
+    if (this.cachedToken && this.tokenExpiry > now) {
+      return this.cachedToken;
+    }
+
+    try {
+      // Request scopes needed for GitOps operations
+      const token = await this.githubAuthApi.getAccessToken([
+        'repo',
+        'read:org', 
+        'workflow',
+        'user',
+        'read:user',
+      ]);
+      
+      if (token) {
+        // Cache for 50 minutes (tokens are typically valid for 1 hour)
+        this.cachedToken = token;
+        this.tokenExpiry = now + (50 * 60 * 1000);
+        console.debug('[GitOpsApi] Successfully obtained GitHub OAuth token');
+      }
+      
+      return token;
+    } catch (error: any) {
+      // This is expected when user hasn't logged in with GitHub
+      // or when the OAuth flow hasn't completed yet
+      if (error?.message?.includes('not logged in') || 
+          error?.message?.includes('No session')) {
+        console.debug('[GitOpsApi] User not logged in with GitHub OAuth');
+      } else {
+        console.warn('[GitOpsApi] Could not get GitHub OAuth token:', error?.message || error);
+      }
+      return undefined;
+    }
+  }
+
+  /**
+   * Check if the user is authenticated with GitHub
+   */
+  async isGitHubAuthenticated(): Promise<boolean> {
+    const token = await this.getGitHubToken();
+    return !!token;
+  }
+
+  /**
+   * Clear the cached token (useful after logout)
+   */
+  clearTokenCache(): void {
+    this.cachedToken = null;
+    this.tokenExpiry = 0;
+  }
+
   private async fetch<T>(path: string, init?: RequestInit): Promise<T> {
     const baseUrl = await this.getBaseUrl();
-    const response = await this.fetchApi.fetch(`${baseUrl}${path}`, init);
+
+    // Get the user's GitHub OAuth token
+    const githubToken = await this.getGitHubToken();
+
+    // Merge headers, adding the GitHub token if available
+    const headers = new Headers(init?.headers);
+    headers.set('Content-Type', 'application/json');
+    
+    if (githubToken) {
+      headers.set('x-github-token', githubToken);
+      console.debug(`[GitOpsApi] Making request to ${path} with OAuth token`);
+    } else {
+      console.debug(`[GitOpsApi] Making request to ${path} without OAuth token (using fallback)`);
+    }
+
+    const response = await this.fetchApi.fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers,
+    });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error?.message || `Request failed with status ${response.status}`);
+      const errorMessage = errorData.error?.message || 
+                          errorData.message || 
+                          `Request failed with status ${response.status}`;
+      
+      // Provide more helpful error messages
+      if (response.status === 401) {
+        if (!githubToken) {
+          throw new Error('GitHub authentication required. Please sign in with GitHub.');
+        } else {
+          throw new Error('GitHub token expired or invalid. Please sign out and sign in again.');
+        }
+      }
+      
+      throw new Error(errorMessage);
     }
 
     return await response.json();
@@ -204,5 +322,85 @@ export class GitOpsApi {
     if (filters?.offset) params.append('offset', filters.offset.toString());
     const query = params.toString() ? `?${params}` : '';
     return this.fetch(`/audit-logs${query}`);
+  }
+
+  // ===========================================================================
+  // User-Centric Operations (uses GitHub OAuth token)
+  // ===========================================================================
+
+  /**
+   * Get the authenticated user's GitHub profile
+   */
+  async getUserProfile(): Promise<{ user: any }> {
+    return this.fetch('/user/profile');
+  }
+
+  /**
+   * Get repositories the user has access to
+   */
+  async getUserRepositories(options?: {
+    type?: 'all' | 'owner' | 'member';
+    sort?: 'created' | 'updated' | 'pushed' | 'full_name';
+    per_page?: number;
+    page?: number;
+  }): Promise<{ repositories: any[]; total: number }> {
+    const params = new URLSearchParams();
+    if (options?.type) params.append('type', options.type);
+    if (options?.sort) params.append('sort', options.sort);
+    if (options?.per_page) params.append('per_page', options.per_page.toString());
+    if (options?.page) params.append('page', options.page.toString());
+    const query = params.toString() ? `?${params}` : '';
+    return this.fetch(`/user/repos${query}`);
+  }
+
+  /**
+   * Get pull requests involving the user
+   */
+  async getUserPullRequests(options?: {
+    filter?: 'all' | 'created' | 'assigned' | 'review_requested';
+    state?: 'open' | 'closed' | 'all';
+    per_page?: number;
+  }): Promise<{ pullRequests: any[]; total: number }> {
+    const params = new URLSearchParams();
+    if (options?.filter) params.append('filter', options.filter);
+    if (options?.state) params.append('state', options.state);
+    if (options?.per_page) params.append('per_page', options.per_page.toString());
+    const query = params.toString() ? `?${params}` : '';
+    return this.fetch(`/user/pull-requests${query}`);
+  }
+
+  /**
+   * Get issues involving the user
+   */
+  async getUserIssues(options?: {
+    filter?: 'all' | 'created' | 'assigned';
+    state?: 'open' | 'closed' | 'all';
+    per_page?: number;
+  }): Promise<{ issues: any[]; total: number }> {
+    const params = new URLSearchParams();
+    if (options?.filter) params.append('filter', options.filter);
+    if (options?.state) params.append('state', options.state);
+    if (options?.per_page) params.append('per_page', options.per_page.toString());
+    const query = params.toString() ? `?${params}` : '';
+    return this.fetch(`/user/issues${query}`);
+  }
+
+  /**
+   * Get organizations the user belongs to
+   */
+  async getUserOrganizations(): Promise<{ organizations: any[] }> {
+    return this.fetch('/user/organizations');
+  }
+
+  /**
+   * Get the user's dashboard summary
+   */
+  async getUserDashboard(): Promise<{
+    user: any;
+    openPullRequests: any[];
+    recentIssues: any[];
+    repositories: any[];
+  }> {
+    return this.fetch('/user/dashboard');
   }
 }

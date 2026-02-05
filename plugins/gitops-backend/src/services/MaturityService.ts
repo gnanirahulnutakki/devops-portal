@@ -37,11 +37,32 @@ export interface MaturityServiceConfig {
  */
 export class MaturityService {
   private config: MaturityServiceConfig;
-  
+
   constructor(config: Config) {
+    // Safely access GitHub integration config
+    // Fall back to gitops.github.token if integrations not available
+    let githubToken: string | undefined;
+    let githubApiUrl = 'https://api.github.com';
+
+    try {
+      const githubConfigs = config.getOptionalConfigArray('integrations.github');
+      if (githubConfigs && githubConfigs.length > 0) {
+        githubToken = githubConfigs[0]?.getOptionalString('token');
+        const apiUrl = githubConfigs[0]?.getOptionalString('apiBaseUrl');
+        if (apiUrl) githubApiUrl = apiUrl;
+      }
+    } catch {
+      // If integrations.github doesn't work, try gitops.github.token
+      try {
+        githubToken = config.getOptionalString('gitops.github.token');
+      } catch {
+        // Ignore - token will be undefined
+      }
+    }
+
     this.config = {
-      githubToken: config.getOptionalString('integrations.github.0.token'),
-      githubApiUrl: config.getOptionalString('integrations.github.0.apiBaseUrl') || 'https://api.github.com',
+      githubToken,
+      githubApiUrl,
     };
   }
 

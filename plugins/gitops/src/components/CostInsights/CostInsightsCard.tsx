@@ -319,7 +319,7 @@ export const CostInsightsCard: React.FC<CostInsightsCardProps> = ({
     <InfoCard
       title={serviceName ? `Cost Insights - ${serviceName}` : 'Cost Insights'}
       action={
-        <Box display="flex" alignItems="center" gap={2}>
+        <Box display="flex" alignItems="center" style={{ gap: 16 }}>
           <FormControl size="small" variant="outlined" style={{ minWidth: 100 }}>
             <Select
               value={selectedPeriod}
@@ -454,7 +454,7 @@ export const CostInsightsCard: React.FC<CostInsightsCardProps> = ({
                         {renderTrendIcon(service.trend, Math.abs(service.percentage))}
                       </TableCell>
                       <TableCell>
-                        <Box display="flex" alignItems="center" gap={1}>
+                        <Box display="flex" alignItems="center" style={{ gap: 8 }}>
                           <Box className={classes.costBar}>
                             <Box
                               style={{

@@ -87,7 +87,7 @@ export const GitHubActionsPage: React.FC = () => {
       <Content>
         {/* Filters */}
         <InfoCard title="Filters">
-          <Box display="flex" gap={2} flexWrap="wrap">
+          <Box display="flex" style={{ gap: 16, flexWrap: 'wrap' }}>
             <FormControl variant="outlined" size="small" style={{ minWidth: 250 }}>
               <InputLabel>Repository</InputLabel>
               <Select

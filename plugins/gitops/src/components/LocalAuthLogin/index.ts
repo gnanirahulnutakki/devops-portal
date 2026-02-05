@@ -1,0 +1,1 @@
+export { LocalAuthLoginPage } from './LocalAuthLoginPage';

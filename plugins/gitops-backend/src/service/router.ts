@@ -2,6 +2,7 @@ import { LoggerService, RootConfigService } from '@backstage/backend-plugin-api'
 import { DatabaseService } from '@backstage/backend-plugin-api';
 import express from 'express';
 import Router from 'express-promise-router';
+import crypto from 'crypto';
 import { Knex } from 'knex';
 import { GitHubService } from '../services/GitHubService';
 import { GitHubActionsService } from '../services/GitHubActionsService';
@@ -70,10 +71,34 @@ export async function createRouter(
   const githubToken = config.getOptionalString('gitops.github.token') || 'your_github_personal_access_token';
   const githubOrg = config.getOptionalString('gitops.github.organization') || 'radiantlogic-saas';
 
-  const githubService = new GitHubService({
+  // Default GitHubService with static token (fallback when no OAuth token)
+  const defaultGitHubService = new GitHubService({
     token: githubToken,
     organization: githubOrg,
   });
+
+  /**
+   * Get GitHubService for a request
+   * Uses the user's OAuth token from x-github-token header if available,
+   * otherwise falls back to the static config token.
+   */
+  const getGitHubServiceForRequest = (req: express.Request): GitHubService => {
+    const oauthToken = req.headers['x-github-token'] as string | undefined;
+
+    if (oauthToken) {
+      logger.debug('Using user OAuth token for GitHub API call');
+      return new GitHubService({
+        token: oauthToken,
+        organization: githubOrg,
+      });
+    }
+
+    logger.debug('Using fallback static GitHub token');
+    return defaultGitHubService;
+  };
+
+  // For backwards compatibility, keep the old reference
+  const githubService = defaultGitHubService;
 
   const argoCDUrl = config.getOptionalString('gitops.argocd.url') || 'http://localhost:8080';
   const argoCDToken = config.getOptionalString('gitops.argocd.token') || 'your_argocd_token';
@@ -223,6 +248,7 @@ export async function createRouter(
   /**
    * GET /repositories
    * List all repositories in the organization
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories',
@@ -235,8 +261,11 @@ export async function createRouter(
         req.query
       );
 
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
       // Fetch repositories
-      const repositories = await githubService.listRepositories(params.filter);
+      const repositories = await service.listRepositories(params.filter);
 
       res.json({
         repositories,
@@ -248,6 +277,7 @@ export async function createRouter(
   /**
    * GET /repositories/:repo/branches
    * List all branches for a repository
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories/:repo/branches',
@@ -261,8 +291,11 @@ export async function createRouter(
         ...req.query,
       });
 
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
       // Fetch branches
-      const branches = await githubService.listBranches(
+      const branches = await service.listBranches(
         params.repository,
         params.filter
       );
@@ -277,6 +310,7 @@ export async function createRouter(
   /**
    * GET /repositories/:repo/tree
    * Get file tree for a repository branch
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories/:repo/tree',
@@ -292,8 +326,11 @@ export async function createRouter(
         path: path as string,
       });
 
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
       // Fetch file tree
-      const entries = await githubService.getFileTree(
+      const entries = await service.getFileTree(
         params.repository,
         params.branch,
         params.path || ''
@@ -309,6 +346,7 @@ export async function createRouter(
   /**
    * GET /repositories/:repo/content
    * Get file content from a repository branch
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories/:repo/content',
@@ -324,8 +362,11 @@ export async function createRouter(
         path: path as string,
       });
 
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
       // Fetch file content
-      const fileContent = await githubService.getFileContent(
+      const fileContent = await service.getFileContent(
         params.repository,
         params.branch,
         params.path
@@ -1536,6 +1577,7 @@ export async function createRouter(
   /**
    * GET /repositories/:repo/compare/:base...:head
    * Compare two branches and get diff
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories/:repo/compare/:base...:head',
@@ -1543,7 +1585,10 @@ export async function createRouter(
       const { repo, base, head } = req.params;
       logger.info(`GET /repositories/${repo}/compare/${base}...${head}`);
 
-      const comparison = await githubService.compareBranches(repo, base, head);
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const comparison = await service.compareBranches(repo, base, head);
 
       res.json({ comparison });
     })
@@ -1552,6 +1597,7 @@ export async function createRouter(
   /**
    * POST /repositories/:repo/branches
    * Create a new branch from an existing branch
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.post(
     '/repositories/:repo/branches',
@@ -1570,7 +1616,10 @@ export async function createRouter(
         return;
       }
 
-      const result = await githubService.createBranch(repo, branch, from_branch);
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const result = await service.createBranch(repo, branch, from_branch);
 
       res.status(201).json({ branch: result });
     })
@@ -1579,6 +1628,7 @@ export async function createRouter(
   /**
    * GET /repositories/:repo/pulls
    * List pull requests
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories/:repo/pulls',
@@ -1587,7 +1637,10 @@ export async function createRouter(
       const { state, sort, direction } = req.query;
       logger.info(`GET /repositories/${repo}/pulls?state=${state}`);
 
-      const pulls = await githubService.listPullRequests(
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const pulls = await service.listPullRequests(
         repo,
         (state as any) || 'open',
         (sort as any) || 'created',
@@ -1604,6 +1657,7 @@ export async function createRouter(
   /**
    * POST /repositories/:repo/pulls
    * Create a pull request
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.post(
     '/repositories/:repo/pulls',
@@ -1622,7 +1676,10 @@ export async function createRouter(
         return;
       }
 
-      const pull = await githubService.createPullRequest(repo, title, head, base, body);
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const pull = await service.createPullRequest(repo, title, head, base, body);
 
       res.status(201).json({ pull });
     })
@@ -1632,6 +1689,7 @@ export async function createRouter(
    * POST /repositories/:repo/pulls/with-changes
    * Create a pull request with file changes (synchronous workflow)
    * This endpoint creates a new branch, commits changes, and creates a PR in one operation
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.post(
     '/repositories/:repo/pulls/with-changes',
@@ -1664,11 +1722,14 @@ export async function createRouter(
         return;
       }
 
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
       // Step 1: Create new branch
-      await githubService.createBranch(repo, newBranchName, baseBranch);
+      await service.createBranch(repo, newBranchName, baseBranch);
 
       // Step 2: Get the file to obtain its SHA
-      const fileContent = await githubService.getFileContent(repo, newBranchName, filePath);
+      const fileContent = await service.getFileContent(repo, newBranchName, filePath);
 
       // Step 3: Prepare content for commit
       let contentToCommit: string;
@@ -1686,7 +1747,7 @@ export async function createRouter(
       }
 
       // Step 4: Commit changes synchronously
-      await githubService.updateFile({
+      await service.updateFile({
         repository: repo,
         branch: newBranchName,
         path: filePath,
@@ -1696,7 +1757,7 @@ export async function createRouter(
       });
 
       // Step 5: Create pull request
-      const pull = await githubService.createPullRequest(repo, title, newBranchName, base, body);
+      const pull = await service.createPullRequest(repo, title, newBranchName, base, body);
 
       res.status(201).json({ pull });
     })
@@ -1705,6 +1766,7 @@ export async function createRouter(
   /**
    * GET /repositories/:repo/pulls/:number
    * Get pull request details
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories/:repo/pulls/:number',
@@ -1712,7 +1774,10 @@ export async function createRouter(
       const { repo, number } = req.params;
       logger.info(`GET /repositories/${repo}/pulls/${number}`);
 
-      const pull = await githubService.getPullRequest(repo, parseInt(number, 10));
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const pull = await service.getPullRequest(repo, parseInt(number, 10));
 
       res.json({ pull });
     })
@@ -1721,6 +1786,7 @@ export async function createRouter(
   /**
    * GET /repositories/:repo/pulls/:number/files
    * Get files changed in a pull request (with diff)
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories/:repo/pulls/:number/files',
@@ -1728,7 +1794,10 @@ export async function createRouter(
       const { repo, number } = req.params;
       logger.info(`GET /repositories/${repo}/pulls/${number}/files`);
 
-      const files = await githubService.getPullRequestFiles(repo, parseInt(number, 10));
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const files = await service.getPullRequestFiles(repo, parseInt(number, 10));
 
       res.json({
         files,
@@ -1740,6 +1809,7 @@ export async function createRouter(
   /**
    * POST /repositories/:repo/pulls/:number/merge
    * Merge a pull request
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.post(
     '/repositories/:repo/pulls/:number/merge',
@@ -1748,7 +1818,10 @@ export async function createRouter(
       const { commit_title, commit_message, merge_method } = req.body;
       logger.info(`POST /repositories/${repo}/pulls/${number}/merge`);
 
-      const result = await githubService.mergePullRequest(
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const result = await service.mergePullRequest(
         repo,
         parseInt(number, 10),
         commit_title,
@@ -1782,6 +1855,7 @@ export async function createRouter(
   /**
    * POST /repositories/:repo/pulls/:number/reviewers
    * Add reviewers to a pull request
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.post(
     '/repositories/:repo/pulls/:number/reviewers',
@@ -1800,7 +1874,10 @@ export async function createRouter(
         return;
       }
 
-      const result = await githubService.addReviewers(
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const result = await service.addReviewers(
         repo,
         parseInt(number, 10),
         reviewers,
@@ -1814,6 +1891,7 @@ export async function createRouter(
   /**
    * POST /repositories/:repo/pulls/:number/assignees
    * Assign pull request to users
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.post(
     '/repositories/:repo/pulls/:number/assignees',
@@ -1832,7 +1910,10 @@ export async function createRouter(
         return;
       }
 
-      const result = await githubService.assignPullRequest(
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const result = await service.assignPullRequest(
         repo,
         parseInt(number, 10),
         assignees
@@ -1845,6 +1926,7 @@ export async function createRouter(
   /**
    * GET /repositories/:repo/pulls/:number/comments
    * Get comments for a pull request
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories/:repo/pulls/:number/comments',
@@ -1852,7 +1934,10 @@ export async function createRouter(
       const { repo, number } = req.params;
       logger.info(`GET /repositories/${repo}/pulls/${number}/comments`);
 
-      const comments = await githubService.getPullRequestComments(
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const comments = await service.getPullRequestComments(
         repo,
         parseInt(number, 10)
       );
@@ -1864,6 +1949,7 @@ export async function createRouter(
   /**
    * POST /repositories/:repo/pulls/:number/comments
    * Add a comment to a pull request
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.post(
     '/repositories/:repo/pulls/:number/comments',
@@ -1882,7 +1968,10 @@ export async function createRouter(
         return;
       }
 
-      const comment = await githubService.addPullRequestComment(
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const comment = await service.addPullRequestComment(
         repo,
         parseInt(number, 10),
         body
@@ -1911,6 +2000,7 @@ export async function createRouter(
   /**
    * GET /repositories/:repo/pulls/:number/status-checks
    * Get status checks for a pull request
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories/:repo/pulls/:number/status-checks',
@@ -1918,7 +2008,10 @@ export async function createRouter(
       const { repo, number } = req.params;
       logger.info(`GET /repositories/${repo}/pulls/${number}/status-checks`);
 
-      const checks = await githubService.getPullRequestStatusChecks(
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const checks = await service.getPullRequestStatusChecks(
         repo,
         parseInt(number, 10)
       );
@@ -1930,6 +2023,7 @@ export async function createRouter(
   /**
    * GET /repositories/:repo/pulls/:number/reviews
    * Get reviews for a pull request
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories/:repo/pulls/:number/reviews',
@@ -1937,7 +2031,10 @@ export async function createRouter(
       const { repo, number } = req.params;
       logger.info(`GET /repositories/${repo}/pulls/${number}/reviews`);
 
-      const reviews = await githubService.getPullRequestReviews(
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const reviews = await service.getPullRequestReviews(
         repo,
         parseInt(number, 10)
       );
@@ -1949,6 +2046,7 @@ export async function createRouter(
   /**
    * GET /repositories/:repo/pulls/:number/timeline
    * Get timeline events for a pull request
+   * Uses user's OAuth token if available for user-scoped access
    */
   router.get(
     '/repositories/:repo/pulls/:number/timeline',
@@ -1956,7 +2054,10 @@ export async function createRouter(
       const { repo, number } = req.params;
       logger.info(`GET /repositories/${repo}/pulls/${number}/timeline`);
 
-      const events = await githubService.getPullRequestTimeline(
+      // Get GitHubService with user's OAuth token if available
+      const service = getGitHubServiceForRequest(req);
+
+      const events = await service.getPullRequestTimeline(
         repo,
         parseInt(number, 10)
       );
@@ -2327,7 +2428,498 @@ export async function createRouter(
     })
   );
 
-  logger.info('GitOps backend plugin initialized with all endpoints');
+  // ==========================================
+  // Local Authentication Endpoints
+  // ==========================================
+
+  const { LocalAuthService, localAuthMiddleware } = await import('../services/LocalAuthService');
+  const localAuthService = new LocalAuthService(knex as any, {
+    jwtSecret: config.getOptionalString('localAuth.jwtSecret') || crypto.randomBytes(32).toString('hex'),
+    jwtExpiresIn: config.getOptionalNumber('localAuth.jwtExpiresIn') || 86400,
+  });
+  logger.info('Local Auth Service initialized');
+
+  // Create default admin user if it doesn't exist
+  try {
+    const existingAdmin = await localAuthService.getUserByUsername?.('admin');
+    if (!existingAdmin) {
+      await localAuthService.createUser({
+        username: 'admin',
+        email: 'admin@devops-portal.local',
+        password: 'Admin@123!',
+        displayName: 'Portal Admin',
+        role: 'admin',
+      });
+      logger.info('Default admin user created (username: admin, password: Admin@123!)');
+    } else {
+      logger.info('Default admin user already exists');
+    }
+  } catch (err: any) {
+    // User might already exist or table not ready yet - that's ok
+    logger.debug(`Could not create default admin user: ${err.message}`);
+  }
+
+  // Apply local auth middleware to extract user from JWT
+  router.use(localAuthMiddleware(localAuthService));
+
+  /**
+   * POST /auth/local/login
+   * Login with username/password
+   */
+  router.post(
+    '/auth/local/login',
+    asyncHandler(async (req, res) => {
+      const { username, password, rememberDevice } = req.body;
+      logger.info('POST /auth/local/login');
+
+      if (!username || !password) {
+        return res.status(400).json({
+          success: false,
+          error: 'Username and password are required',
+        });
+      }
+
+      const result = await localAuthService.login(username, password, {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        rememberDevice,
+      });
+
+      res.json(result);
+    })
+  );
+
+  /**
+   * POST /auth/local/register
+   * Register a new local user
+   */
+  router.post(
+    '/auth/local/register',
+    asyncHandler(async (req, res) => {
+      const { username, email, password, displayName } = req.body;
+      logger.info('POST /auth/local/register');
+
+      if (!username || !email || !password) {
+        return res.status(400).json({
+          error: 'Username, email, and password are required',
+        });
+      }
+
+      const result = await localAuthService.createUser({
+        username,
+        email,
+        password,
+        displayName,
+        role: 'user',
+      });
+
+      if (result.error) {
+        return res.status(400).json({ error: result.error });
+      }
+
+      res.status(201).json({ user: result.user });
+    })
+  );
+
+  /**
+   * POST /auth/local/refresh
+   * Refresh access token
+   */
+  router.post(
+    '/auth/local/refresh',
+    asyncHandler(async (req, res) => {
+      const { refreshToken } = req.body;
+      logger.info('POST /auth/local/refresh');
+
+      if (!refreshToken) {
+        return res.status(400).json({ success: false, error: 'Refresh token required' });
+      }
+
+      const result = await localAuthService.refreshToken(refreshToken, {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.json(result);
+    })
+  );
+
+  /**
+   * POST /auth/local/logout
+   * Logout and revoke session
+   */
+  router.post(
+    '/auth/local/logout',
+    asyncHandler(async (req, res) => {
+      const authHeader = req.headers.authorization;
+      logger.info('POST /auth/local/logout');
+
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        await localAuthService.logout(token);
+      }
+
+      res.json({ success: true });
+    })
+  );
+
+  /**
+   * GET /auth/local/me
+   * Get current user profile
+   */
+  router.get(
+    '/auth/local/me',
+    asyncHandler(async (req, res) => {
+      const localUser = (req as any).localUser;
+
+      if (!localUser) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      res.json({ user: localUser });
+    })
+  );
+
+  /**
+   * POST /auth/local/change-password
+   * Change password for authenticated user
+   */
+  router.post(
+    '/auth/local/change-password',
+    asyncHandler(async (req, res) => {
+      const { currentPassword, newPassword } = req.body;
+      const localUser = (req as any).localUser;
+      logger.info('POST /auth/local/change-password');
+
+      if (!localUser) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+
+      const result = await localAuthService.changePassword(localUser.id, currentPassword, newPassword);
+      res.json(result);
+    })
+  );
+
+  /**
+   * POST /auth/guest/login
+   * Login as guest user
+   */
+  router.post(
+    '/auth/guest/login',
+    asyncHandler(async (req, res) => {
+      logger.info('POST /auth/guest/login');
+
+      const authEnvironment = config.getOptionalString('auth.environment') || 'production';
+      const guestAllowed = config.getOptionalBoolean('auth.providers.guest.dangerouslyAllowOutsideDevelopment');
+
+      if (authEnvironment !== 'development' && !guestAllowed) {
+        return res.status(403).json({ error: 'Guest access is not enabled' });
+      }
+
+      // Create a temporary guest session
+      res.json({
+        success: true,
+        user: {
+          id: 'guest',
+          displayName: 'Guest User',
+          email: 'guest@example.com',
+          role: 'viewer',
+        },
+        message: 'Guest access granted',
+      });
+    })
+  );
+
+  // ==========================================
+  // GitHub User-Centric Endpoints
+  // ==========================================
+
+  /**
+   * GET /user/profile
+   * Get authenticated user's GitHub profile
+   */
+  router.get(
+    '/user/profile',
+    asyncHandler(async (req, res) => {
+      logger.info('GET /user/profile');
+      const service = getGitHubServiceForRequest(req);
+
+      try {
+        const user = await service.getAuthenticatedUser();
+        res.json({ user });
+      } catch (error) {
+        res.status(401).json({ error: 'Not authenticated with GitHub' });
+      }
+    })
+  );
+
+  /**
+   * GET /user/repos
+   * Get all repositories the user has access to (across all organizations)
+   */
+  router.get(
+    '/user/repos',
+    asyncHandler(async (req, res) => {
+      const { type = 'all', sort = 'updated', per_page = '50', page = '1' } = req.query;
+      logger.info('GET /user/repos');
+
+      const service = getGitHubServiceForRequest(req);
+
+      try {
+        const repos = await service.getUserRepositories({
+          type: type as 'all' | 'owner' | 'member',
+          sort: sort as 'created' | 'updated' | 'pushed' | 'full_name',
+          per_page: parseInt(per_page as string, 10),
+          page: parseInt(page as string, 10),
+        });
+
+        res.json({ repositories: repos, total: repos.length });
+      } catch (error) {
+        res.status(401).json({ error: 'Failed to fetch user repositories' });
+      }
+    })
+  );
+
+  /**
+   * GET /user/pull-requests
+   * Get all open pull requests for the authenticated user
+   */
+  router.get(
+    '/user/pull-requests',
+    asyncHandler(async (req, res) => {
+      const { filter = 'all', state = 'open', per_page = '50' } = req.query;
+      logger.info('GET /user/pull-requests');
+
+      const service = getGitHubServiceForRequest(req);
+
+      try {
+        const prs = await service.getUserPullRequests({
+          filter: filter as 'all' | 'created' | 'assigned' | 'review_requested',
+          state: state as 'open' | 'closed' | 'all',
+          per_page: parseInt(per_page as string, 10),
+        });
+
+        res.json({ pullRequests: prs, total: prs.length });
+      } catch (error: any) {
+        logger.error('Failed to fetch user PRs', { error: error.message });
+        res.status(500).json({ error: 'Failed to fetch pull requests', details: error.message });
+      }
+    })
+  );
+
+  /**
+   * GET /user/issues
+   * Get issues assigned to or created by the user
+   */
+  router.get(
+    '/user/issues',
+    asyncHandler(async (req, res) => {
+      const { filter = 'all', state = 'open', per_page = '50' } = req.query;
+      logger.info('GET /user/issues');
+
+      const service = getGitHubServiceForRequest(req);
+
+      try {
+        const issues = await service.getUserIssues({
+          filter: filter as 'all' | 'created' | 'assigned',
+          state: state as 'open' | 'closed' | 'all',
+          per_page: parseInt(per_page as string, 10),
+        });
+
+        res.json({ issues, total: issues.length });
+      } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch issues' });
+      }
+    })
+  );
+
+  /**
+   * GET /user/organizations
+   * Get organizations the user belongs to
+   */
+  router.get(
+    '/user/organizations',
+    asyncHandler(async (req, res) => {
+      logger.info('GET /user/organizations');
+      const service = getGitHubServiceForRequest(req);
+
+      try {
+        const orgs = await service.getUserOrganizations();
+        res.json({ organizations: orgs, total: orgs.length });
+      } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch organizations' });
+      }
+    })
+  );
+
+  /**
+   * GET /user/starred
+   * Get repositories starred by the user
+   */
+  router.get(
+    '/user/starred',
+    asyncHandler(async (req, res) => {
+      const { per_page = '30', page = '1' } = req.query;
+      logger.info('GET /user/starred');
+
+      const service = getGitHubServiceForRequest(req);
+
+      try {
+        const starred = await service.getUserStarredRepos({
+          per_page: parseInt(per_page as string, 10),
+          page: parseInt(page as string, 10),
+        });
+
+        res.json({ repositories: starred, total: starred.length });
+      } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch starred repos' });
+      }
+    })
+  );
+
+  /**
+   * GET /user/dashboard
+   * Get a comprehensive dashboard for the user (PRs, issues, recent activity)
+   */
+  router.get(
+    '/user/dashboard',
+    asyncHandler(async (req, res) => {
+      logger.info('GET /user/dashboard');
+      const service = getGitHubServiceForRequest(req);
+
+      try {
+        // Fetch all data in parallel
+        const [userProfile, prs, issues, repos, orgs] = await Promise.allSettled([
+          service.getAuthenticatedUser(),
+          service.getUserPullRequests({ filter: 'all', state: 'open', per_page: 10 }),
+          service.getUserIssues({ filter: 'all', state: 'open', per_page: 10 }),
+          service.getUserRepositories({ type: 'all', sort: 'updated', per_page: 10 }),
+          service.getUserOrganizations(),
+        ]);
+
+        res.json({
+          user: userProfile.status === 'fulfilled' ? userProfile.value : null,
+          pullRequests: prs.status === 'fulfilled' ? prs.value : [],
+          issues: issues.status === 'fulfilled' ? issues.value : [],
+          recentRepos: repos.status === 'fulfilled' ? repos.value : [],
+          organizations: orgs.status === 'fulfilled' ? orgs.value : [],
+          stats: {
+            openPRs: prs.status === 'fulfilled' ? prs.value.length : 0,
+            openIssues: issues.status === 'fulfilled' ? issues.value.length : 0,
+            repoCount: repos.status === 'fulfilled' ? repos.value.length : 0,
+            orgCount: orgs.status === 'fulfilled' ? orgs.value.length : 0,
+          },
+        });
+      } catch (error: any) {
+        logger.error('Dashboard error', { error: error.message });
+        res.status(500).json({ error: 'Failed to load dashboard', details: error.message });
+      }
+    })
+  );
+
+  // ==========================================
+  // User Profile Management
+  // ==========================================
+
+  /**
+   * GET /user/settings
+   * Get user's saved settings
+   */
+  router.get(
+    '/user/settings',
+    asyncHandler(async (req, res) => {
+      const userContext = getUserContext(req);
+      logger.info('GET /user/settings');
+
+      const settings = await knex('user_settings')
+        .where('user_id', userContext.userId)
+        .first();
+
+      res.json({
+        settings: settings ? JSON.parse(settings.settings_json || '{}') : {},
+        defaultOrganization: settings?.default_organization,
+        defaultRepository: settings?.default_repository,
+        theme: settings?.theme || 'light',
+        notifications: settings?.notifications_enabled ?? true,
+      });
+    })
+  );
+
+  /**
+   * PUT /user/settings
+   * Update user's settings
+   */
+  router.put(
+    '/user/settings',
+    asyncHandler(async (req, res) => {
+      const userContext = getUserContext(req);
+      const { settings, defaultOrganization, defaultRepository, theme, notifications } = req.body;
+      logger.info('PUT /user/settings');
+
+      await knex('user_settings')
+        .insert({
+          user_id: userContext.userId,
+          settings_json: JSON.stringify(settings || {}),
+          default_organization: defaultOrganization,
+          default_repository: defaultRepository,
+          theme: theme || 'light',
+          notifications_enabled: notifications ?? true,
+          updated_at: new Date(),
+        })
+        .onConflict('user_id')
+        .merge();
+
+      res.json({ success: true });
+    })
+  );
+
+  /**
+   * POST /user/link-github
+   * Link GitHub account to user profile
+   */
+  router.post(
+    '/user/link-github',
+    asyncHandler(async (req, res) => {
+      const { githubToken } = req.body;
+      const userContext = getUserContext(req);
+      logger.info('POST /user/link-github');
+
+      if (!githubToken) {
+        return res.status(400).json({ error: 'GitHub token required' });
+      }
+
+      // Verify the token by fetching user info
+      const tempService = new GitHubService({ token: githubToken, organization: githubOrg });
+      
+      try {
+        const githubUser = await tempService.getAuthenticatedUser();
+
+        // Store the link
+        await knex('user_github_links')
+          .insert({
+            user_id: userContext.userId,
+            github_id: githubUser.id.toString(),
+            github_username: githubUser.login,
+            github_avatar_url: githubUser.avatar_url,
+            linked_at: new Date(),
+          })
+          .onConflict('user_id')
+          .merge();
+
+        res.json({
+          success: true,
+          githubUser: {
+            login: githubUser.login,
+            avatar_url: githubUser.avatar_url,
+          },
+        });
+      } catch (error) {
+        res.status(400).json({ error: 'Invalid GitHub token' });
+      }
+    })
+  );
+
+  logger.info('GitOps backend plugin initialized with all endpoints including Local Auth and User APIs');
 
   return router;
 }

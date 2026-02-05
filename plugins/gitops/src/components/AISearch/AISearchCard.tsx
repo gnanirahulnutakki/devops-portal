@@ -463,7 +463,7 @@ export const AISearchCard: React.FC<AISearchCardProps> = ({
                     </ListItemIcon>
                     <ListItemText
                       primary={
-                        <Box display="flex" alignItems="center" gap={1}>
+                        <Box display="flex" alignItems="center" style={{ gap: 8 }}>
                           <Typography variant="subtitle2">{result.title}</Typography>
                           <Chip
                             size="small"

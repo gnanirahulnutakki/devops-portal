@@ -180,6 +180,9 @@ data:
         {{- if .Values.auth.guest.enabled }}
         guest:
           dangerouslyAllowOutsideDevelopment: {{ .Values.auth.guest.dangerouslyAllowOutsideDevelopment | default false }}
+          signIn:
+            resolvers:
+              - resolver: guestSessionResolver
         {{- end }}
 
         # --------------------------------------------------------------------
@@ -194,9 +197,17 @@ data:
             {{- if .Values.auth.github.enterpriseInstanceUrl }}
             enterpriseInstanceUrl: {{ .Values.auth.github.enterpriseInstanceUrl }}
             {{- end }}
+            # Request additional scopes for GitOps operations
+            # These scopes enable the user's OAuth token to be used for repository access
+            additionalScopes:
+              - repo
+              - read:org
+              - workflow
             signIn:
               resolvers:
+                # Allow any GitHub user without requiring User entity in catalog
                 - resolver: usernameMatchingUserEntityName
+                  dangerouslyAllowSignInWithoutUserInCatalog: true
         {{- end }}
 
         # --------------------------------------------------------------------
@@ -283,6 +294,29 @@ data:
     logging:
       level: {{ .Values.backstage.logLevel | default "info" }}
       format: json
+
+    # ============================================================================
+    # Local Authentication Configuration (Username/Password)
+    # ============================================================================
+    {{- if .Values.localAuth.enabled }}
+    localAuth:
+      enabled: true
+      passwordPolicy:
+        minLength: {{ .Values.localAuth.passwordPolicy.minLength | default 12 }}
+        requireUppercase: {{ .Values.localAuth.passwordPolicy.requireUppercase | default true }}
+        requireLowercase: {{ .Values.localAuth.passwordPolicy.requireLowercase | default true }}
+        requireDigit: {{ .Values.localAuth.passwordPolicy.requireDigit | default true }}
+        requireSpecial: {{ .Values.localAuth.passwordPolicy.requireSpecial | default true }}
+      session:
+        maxAge: {{ .Values.localAuth.session.maxAge | default 86400 }}
+        secure: {{ .Values.localAuth.session.secure | default true }}
+      lockout:
+        maxAttempts: {{ .Values.localAuth.lockout.maxAttempts | default 5 }}
+        durationSeconds: {{ .Values.localAuth.lockout.durationSeconds | default 900 }}
+    {{- else }}
+    localAuth:
+      enabled: false
+    {{- end }}
 
     {{- if .Values.redis.enabled }}
     # ============================================================================

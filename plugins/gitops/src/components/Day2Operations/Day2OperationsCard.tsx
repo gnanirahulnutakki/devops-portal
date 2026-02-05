@@ -31,7 +31,6 @@ import {
   Step,
   StepLabel,
   StepContent,
-  Alert,
   Tooltip,
   Divider,
   List,
@@ -41,6 +40,7 @@ import {
   makeStyles,
   fade,
 } from '@material-ui/core';
+import { Alert } from '@material-ui/lab';
 import { InfoCard } from '@backstage/core-components';
 import { useApi, configApiRef } from '@backstage/core-plugin-api';
 
@@ -614,7 +614,7 @@ export const Day2OperationsCard: React.FC<Day2OperationsCardProps> = ({
                 {history.slice(0, 5).map((op) => (
                   <TableRow key={op.id}>
                     <TableCell>
-                      <Box display="flex" alignItems="center" gap={1}>
+                      <Box display="flex" alignItems="center" style={{ gap: 8 }}>
                         {operationIcons[op.type]}
                         <Typography variant="body2">
                           {operations.find(o => o.type === op.type)?.name || op.type}
@@ -622,7 +622,7 @@ export const Day2OperationsCard: React.FC<Day2OperationsCardProps> = ({
                       </Box>
                     </TableCell>
                     <TableCell>
-                      <Box display="flex" alignItems="center" gap={0.5}>
+                      <Box display="flex" alignItems="center" style={{ gap: 4 }}>
                         {getStatusIcon(op.status)}
                         <Typography variant="body2">{op.status}</Typography>
                       </Box>
@@ -651,7 +651,7 @@ export const Day2OperationsCard: React.FC<Day2OperationsCardProps> = ({
         {selectedOperation && (
           <>
             <DialogTitle>
-              <Box display="flex" alignItems="center" gap={1}>
+              <Box display="flex" alignItems="center" style={{ gap: 8 }}>
                 {operationIcons[selectedOperation.type]}
                 {selectedOperation.name}
                 <Chip
@@ -716,7 +716,7 @@ export const Day2OperationsCard: React.FC<Day2OperationsCardProps> = ({
                 <Step>
                   <StepLabel>Executing</StepLabel>
                   <StepContent>
-                    <Box display="flex" alignItems="center" gap={2}>
+                    <Box display="flex" alignItems="center" style={{ gap: 16 }}>
                       <LinearProgress style={{ flex: 1 }} />
                       <Typography variant="body2">Processing...</Typography>
                     </Box>
