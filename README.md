@@ -182,6 +182,7 @@ For comprehensive deployment instructions including:
 - [Docker Documentation](deployment/docker/README.md) - Docker and Docker Compose
 
 ### Architecture & Design
+- **[Complete Feature Inventory](docs/architecture/COMPLETE_FEATURE_INVENTORY.md)** - Comprehensive documentation of all 15+ features, 80+ API endpoints, database schema, authentication flows, and system wiring
 - [Production Architecture](docs/architecture/PRODUCTION-ARCHITECTURE.md) - Production deployment architecture
 - [Project Structure](docs/architecture/PROJECT-STRUCTURE.md) - Codebase organization
 - [Infrastructure Analysis](docs/architecture/RLI-USE2-ANALYSIS.md) - RLI USE2 cluster analysis

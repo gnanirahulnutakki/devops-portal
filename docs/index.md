@@ -62,6 +62,9 @@ Complete audit trail:
 
 ## Architecture
 
+For a complete feature inventory and architecture documentation, see:
+- **[Complete Feature Inventory & Wiring](architecture/COMPLETE_FEATURE_INVENTORY.md)** - Comprehensive documentation of all 15+ features, 80+ API endpoints, database schema, and system architecture
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Frontend (React + TypeScript)            │
