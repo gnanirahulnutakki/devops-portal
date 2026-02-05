@@ -14,7 +14,10 @@ spec:
   template:
     metadata:
       annotations:
+        # Restart pods when config changes
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        # Restart pods when secrets change (works with all secret providers)
+        checksum/secret: {{ .Values.secrets.name | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -30,30 +33,65 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       initContainers:
         {{- if .Values.appDist.writable }}
+        # Copy app dist to writable volume for OAuth config injection
         - name: copy-app-dist
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            runAsUser: 0
           command:
             - sh
             - -c
             - |
               mkdir -p /app-dist
               cp -R /app/packages/app/dist/. /app-dist/
+              chown -R {{ .Values.securityContext.runAsUser | default 65534 }}:{{ .Values.securityContext.runAsGroup | default 65534 }} /app-dist
+              chmod -R u+w /app-dist
           volumeMounts:
             - name: app-dist
               mountPath: /app-dist
         {{- end }}
+        {{- if .Values.postgres.enabled }}
+        # Wait for PostgreSQL to be ready
         - name: wait-for-postgres
           image: busybox:1.36
           command:
             - sh
             - -c
             - |
+              echo "Waiting for PostgreSQL at {{ include "backstage-gitops.postgres.serviceName" . }}:{{ .Values.postgres.port }}..."
               until nc -z {{ include "backstage-gitops.postgres.serviceName" . }} {{ .Values.postgres.port }}; do
-                echo "Waiting for PostgreSQL to be ready..."
                 sleep 2
               done
               echo "PostgreSQL is ready!"
+        {{- end }}
+        {{- if and .Values.redis.enabled .Values.redis.deploy }}
+        # Wait for Redis to be ready
+        - name: wait-for-redis
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for Redis at {{ include "backstage-gitops.fullname" . }}-redis:6379..."
+              until nc -z {{ include "backstage-gitops.fullname" . }}-redis 6379; do
+                sleep 2
+              done
+              echo "Redis is ready!"
+        {{- end }}
+        {{- if eq .Values.secrets.provider "external-secrets" }}
+        # Wait for External Secrets to sync
+        - name: wait-for-secrets
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for secrets to be synced..."
+              # Give External Secrets Operator time to sync
+              sleep 10
+              echo "Proceeding with startup..."
+        {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
@@ -71,13 +109,19 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           env:
-            # Backstage Configuration
+            # =================================================================
+            # Backstage Core Configuration
+            # =================================================================
+            - name: NODE_ENV
+              value: "production"
             - name: BACKSTAGE_BASE_URL
               value: {{ .Values.backstage.baseUrl | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.backstage.logLevel | quote }}
 
+            # =================================================================
             # Database Configuration
+            # =================================================================
             - name: POSTGRES_HOST
               value: {{ include "backstage-gitops.postgres.serviceName" . | quote }}
             - name: POSTGRES_PORT
@@ -90,18 +134,86 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
-                  key: {{ .Values.secrets.postgresPassword.key }}
+                  key: {{ .Values.secrets.postgresPassword.key | default "POSTGRES_PASSWORD" }}
 
-            # GitHub Configuration
+            # =================================================================
+            # GitHub Configuration (API Access)
+            # =================================================================
             - name: GITHUB_ORG
               value: {{ .Values.github.organization | quote }}
             - name: GITHUB_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
-                  key: {{ .Values.secrets.githubToken.key }}
+                  key: {{ .Values.secrets.githubToken.key | default "GITHUB_TOKEN" }}
 
-            # ArgoCD Configuration
+            # =================================================================
+            # Authentication - GitHub OAuth
+            # =================================================================
+            {{- if and .Values.auth .Values.auth.github .Values.auth.github.enabled }}
+            - name: GITHUB_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.githubOAuthClientId.key | default "GITHUB_OAUTH_CLIENT_ID" }}
+            - name: GITHUB_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.githubOAuthClientSecret.key | default "GITHUB_OAUTH_CLIENT_SECRET" }}
+            {{- end }}
+
+            # =================================================================
+            # Authentication - Google OAuth
+            # =================================================================
+            {{- if and .Values.auth .Values.auth.google .Values.auth.google.enabled }}
+            - name: GOOGLE_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.googleOAuthClientId.key | default "GOOGLE_OAUTH_CLIENT_ID" }}
+            - name: GOOGLE_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.googleOAuthClientSecret.key | default "GOOGLE_OAUTH_CLIENT_SECRET" }}
+            {{- end }}
+
+            # =================================================================
+            # Authentication - Microsoft/Azure AD OAuth
+            # =================================================================
+            {{- if and .Values.auth .Values.auth.microsoft .Values.auth.microsoft.enabled }}
+            - name: MICROSOFT_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.microsoftOAuthClientId.key | default "MICROSOFT_OAUTH_CLIENT_ID" }}
+            - name: MICROSOFT_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.microsoftOAuthClientSecret.key | default "MICROSOFT_OAUTH_CLIENT_SECRET" }}
+            - name: MICROSOFT_TENANT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.microsoftTenantId.key | default "MICROSOFT_TENANT_ID" }}
+                  optional: true
+            {{- end }}
+
+            # =================================================================
+            # Authentication - Session Secret
+            # =================================================================
+            - name: AUTH_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.authSessionSecret.key | default "AUTH_SESSION_SECRET" }}
+                  optional: true
+
+            # =================================================================
+            # ArgoCD Integration
+            # =================================================================
             - name: ARGOCD_ENABLED
               value: {{ .Values.argocd.enabled | quote }}
             {{- if .Values.argocd.enabled }}
@@ -111,14 +223,110 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
-                  key: {{ .Values.secrets.argoCdToken.key }}
+                  key: {{ .Values.secrets.argoCdToken.key | default "ARGOCD_TOKEN" }}
             {{- end }}
+
+            # =================================================================
+            # Grafana Integration
+            # =================================================================
+            {{- if .Values.grafana.enabled }}
+            - name: GRAFANA_ENABLED
+              value: "true"
+            - name: GRAFANA_URL
+              value: {{ .Values.grafana.url | quote }}
+            {{- if .Values.secrets.grafanaToken }}
+            - name: GRAFANA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.grafanaToken.key | default "GRAFANA_TOKEN" }}
+                  optional: true
+            {{- end }}
+            {{- end }}
+
+            # =================================================================
+            # GitLab Integration
+            # =================================================================
+            {{- if .Values.gitlab.enabled }}
+            - name: GITLAB_ENABLED
+              value: "true"
+            - name: GITLAB_URL
+              value: {{ .Values.gitlab.url | quote }}
+            {{- if .Values.secrets.gitlabToken }}
+            - name: GITLAB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.gitlabToken.key | default "GITLAB_TOKEN" }}
+                  optional: true
+            {{- end }}
+            {{- end }}
+
+            # =================================================================
+            # GitOps Plugin Auth Configuration
+            # =================================================================
+            - name: GITOPS_AUTH_ALLOW_UNAUTHENTICATED
+              value: {{ .Values.gitopsAuth.allowUnauthenticated | quote }}
+
+            # =================================================================
+            # Redis Configuration (if enabled)
+            # =================================================================
+            {{- if .Values.redis.enabled }}
+            - name: REDIS_HOST
+              {{- if .Values.redis.deploy }}
+              value: {{ include "backstage-gitops.fullname" . }}-redis
+              {{- else }}
+              value: {{ .Values.redis.host | quote }}
+              {{- end }}
+            - name: REDIS_PORT
+              value: {{ .Values.redis.port | default 6379 | quote }}
+            {{- if .Values.redis.password }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.redisPassword.key | default "REDIS_PASSWORD" }}
+                  optional: true
+            {{- end }}
+            {{- end }}
+
+            # =================================================================
+            # Grafana Service Account Token (if enabled)
+            # =================================================================
+            {{- if .Values.grafana.enabled }}
+            {{- if .Values.grafana.useServiceAccount }}
+            - name: GRAFANA_SA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.grafanaSaToken.key | default "GRAFANA_SA_TOKEN" }}
+                  optional: true
+            {{- else }}
+            - name: GRAFANA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.grafanaApiKey.key | default "GRAFANA_API_KEY" }}
+                  optional: true
+            {{- end }}
+            {{- end }}
+
+            # =================================================================
+            # HAProxy Internal Routing (if enabled)
+            # =================================================================
+            {{- if .Values.haproxy.enabled }}
+            - name: HAPROXY_URL
+              value: "http://{{ include "backstage-gitops.fullname" . }}-haproxy:{{ .Values.haproxy.service.port | default 80 }}"
+            {{- end }}
+
+            # =================================================================
+            # Extra Environment Variables
+            # =================================================================
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          envFrom:
-            - configMapRef:
-                name: {{ include "backstage-gitops.fullname" . }}-config
+
+          # Mount the production config from ConfigMap
           volumeMounts:
             - name: app-config
               mountPath: /app/app-config.production.yaml
@@ -128,6 +336,7 @@ spec:
             - name: app-dist
               mountPath: /app/packages/app/dist
             {{- end }}
+
       volumes:
         - name: app-config
           configMap:

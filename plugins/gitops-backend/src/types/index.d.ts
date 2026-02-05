@@ -10,7 +10,7 @@ export interface AuditLog {
     user_email?: string;
     user_name?: string;
     operation: 'read' | 'update' | 'commit' | 'sync' | 'delete';
-    resource_type: 'repository' | 'branch' | 'file' | 'argocd_app';
+    resource_type: 'repository' | 'branch' | 'file' | 'argocd_app' | 'gitlab_file' | 'gitlab_branch';
     resource_id: string;
     repository?: string;
     branch?: string;

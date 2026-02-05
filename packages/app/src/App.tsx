@@ -37,7 +37,7 @@ import { catalogEntityCreatePermission } from '@backstage/plugin-catalog-common/
 import { UnifiedThemeProvider } from '@backstage/theme';
 
 // Import GitOps plugin
-import { GitOpsPage, GrafanaPage, S3Page, DocumentationPage } from '@internal/plugin-gitops';
+import { GitOpsPage, GrafanaPage, S3Page, DocumentationPage, GitHubActionsPage } from '@internal/plugin-gitops';
 
 // Import custom Radiant Logic themes
 import { radiantLogicTheme, radiantLogicDarkTheme } from './theme';
@@ -136,6 +136,9 @@ const routes = (
 
     {/* Documentation */}
     <Route path="/documentation" element={<DocumentationPage />} />
+
+    {/* GitHub Actions - CI/CD Monitoring */}
+    <Route path="/github-actions" element={<GitHubActionsPage />} />
   </FlatRoutes>
 );
 

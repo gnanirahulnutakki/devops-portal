@@ -144,7 +144,7 @@ export const PRManagement: React.FC = () => {
             )}
           />
 
-          <Box display="flex" gap={1}>
+          <Box display="flex" style={{ gap: 1 * 8 }}>
             <Button
               variant="outlined"
               startIcon={<RefreshIcon />}

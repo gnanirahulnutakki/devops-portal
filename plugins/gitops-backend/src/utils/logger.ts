@@ -1,5 +1,3 @@
-import winston from 'winston';
-
 /**
  * Structured Logger for GitOps Backend
  * 
@@ -8,41 +6,59 @@ import winston from 'winston';
  * - Pretty print for development
  * - Request context tracking
  * - Performance timing
+ * 
+ * Note: Using simple console.log to avoid ESM/CJS interop issues with winston
  */
 
-const { combine, timestamp, json, printf, colorize, errors } = winston.format;
+// Simple logger implementation to avoid winston CJS issues
+const LOG_LEVEL_PRIORITY: Record<string, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+};
 
-// Custom format for development
-const devFormat = printf(({ level, message, timestamp, ...meta }) => {
-  const metaStr = Object.keys(meta).length ? JSON.stringify(meta, null, 2) : '';
-  return `${timestamp} [${level}] ${message} ${metaStr}`;
-});
+const currentLevel = process.env.LOG_LEVEL || 'info';
+const currentPriority = LOG_LEVEL_PRIORITY[currentLevel] ?? 2;
 
-// Create logger instance
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
-  defaultMeta: {
-    service: 'gitops-backend',
-    version: process.env.npm_package_version || '1.0.0',
-  },
-  format: combine(
-    timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
-    errors({ stack: true }),
-    process.env.NODE_ENV === 'production' ? json() : combine(colorize(), devFormat)
-  ),
-  transports: [
-    new winston.transports.Console(),
-  ],
-});
-
-// Add file transport in production
-if (process.env.NODE_ENV === 'production' && process.env.LOG_FILE) {
-  logger.add(new winston.transports.File({
-    filename: process.env.LOG_FILE,
-    maxsize: 10 * 1024 * 1024, // 10MB
-    maxFiles: 5,
-  }));
+function formatLog(level: string, message: string, meta?: Record<string, unknown>) {
+  const timestamp = new Date().toISOString();
+  const metaStr = meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : '';
+  if (process.env.NODE_ENV === 'production') {
+    return JSON.stringify({ timestamp, level, message, service: 'gitops-backend', ...meta });
+  }
+  return `${timestamp} [${level.toUpperCase()}] ${message} ${metaStr}`;
 }
+
+function shouldLog(level: string): boolean {
+  const levelPriority = LOG_LEVEL_PRIORITY[level] ?? 2;
+  return levelPriority <= currentPriority;
+}
+
+const logger = {
+  error: (message: string, meta?: Record<string, unknown>) => {
+    if (shouldLog('error')) console.error(formatLog('error', message, meta));
+  },
+  warn: (message: string, meta?: Record<string, unknown>) => {
+    if (shouldLog('warn')) console.warn(formatLog('warn', message, meta));
+  },
+  info: (message: string, meta?: Record<string, unknown>) => {
+    if (shouldLog('info')) console.log(formatLog('info', message, meta));
+  },
+  debug: (message: string, meta?: Record<string, unknown>) => {
+    if (shouldLog('debug')) console.log(formatLog('debug', message, meta));
+  },
+  log: (level: string, message: string, meta?: Record<string, unknown>) => {
+    if (shouldLog(level)) console.log(formatLog(level, message, meta));
+  },
+  child: (defaultMeta: Record<string, unknown>) => ({
+    error: (msg: string, m?: Record<string, unknown>) => logger.error(msg, { ...defaultMeta, ...m }),
+    warn: (msg: string, m?: Record<string, unknown>) => logger.warn(msg, { ...defaultMeta, ...m }),
+    info: (msg: string, m?: Record<string, unknown>) => logger.info(msg, { ...defaultMeta, ...m }),
+    debug: (msg: string, m?: Record<string, unknown>) => logger.debug(msg, { ...defaultMeta, ...m }),
+    log: (level: string, msg: string, m?: Record<string, unknown>) => logger.log(level, msg, { ...defaultMeta, ...m }),
+  }),
+};
 
 /**
  * Create a child logger with request context

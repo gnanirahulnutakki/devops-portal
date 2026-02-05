@@ -159,7 +159,7 @@ export class GitHubService {
       });
 
       if (!Array.isArray(data)) {
-        return [data];
+        return [data as any];
       }
 
       return data.map(entry => ({

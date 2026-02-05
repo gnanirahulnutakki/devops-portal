@@ -26,7 +26,7 @@ export const gitopsPlugin = createBackendPlugin({
                     process.env.NODE_ENV !== 'production';
                 httpRouter.addAuthPolicy({
                     path: '/',
-                    allow: allowUnauthenticated ? 'unauthenticated' : 'authenticated',
+                    allow: allowUnauthenticated ? 'unauthenticated' : 'user-cookie',
                 });
                 logger.info(`GitOps auth policy: ${allowUnauthenticated ? 'unauthenticated' : 'authenticated'}`);
             },

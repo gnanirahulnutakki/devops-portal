@@ -177,7 +177,7 @@ export const RepositoryBrowser = () => {
                 renderOption={(option) => {
                   const branch = branches.find(b => b.name === option);
                   return (
-                    <Box display="flex" alignItems="center" gap={1}>
+                    <Box display="flex" alignItems="center" style={{ gap: 8 }}>
                       <span>{option}</span>
                       {branch?.protected && <Chip label="protected" size="small" />}
                     </Box>
@@ -192,7 +192,7 @@ export const RepositoryBrowser = () => {
                 options={commonFiles}
                 getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
                 value={commonFiles.find(f => f.path === selectedFile) || null}
-                onChange={(_, newValue) => setSelectedFile(newValue ? newValue.path : '')}
+                onChange={(_, newValue) => setSelectedFile(newValue && typeof newValue !== 'string' ? newValue.path : '')}
                 disabled={!selectedBranch}
                 renderInput={(params) => (
                   <TextField
@@ -221,7 +221,7 @@ export const RepositoryBrowser = () => {
       <Grid item xs={12}>
         <InfoCard
           title={
-            <Box display="flex" alignItems="center" gap={1}>
+            <Box display="flex" alignItems="center" style={{ gap: 8 }}>
               <DescriptionIcon style={{ color: '#09143F' }} />
               File Viewer: {commonFiles.find(f => f.path === selectedFile)?.label || 'Select a file'}
             </Box>
@@ -230,7 +230,7 @@ export const RepositoryBrowser = () => {
           {fileContent ? (
             <Box>
               <Box mb={2}>
-                <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
+                <Box display="flex" flexWrap="wrap" style={{ gap: 8, marginBottom: 16 }}>
                   <Chip
                     icon={<AccountTreeIcon />}
                     label={`Branch: ${fileContent.branch}`}

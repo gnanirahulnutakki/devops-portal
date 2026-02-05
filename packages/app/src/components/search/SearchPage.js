@@ -3,6 +3,8 @@ import { SearchType } from '@backstage/plugin-search';
 import { DefaultResultListItem, SearchBar, SearchResult, } from '@backstage/plugin-search-react';
 import { Content, Header, Page } from '@backstage/core-components';
 import { Grid } from '@material-ui/core';
+import CategoryIcon from '@material-ui/icons/Category';
+import DescriptionIcon from '@material-ui/icons/Description';
 export const searchPage = (React.createElement(Page, { themeId: "home" },
     React.createElement(Header, { title: "Search" }),
     React.createElement(Content, null,
@@ -14,10 +16,12 @@ export const searchPage = (React.createElement(Page, { themeId: "home" },
                         {
                             value: 'software-catalog',
                             name: 'Software Catalog',
+                            icon: React.createElement(CategoryIcon, null),
                         },
                         {
                             value: 'techdocs',
                             name: 'Documentation',
+                            icon: React.createElement(DescriptionIcon, null),
                         },
                     ] })),
             React.createElement(Grid, { item: true, xs: 9 },

@@ -19,7 +19,7 @@ export interface AuditLog {
 
   // Operation details
   operation: 'read' | 'update' | 'commit' | 'sync' | 'delete';
-  resource_type: 'repository' | 'branch' | 'file' | 'argocd_app';
+  resource_type: 'repository' | 'branch' | 'file' | 'argocd_app' | 'gitlab_file' | 'gitlab_branch';
   resource_id: string;
 
   // Repository context

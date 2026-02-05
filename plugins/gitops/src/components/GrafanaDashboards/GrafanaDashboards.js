@@ -78,7 +78,7 @@ export const GrafanaDashboards = () => {
             React.createElement(Alert, { severity: "warning" }, "No dashboards found. Make sure Grafana Cloud is configured in app-config.yaml and the API token has the correct permissions."))),
         React.createElement(Grid, { item: true, xs: 12 },
             React.createElement(InfoCard, { title: "Grafana Cloud Dashboards" },
-                React.createElement(Box, { mb: 3, display: "flex", gap: 3, alignItems: "center" },
+                React.createElement(Box, { mb: 3, display: "flex", style: { gap: 3 * 8 }, alignItems: "center" },
                     React.createElement(FormControl, { style: { minWidth: 250 } },
                         React.createElement(InputLabel, null, "Select Folder"),
                         React.createElement(Select, { value: selectedFolder, onChange: e => {
@@ -91,7 +91,7 @@ export const GrafanaDashboards = () => {
                                 const dashboard = folderDashboards.find(d => d.id === e.target.value);
                                 setSelectedDashboard(dashboard || null);
                             } }, folderDashboards.map(dashboard => (React.createElement(MenuItem, { key: dashboard.id, value: dashboard.id }, dashboard.title))))),
-                    React.createElement(Box, { display: "flex", gap: 1, alignItems: "center" },
+                    React.createElement(Box, { display: "flex", style: { gap: 1 * 8 }, alignItems: "center" },
                         React.createElement(IconButton, { size: "small", title: "Refresh Dashboards", onClick: fetchDashboards },
                             React.createElement(RefreshIcon, null)),
                         selectedDashboard && (React.createElement(IconButton, { size: "small", component: Link, href: selectedDashboard.url, target: "_blank", title: "Open in Grafana" },
@@ -107,7 +107,7 @@ export const GrafanaDashboards = () => {
                             React.createElement(Box, null,
                                 React.createElement(Typography, { variant: "h5", gutterBottom: true }, selectedDashboard.title),
                                 selectedDashboard.description && (React.createElement(Typography, { variant: "body2", color: "textSecondary", gutterBottom: true }, selectedDashboard.description)))),
-                        React.createElement(Box, { display: "flex", gap: 1, flexWrap: "wrap", alignItems: "center" },
+                        React.createElement(Box, { display: "flex", style: { gap: 1 * 8 }, flexWrap: "wrap", alignItems: "center" },
                             React.createElement(Chip, { label: selectedDashboard.folder, size: "small", color: "primary" }),
                             selectedDashboard.panels !== undefined && (React.createElement(Chip, { label: `${selectedDashboard.panels} panels`, size: "small", variant: "outlined" })),
                             selectedDashboard.tags.map(tag => (React.createElement(Chip, { key: tag, label: tag, size: "small" }))),

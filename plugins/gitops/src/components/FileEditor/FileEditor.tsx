@@ -300,14 +300,14 @@ export const FileEditor = ({
               </Button>
             )}
           </Box>
-          <Box display="flex" flexWrap="wrap" gap={1}>
+          <Box display="flex" flexWrap="wrap" style={{ gap: 1 * 8 }}>
             {branches.slice(0, 15).map((branch) => {
               const isSelected = selectedBranches.includes(branch.name);
               return (
                 <Chip
                   key={branch.name}
                   label={
-                    <Box display="flex" alignItems="center" gap={0.5}>
+                    <Box display="flex" alignItems="center" style={{ gap: 4 }}>
                       {isSelected && <CheckCircleIcon style={{ fontSize: 16 }} />}
                       {branch.name}
                       {branch.protected && <Chip label="protected" size="small" style={{ marginLeft: 4, height: 16 }} />}
@@ -478,7 +478,7 @@ export const FileEditor = ({
                     />
                     <ListItemText
                       primary={
-                        <Box display="flex" alignItems="center" gap={1}>
+                        <Box display="flex" alignItems="center" style={{ gap: 1 * 8 }}>
                           <span style={{ fontWeight: isSelected ? 600 : 400 }}>
                             {branch.name}
                           </span>

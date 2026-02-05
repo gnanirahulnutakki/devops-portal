@@ -300,7 +300,7 @@ export const PRStatusChecks: React.FC<PRStatusChecksProps> = ({
                   </ListItemIcon>
                   <ListItemText
                     primary={
-                      <Box display="flex" alignItems="center" gap={1}>
+                      <Box display="flex" alignItems="center" style={{ gap: 1 * 8 }}>
                         <Typography variant="body1">{check.name}</Typography>
                         <Chip
                           label={check.state}

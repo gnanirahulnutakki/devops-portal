@@ -89,7 +89,7 @@ export const PRManagement = () => {
                             React.createElement(FolderIcon, { style: { marginLeft: 8, marginRight: 4, color: '#09143F' } }),
                             params.InputProps.startAdornment)),
                     } })) }),
-            React.createElement(Box, { display: "flex", gap: 1 },
+            React.createElement(Box, { display: "flex", style: { gap: 1 * 8 } },
                 React.createElement(Button, { variant: "outlined", startIcon: React.createElement(RefreshIcon, null), onClick: handleReset, disabled: !selectedRepo }, "Reset"),
                 React.createElement(Button, { variant: "contained", color: "primary", startIcon: React.createElement(AddIcon, null), onClick: handleCreatePR, style: {
                         background: 'linear-gradient(45deg, #09143F 30%, #2ea3f2 90%)',

@@ -1,3 +1,4 @@
 import React from 'react';
-export declare const SignInPage: () => React.JSX.Element;
+import { SignInPageProps } from '@backstage/core-plugin-api';
+export declare const SignInPage: (props: SignInPageProps) => React.JSX.Element;
 //# sourceMappingURL=SignInPage.d.ts.map

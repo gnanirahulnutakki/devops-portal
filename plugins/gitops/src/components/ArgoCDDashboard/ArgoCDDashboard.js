@@ -72,7 +72,7 @@ export const ArgoCDDashboard = () => {
                 applications.length,
                 " simulated ArgoCD applications for rli-use2.")),
         React.createElement(Grid, { item: true, xs: 12 },
-            React.createElement(Box, { display: "flex", gap: 2, mb: 2 },
+            React.createElement(Box, { display: "flex", style: { gap: 2 * 8 }, mb: 2 },
                 React.createElement(Chip, { label: `Total: ${applications.length}` }),
                 React.createElement(Chip, { label: `Synced: ${syncedCount}`, color: "primary" }),
                 React.createElement(Chip, { label: `Out of Sync: ${outOfSyncCount}`, color: "secondary" }),

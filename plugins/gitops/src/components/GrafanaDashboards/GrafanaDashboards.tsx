@@ -125,7 +125,7 @@ export const GrafanaDashboards = () => {
 
       <Grid item xs={12}>
         <InfoCard title="Grafana Cloud Dashboards">
-          <Box mb={3} display="flex" gap={3} alignItems="center">
+          <Box mb={3} display="flex" style={{ gap: 3 * 8 }} alignItems="center">
             <FormControl style={{ minWidth: 250 }}>
               <InputLabel>Select Folder</InputLabel>
               <Select
@@ -160,7 +160,7 @@ export const GrafanaDashboards = () => {
               </Select>
             </FormControl>
 
-            <Box display="flex" gap={1} alignItems="center">
+            <Box display="flex" style={{ gap: 1 * 8 }} alignItems="center">
               <IconButton size="small" title="Refresh Dashboards" onClick={fetchDashboards}>
                 <RefreshIcon />
               </IconButton>
@@ -209,7 +209,7 @@ export const GrafanaDashboards = () => {
                   </Box>
                 </Box>
 
-                <Box display="flex" gap={1} flexWrap="wrap" alignItems="center">
+                <Box display="flex" style={{ gap: 1 * 8 }} flexWrap="wrap" alignItems="center">
                   <Chip label={selectedDashboard.folder} size="small" color="primary" />
                   {selectedDashboard.panels !== undefined && (
                     <Chip label={`${selectedDashboard.panels} panels`} size="small" variant="outlined" />

@@ -327,7 +327,7 @@ export const PullRequestDetails = ({ repository, pullNumber, onClose, }) => {
                 React.createElement(Card, null,
                     React.createElement(CardContent, null,
                         React.createElement(Typography, { variant: "h6", gutterBottom: true }, "Details"),
-                        React.createElement(Box, { display: "flex", flexDirection: "column", gap: 1 },
+                        React.createElement(Box, { display: "flex", flexDirection: "column", style: { gap: 1 * 8 } },
                             React.createElement(Typography, { variant: "body2" },
                                 React.createElement("strong", null, "Commits:"),
                                 " ",

@@ -56,7 +56,7 @@ const useStyles = makeStyles((theme) => ({
         alignItems: 'center',
         padding: theme.spacing(2),
         backgroundColor: '#fafbfc',
-        borderBottom: `1px solid ${theme.divider}`,
+        borderBottom: `1px solid ${theme.palette.divider}`,
     },
     stats: {
         display: 'flex',
@@ -135,7 +135,7 @@ export const DiffViewer = ({ files }) => {
             const diffLines = file.patch ? parsePatch(file.patch) : [];
             return (React.createElement(Card, { key: index, style: { marginBottom: 16 } },
                 React.createElement(Box, { className: classes.fileHeader },
-                    React.createElement(Box, { display: "flex", alignItems: "center", gap: 2 },
+                    React.createElement(Box, { display: "flex", alignItems: "center", style: { gap: 2 * 8 } },
                         getStatusIcon(file.status),
                         React.createElement(Typography, { variant: "subtitle1", style: { fontFamily: 'monospace' } }, file.previous_filename && file.previous_filename !== file.filename
                             ? `${file.previous_filename} → ${file.filename}`

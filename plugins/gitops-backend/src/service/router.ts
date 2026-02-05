@@ -4,6 +4,7 @@ import express from 'express';
 import Router from 'express-promise-router';
 import { Knex } from 'knex';
 import { GitHubService } from '../services/GitHubService';
+import { GitHubActionsService } from '../services/GitHubActionsService';
 import { ArgoCDService } from '../services/ArgoCDService';
 import { AuditService } from '../services/AuditService';
 import { BulkOperationService } from '../services/BulkOperationService';
@@ -12,6 +13,9 @@ import { HealthService } from '../services/HealthService';
 import { GitLabService } from '../services/GitLabService';
 import { UptimeKumaService } from '../services/UptimeKumaService';
 import { AuthTokenService } from '../services/AuthTokenService';
+import { PermissionService, Permission, Role, requirePermission, requireRole } from '../services/PermissionService';
+import { MaturityService } from '../services/MaturityService';
+import { CostService } from '../services/CostService';
 import {
   listRepositoriesSchema,
   listBranchesSchema,
@@ -135,6 +139,28 @@ export async function createRouter(
     fallbackGitLabToken: gitlabToken,
     allowUnauthenticated,
   });
+
+  // Initialize GitHub Actions service
+  const githubActionsService = new GitHubActionsService(config as any, logger as any);
+  logger.info('GitHub Actions integration initialized');
+
+  // Initialize Permission service
+  const superAdmins = config.getOptionalStringArray('gitops.permissions.superAdmins') || [];
+  const defaultRole = config.getOptionalString('gitops.permissions.defaultRole') as Role || Role.DEVELOPER;
+  
+  const permissionService = new PermissionService({
+    superAdmins,
+    defaultRole,
+    allowGuest: allowUnauthenticated,
+    // Map GitHub teams to roles
+    groupRoleMapping: {
+      'admins': [Role.ADMIN],
+      'sre-team': [Role.OPERATOR],
+      'developers': [Role.DEVELOPER],
+      'readonly': [Role.VIEWER],
+    },
+  });
+  logger.info('Permission service initialized');
 
   const auditService = new AuditService({ database: knex });
   const bulkOperationService = new BulkOperationService(knex, githubService, auditService);
@@ -414,7 +440,13 @@ export async function createRouter(
       logger.info('GET /bulk-operations');
 
       // Validate request
-      const params = validate(listBulkOperationsSchema, req.query);
+      const params = validate(listBulkOperationsSchema, req.query) as {
+        user_id?: string;
+        status?: 'pending' | 'in_progress' | 'completed' | 'failed' | 'partial';
+        operation_type?: 'bulk_update' | 'bulk_commit' | 'bulk_sync';
+        limit?: number;
+        offset?: number;
+      };
 
       // Get operations
       const { operations, total } = await bulkOperationService.listOperations(params);
@@ -442,7 +474,18 @@ export async function createRouter(
       logger.info('GET /audit-logs');
 
       // Validate request
-      const params = validate(listAuditLogsSchema, req.query);
+      const params = validate(listAuditLogsSchema, req.query) as {
+        limit?: number;
+        offset?: number;
+        start_date?: string;
+        end_date?: string;
+        user_id?: string;
+        operation?: 'read' | 'update' | 'commit' | 'sync' | 'delete';
+        resource_type?: 'repository' | 'branch' | 'file' | 'argocd_app';
+        repository?: string;
+        branch?: string;
+        status?: 'pending' | 'success' | 'failure';
+      };
 
       // Convert date strings to Date objects
       const filters = {
@@ -1168,6 +1211,195 @@ export async function createRouter(
   );
 
   // ===========================================================================
+  // GitHub Actions Operations
+  // ===========================================================================
+
+  /**
+   * GET /repositories/:repo/actions/workflows
+   * List all workflows for a repository
+   */
+  router.get(
+    '/repositories/:repo/actions/workflows',
+    asyncHandler(async (req, res) => {
+      const { repo } = req.params;
+      logger.info(`GET /repositories/${repo}/actions/workflows`);
+
+      const workflows = await githubActionsService.listWorkflows(repo);
+      res.json({ workflows, total: workflows.length });
+    })
+  );
+
+  /**
+   * GET /repositories/:repo/actions/runs
+   * Get workflow runs for a repository
+   */
+  router.get(
+    '/repositories/:repo/actions/runs',
+    asyncHandler(async (req, res) => {
+      const { repo } = req.params;
+      const { workflow_id, branch, status, per_page, page } = req.query;
+      logger.info(`GET /repositories/${repo}/actions/runs`);
+
+      const { runs, total_count } = await githubActionsService.getWorkflowRuns(repo, {
+        workflow_id: workflow_id ? parseInt(workflow_id as string, 10) : undefined,
+        branch: branch as string,
+        status: status as string,
+        per_page: per_page ? parseInt(per_page as string, 10) : 10,
+        page: page ? parseInt(page as string, 10) : 1,
+      });
+
+      res.json({ runs, total: total_count });
+    })
+  );
+
+  /**
+   * GET /repositories/:repo/actions/runs/:runId
+   * Get a specific workflow run
+   */
+  router.get(
+    '/repositories/:repo/actions/runs/:runId',
+    asyncHandler(async (req, res) => {
+      const { repo, runId } = req.params;
+      logger.info(`GET /repositories/${repo}/actions/runs/${runId}`);
+
+      const run = await githubActionsService.getWorkflowRun(repo, parseInt(runId, 10));
+      res.json({ run });
+    })
+  );
+
+  /**
+   * GET /repositories/:repo/actions/runs/:runId/jobs
+   * Get jobs for a workflow run
+   */
+  router.get(
+    '/repositories/:repo/actions/runs/:runId/jobs',
+    asyncHandler(async (req, res) => {
+      const { repo, runId } = req.params;
+      logger.info(`GET /repositories/${repo}/actions/runs/${runId}/jobs`);
+
+      const jobs = await githubActionsService.getWorkflowRunJobs(repo, parseInt(runId, 10));
+      res.json({ jobs, total: jobs.length });
+    })
+  );
+
+  /**
+   * GET /repositories/:repo/actions/summary
+   * Get build status summary for a repository
+   */
+  router.get(
+    '/repositories/:repo/actions/summary',
+    asyncHandler(async (req, res) => {
+      const { repo } = req.params;
+      const { branch } = req.query;
+      logger.info(`GET /repositories/${repo}/actions/summary`);
+
+      const summary = await githubActionsService.getBuildStatusSummary(repo, branch as string);
+      res.json(summary);
+    })
+  );
+
+  /**
+   * POST /repositories/:repo/actions/runs/:runId/rerun
+   * Re-run a workflow
+   */
+  router.post(
+    '/repositories/:repo/actions/runs/:runId/rerun',
+    asyncHandler(async (req, res) => {
+      const { repo, runId } = req.params;
+      logger.info(`POST /repositories/${repo}/actions/runs/${runId}/rerun`);
+
+      await githubActionsService.rerunWorkflow(repo, parseInt(runId, 10));
+
+      // Audit log
+      const userContext = getUserContext(req);
+      await auditService.log({
+        user_id: userContext.userId,
+        user_email: userContext.userEmail,
+        operation: 'update',
+        resource_type: 'repository',
+        resource_id: `${repo}/actions/runs/${runId}`,
+        repository: repo,
+        metadata: { action: 'rerun_workflow', run_id: runId },
+        status: 'success',
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+      });
+
+      res.json({ success: true, message: `Workflow run ${runId} restarted` });
+    })
+  );
+
+  /**
+   * POST /repositories/:repo/actions/runs/:runId/rerun-failed
+   * Re-run failed jobs in a workflow
+   */
+  router.post(
+    '/repositories/:repo/actions/runs/:runId/rerun-failed',
+    asyncHandler(async (req, res) => {
+      const { repo, runId } = req.params;
+      logger.info(`POST /repositories/${repo}/actions/runs/${runId}/rerun-failed`);
+
+      await githubActionsService.rerunFailedJobs(repo, parseInt(runId, 10));
+      res.json({ success: true, message: `Failed jobs in run ${runId} restarted` });
+    })
+  );
+
+  /**
+   * POST /repositories/:repo/actions/runs/:runId/cancel
+   * Cancel a workflow run
+   */
+  router.post(
+    '/repositories/:repo/actions/runs/:runId/cancel',
+    asyncHandler(async (req, res) => {
+      const { repo, runId } = req.params;
+      logger.info(`POST /repositories/${repo}/actions/runs/${runId}/cancel`);
+
+      await githubActionsService.cancelWorkflowRun(repo, parseInt(runId, 10));
+      res.json({ success: true, message: `Workflow run ${runId} cancelled` });
+    })
+  );
+
+  /**
+   * POST /repositories/:repo/actions/workflows/:workflowId/dispatches
+   * Trigger a workflow dispatch event
+   */
+  router.post(
+    '/repositories/:repo/actions/workflows/:workflowId/dispatches',
+    asyncHandler(async (req, res) => {
+      const { repo, workflowId } = req.params;
+      const { ref, inputs } = req.body;
+      logger.info(`POST /repositories/${repo}/actions/workflows/${workflowId}/dispatches`);
+
+      if (!ref) {
+        res.status(400).json({
+          error: { code: 'VALIDATION_ERROR', message: 'ref is required' },
+        });
+        return;
+      }
+
+      await githubActionsService.triggerWorkflow(repo, workflowId, ref, inputs);
+
+      // Audit log
+      const userContext = getUserContext(req);
+      await auditService.log({
+        user_id: userContext.userId,
+        user_email: userContext.userEmail,
+        operation: 'update',
+        resource_type: 'repository',
+        resource_id: `${repo}/actions/workflows/${workflowId}`,
+        repository: repo,
+        branch: ref,
+        metadata: { action: 'trigger_workflow', workflow_id: workflowId, inputs },
+        status: 'success',
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+      });
+
+      res.status(202).json({ success: true, message: `Workflow ${workflowId} triggered on ${ref}` });
+    })
+  );
+
+  // ===========================================================================
   // Auth Token Operations (for OAuth-based access)
   // ===========================================================================
 
@@ -1208,6 +1440,92 @@ export async function createRouter(
     asyncHandler(async (req, res) => {
       const orgs = await authTokenService.getUserOrganizations(req);
       res.json({ organizations: orgs });
+    })
+  );
+
+  // ===========================================================================
+  // Permission Operations (RBAC)
+  // ===========================================================================
+
+  /**
+   * GET /permissions
+   * Get current user's permissions and roles
+   */
+  router.get(
+    '/permissions',
+    asyncHandler(async (req, res) => {
+      const context = permissionService.getUserPermissions(req);
+      res.json({
+        userId: context.userId,
+        email: context.email,
+        displayName: context.displayName,
+        roles: context.roles,
+        permissions: context.permissions,
+        groups: context.groups,
+      });
+    })
+  );
+
+  /**
+   * POST /permissions/check
+   * Check if user has specific permissions
+   */
+  router.post(
+    '/permissions/check',
+    asyncHandler(async (req, res) => {
+      const { permissions } = req.body;
+      
+      if (!permissions || !Array.isArray(permissions)) {
+        res.status(400).json({
+          error: { code: 'VALIDATION_ERROR', message: 'permissions array is required' },
+        });
+        return;
+      }
+
+      const context = permissionService.getUserPermissions(req);
+      const results: Record<string, boolean> = {};
+
+      for (const permission of permissions) {
+        results[permission] = permissionService.hasPermission(context, permission as Permission);
+      }
+
+      res.json({
+        userId: context.userId,
+        roles: context.roles,
+        results,
+      });
+    })
+  );
+
+  /**
+   * GET /permissions/roles
+   * Get all available roles and their permissions
+   */
+  router.get(
+    '/permissions/roles',
+    asyncHandler(async (req, res) => {
+      const roles = permissionService.getAvailableRoles();
+      const roleDetails = roles.map(role => ({
+        role,
+        permissions: permissionService.getPermissionsForRole(role),
+      }));
+
+      res.json({ roles: roleDetails });
+    })
+  );
+
+  /**
+   * GET /permissions/all
+   * Get all available permissions (for admin UI)
+   */
+  router.get(
+    '/permissions/all',
+    requireRole(permissionService, Role.ADMIN),
+    asyncHandler(async (req, res) => {
+      res.json({
+        permissions: permissionService.getAllPermissions(),
+        roles: permissionService.getAvailableRoles(),
+      });
     })
   );
 
@@ -1644,6 +1962,368 @@ export async function createRouter(
       );
 
       res.json({ events });
+    })
+  );
+
+  // ==========================================
+  // Maturity Scorecard Endpoints
+  // ==========================================
+  
+  const maturityService = new MaturityService(config);
+
+  /**
+   * GET /maturity/:owner/:repo
+   * Get maturity scorecard for a repository
+   */
+  router.get(
+    '/maturity/:owner/:repo',
+    asyncHandler(async (req, res) => {
+      const { owner, repo } = req.params;
+      logger.info(`GET /maturity/${owner}/${repo}`);
+
+      const result = await maturityService.evaluateMaturity(owner, repo);
+      res.json(result);
+    })
+  );
+
+  /**
+   * GET /maturity/:owner/:repo/badge
+   * Get maturity badge SVG for a repository
+   */
+  router.get(
+    '/maturity/:owner/:repo/badge',
+    asyncHandler(async (req, res) => {
+      const { owner, repo } = req.params;
+      logger.info(`GET /maturity/${owner}/${repo}/badge`);
+
+      const result = await maturityService.evaluateMaturity(owner, repo);
+      const svg = maturityService.getBadgeSVG(result.grade, result.percentage);
+      
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.send(svg);
+    })
+  );
+
+  // ==========================================
+  // Cost Insights Endpoints
+  // ==========================================
+  
+  const costService = new CostService(config);
+
+  /**
+   * GET /cost/summary
+   * Get cost summary for a time period
+   */
+  router.get(
+    '/cost/summary',
+    asyncHandler(async (req, res) => {
+      const { period = 'monthly', service } = req.query;
+      logger.info(`GET /cost/summary?period=${period}&service=${service || 'all'}`);
+
+      const summary = await costService.getCostSummary(
+        period as 'daily' | 'weekly' | 'monthly',
+        service as string | undefined
+      );
+      res.json(summary);
+    })
+  );
+
+  /**
+   * GET /cost/recommendations
+   * Get cost optimization recommendations
+   */
+  router.get(
+    '/cost/recommendations',
+    asyncHandler(async (req, res) => {
+      logger.info('GET /cost/recommendations');
+      const recommendations = await costService.getRecommendations();
+      res.json({ recommendations });
+    })
+  );
+
+  /**
+   * GET /cost/anomalies
+   * Get cost anomalies
+   */
+  router.get(
+    '/cost/anomalies',
+    asyncHandler(async (req, res) => {
+      logger.info('GET /cost/anomalies');
+      const anomalies = await costService.getAnomalies();
+      res.json({ anomalies });
+    })
+  );
+
+  /**
+   * GET /cost/forecast
+   * Get cost forecast
+   */
+  router.get(
+    '/cost/forecast',
+    asyncHandler(async (req, res) => {
+      const { months = '3' } = req.query;
+      logger.info(`GET /cost/forecast?months=${months}`);
+      const forecast = await costService.getForecast(parseInt(months as string, 10));
+      res.json(forecast);
+    })
+  );
+
+  // ==========================================
+  // AI Search Endpoints
+  // ==========================================
+
+  const { AISearchService } = await import('../services/AISearchService');
+  const aiSearchService = new AISearchService(config as any, logger as any);
+  logger.info(`AI Search Service initialized (enabled: ${aiSearchService.isEnabled()})`);
+
+  /**
+   * GET /search
+   * AI-powered search across documentation, code, and configs
+   */
+  router.get(
+    '/search',
+    asyncHandler(async (req, res) => {
+      const { q, maxResults = '10', sources } = req.query;
+
+      if (!q || typeof q !== 'string') {
+        return res.status(400).json({ error: 'Query parameter "q" is required' });
+      }
+
+      logger.info(`GET /search?q=${q}`);
+
+      const sourcesArray = sources
+        ? (sources as string).split(',') as ('documentation' | 'code' | 'config' | 'runbook' | 'api')[]
+        : undefined;
+
+      const results = await aiSearchService.search(q, {
+        maxResults: parseInt(maxResults as string, 10),
+        sources: sourcesArray,
+      });
+
+      res.json(results);
+    })
+  );
+
+  /**
+   * POST /search/ask
+   * Ask a question using RAG (Retrieval Augmented Generation)
+   */
+  router.post(
+    '/search/ask',
+    asyncHandler(async (req, res) => {
+      const { question } = req.body;
+
+      if (!question || typeof question !== 'string') {
+        return res.status(400).json({ error: 'Question is required' });
+      }
+
+      logger.info(`POST /search/ask: ${question.substring(0, 50)}...`);
+
+      const answer = await aiSearchService.answerQuestion(question);
+      res.json(answer);
+    })
+  );
+
+  /**
+   * GET /search/status
+   * Get AI Search service status
+   */
+  router.get(
+    '/search/status',
+    asyncHandler(async (req, res) => {
+      const status = aiSearchService.getStatus();
+      res.json(status);
+    })
+  );
+
+  /**
+   * POST /search/index
+   * Index a document for search
+   */
+  router.post(
+    '/search/index',
+    asyncHandler(async (req, res) => {
+      const { title, content, source, path, metadata } = req.body;
+
+      if (!title || !content || !source || !path) {
+        return res.status(400).json({ error: 'title, content, source, and path are required' });
+      }
+
+      logger.info(`POST /search/index: ${path}`);
+
+      await aiSearchService.indexDocument({ title, content, source, path, metadata });
+      res.json({ success: true, message: 'Document indexed successfully' });
+    })
+  );
+
+  /**
+   * GET /search/stats
+   * Get search index statistics
+   */
+  router.get(
+    '/search/stats',
+    asyncHandler(async (req, res) => {
+      const stats = aiSearchService.getIndexStats();
+      res.json(stats);
+    })
+  );
+
+  // ==========================================
+  // Day-2 Operations Endpoints
+  // ==========================================
+
+  const { Day2OperationsService } = await import('../services/Day2OperationsService');
+  const day2OpsService = new Day2OperationsService(config as any, logger as any);
+  logger.info('Day-2 Operations Service initialized');
+
+  /**
+   * GET /operations/definitions
+   * Get available operation definitions
+   */
+  router.get(
+    '/operations/definitions',
+    asyncHandler(async (req, res) => {
+      logger.info('GET /operations/definitions');
+      const definitions = day2OpsService.getOperationDefinitions();
+      res.json(definitions);
+    })
+  );
+
+  /**
+   * GET /operations/definition/:type
+   * Get a specific operation definition
+   */
+  router.get(
+    '/operations/definition/:type',
+    asyncHandler(async (req, res) => {
+      const { type } = req.params;
+      logger.info(`GET /operations/definition/${type}`);
+
+      const definition = day2OpsService.getOperationDefinition(type as any);
+      if (!definition) {
+        return res.status(404).json({ error: `Operation type ${type} not found` });
+      }
+      res.json(definition);
+    })
+  );
+
+  /**
+   * POST /operations/execute
+   * Execute a Day-2 operation
+   */
+  router.post(
+    '/operations/execute',
+    asyncHandler(async (req, res) => {
+      const { type, target, parameters, requestedBy, reason } = req.body;
+
+      if (!type || !target || !requestedBy) {
+        return res.status(400).json({
+          error: 'type, target, and requestedBy are required'
+        });
+      }
+
+      logger.info(`POST /operations/execute: ${type} for ${target.namespace}/${target.name}`);
+
+      const result = await day2OpsService.executeOperation({
+        type,
+        target,
+        parameters: parameters || {},
+        requestedBy,
+        reason,
+      });
+
+      res.json(result);
+    })
+  );
+
+  /**
+   * POST /operations/:id/approve
+   * Approve a pending operation
+   */
+  router.post(
+    '/operations/:id/approve',
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const { approvedBy } = req.body;
+
+      if (!approvedBy) {
+        return res.status(400).json({ error: 'approvedBy is required' });
+      }
+
+      logger.info(`POST /operations/${id}/approve by ${approvedBy}`);
+
+      const result = await day2OpsService.approveOperation(id, approvedBy);
+      res.json(result);
+    })
+  );
+
+  /**
+   * POST /operations/:id/cancel
+   * Cancel a pending operation
+   */
+  router.post(
+    '/operations/:id/cancel',
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const { cancelledBy } = req.body;
+
+      if (!cancelledBy) {
+        return res.status(400).json({ error: 'cancelledBy is required' });
+      }
+
+      logger.info(`POST /operations/${id}/cancel by ${cancelledBy}`);
+
+      const result = day2OpsService.cancelOperation(id, cancelledBy);
+      res.json(result);
+    })
+  );
+
+  /**
+   * GET /operations/history
+   * Get operation history
+   */
+  router.get(
+    '/operations/history',
+    asyncHandler(async (req, res) => {
+      const { type, status, limit = '20', namespace, name } = req.query;
+
+      logger.info(`GET /operations/history`);
+
+      const history = day2OpsService.getOperationHistory({
+        type: type as any,
+        status: status as any,
+        limit: parseInt(limit as string, 10),
+      });
+
+      // Filter by target if provided
+      let filteredHistory = history;
+      if (namespace || name) {
+        filteredHistory = history.filter(op =>
+          (!namespace || op.target.namespace === namespace) &&
+          (!name || op.target.name === name)
+        );
+      }
+
+      res.json(filteredHistory);
+    })
+  );
+
+  /**
+   * GET /operations/:id
+   * Get a specific operation
+   */
+  router.get(
+    '/operations/:id',
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      logger.info(`GET /operations/${id}`);
+
+      const operation = day2OpsService.getOperation(id);
+      if (!operation) {
+        return res.status(404).json({ error: `Operation ${id} not found` });
+      }
+      res.json(operation);
     })
   );
 

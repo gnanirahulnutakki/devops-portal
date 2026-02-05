@@ -572,7 +572,7 @@ export const PullRequestDetails: React.FC<PullRequestDetailsProps> = ({
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>Details</Typography>
-              <Box display="flex" flexDirection="column" gap={1}>
+              <Box display="flex" flexDirection="column" style={{ gap: 1 * 8 }}>
                 <Typography variant="body2">
                   <strong>Commits:</strong> {pr.commits || 0}
                 </Typography>

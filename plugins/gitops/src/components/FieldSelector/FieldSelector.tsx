@@ -144,7 +144,7 @@ export const FieldSelector = ({
         Update specific YAML fields while preserving branch-specific configurations
       </Typography>
 
-      <Box display="flex" gap={2} mb={2} mt={2}>
+      <Box display="flex" style={{ gap: 2 * 8 }} mb={2} mt={2}>
         <FormControl fullWidth>
           <InputLabel>Select Field to Update</InputLabel>
           <Select
@@ -178,7 +178,7 @@ export const FieldSelector = ({
       </Box>
 
       {useCustomField && (
-        <Box display="flex" gap={2} mb={2}>
+        <Box display="flex" style={{ gap: 2 * 8 }} mb={2}>
           <TextField
             fullWidth
             label="Custom Field Path"

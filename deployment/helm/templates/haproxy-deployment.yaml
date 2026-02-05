@@ -1,0 +1,115 @@
+{{- if .Values.haproxy.enabled }}
+# ============================================================================
+# HAProxy Deployment
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "backstage-gitops.fullname" . }}-haproxy
+  labels:
+    {{- include "backstage-gitops.labels" . | nindent 4 }}
+    app.kubernetes.io/component: haproxy
+spec:
+  replicas: {{ .Values.haproxy.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "backstage-gitops.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: haproxy
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/haproxy-configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "backstage-gitops.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: haproxy
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "backstage-gitops.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 99
+        fsGroup: 99
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: haproxy
+          image: "{{ .Values.haproxy.image.repository | default "haproxy" }}:{{ .Values.haproxy.image.tag | default "2.9-alpine" }}"
+          imagePullPolicy: {{ .Values.haproxy.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.haproxy.port | default 8080 }}
+              protocol: TCP
+            - name: stats
+              containerPort: 8404
+              protocol: TCP
+          env:
+            {{- if .Values.argocd.enabled }}
+            - name: ARGOCD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.argoCdToken.key }}
+                  optional: true
+            {{- end }}
+            {{- with .Values.haproxy.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.haproxy.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /usr/local/etc/haproxy
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "backstage-gitops.fullname" . }}-haproxy
+---
+# ============================================================================
+# HAProxy Service
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "backstage-gitops.fullname" . }}-haproxy
+  labels:
+    {{- include "backstage-gitops.labels" . | nindent 4 }}
+    app.kubernetes.io/component: haproxy
+spec:
+  type: {{ .Values.haproxy.service.type | default "ClusterIP" }}
+  ports:
+    - port: {{ .Values.haproxy.service.port | default 80 }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: 8404
+      targetPort: stats
+      protocol: TCP
+      name: stats
+  selector:
+    {{- include "backstage-gitops.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: haproxy
+{{- end }}

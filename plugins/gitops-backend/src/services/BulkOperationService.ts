@@ -65,7 +65,7 @@ export class BulkOperationService {
       user_name: params.user_name,
       operation_type: 'bulk_update',
       repository: params.repository,
-      target_branches: JSON.stringify(params.branches),
+      target_branches: JSON.stringify(params.branches) as any,
       file_path: params.file_path,
       status: 'pending',
       total_targets: params.branches.length,
@@ -77,7 +77,7 @@ export class BulkOperationService {
       ip_address: params.ip_address,
       user_agent: params.user_agent,
       can_rollback: false,
-      results: JSON.stringify([]),
+      results: JSON.stringify([]) as any,
     };
 
     await this.db('bulk_operations').insert(operation);

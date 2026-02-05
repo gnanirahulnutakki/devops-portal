@@ -175,9 +175,9 @@ export const FileEditor = ({ open, onClose, repository, fileContent, branches, c
                         "View All ",
                         branches.length,
                         " Branches"))),
-                React.createElement(Box, { display: "flex", flexWrap: "wrap", gap: 1 }, branches.slice(0, 15).map((branch) => {
+                React.createElement(Box, { display: "flex", flexWrap: "wrap", style: { gap: 1 * 8 } }, branches.slice(0, 15).map((branch) => {
                     const isSelected = selectedBranches.includes(branch.name);
-                    return (React.createElement(Chip, { key: branch.name, label: React.createElement(Box, { display: "flex", alignItems: "center", gap: 0.5 },
+                    return (React.createElement(Chip, { key: branch.name, label: React.createElement(Box, { display: "flex", alignItems: "center", style: { gap: 4 } },
                             isSelected && React.createElement(CheckCircleIcon, { style: { fontSize: 16 } }),
                             branch.name,
                             branch.protected && React.createElement(Chip, { label: "protected", size: "small", style: { marginLeft: 4, height: 16 } })), onClick: () => !submitting && handleBranchToggle(branch.name), color: isSelected ? "primary" : "default", variant: isSelected ? "default" : "outlined", disabled: submitting, style: {
@@ -240,7 +240,7 @@ export const FileEditor = ({ open, onClose, repository, fileContent, branches, c
                             borderLeft: isSelected ? '4px solid #09143F' : '4px solid transparent',
                         } },
                         React.createElement(Checkbox, { checked: isSelected, tabIndex: -1, disableRipple: true, color: "primary" }),
-                        React.createElement(ListItemText, { primary: React.createElement(Box, { display: "flex", alignItems: "center", gap: 1 },
+                        React.createElement(ListItemText, { primary: React.createElement(Box, { display: "flex", alignItems: "center", style: { gap: 1 * 8 } },
                                 React.createElement("span", { style: { fontWeight: isSelected ? 600 : 400 } }, branch.name),
                                 branch.protected && (React.createElement(Chip, { label: "protected", size: "small" }))) }),
                         isSelected && (React.createElement(ListItemSecondaryAction, null,

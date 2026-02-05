@@ -40,7 +40,7 @@ export const gitopsPlugin = createBackendPlugin({
 
         httpRouter.addAuthPolicy({
           path: '/',
-          allow: allowUnauthenticated ? 'unauthenticated' : 'authenticated',
+          allow: allowUnauthenticated ? 'unauthenticated' : 'user-cookie',
         });
 
         logger.info(

@@ -1,70 +1,134 @@
-# Default values for backstage-gitops
-# This is a YAML-formatted file.
-# Declare variables to be passed into your templates.
+# ============================================================================
+# DevOps Portal (Backstage GitOps) Helm Chart Values
+# ============================================================================
+# Enterprise-grade DevOps management portal with:
+# - Multi-provider authentication (GitHub, Google, Microsoft, GitLab, Guest)
+# - GitHub/GitLab integration for repository management
+# - ArgoCD integration for GitOps deployments (cluster-local or external)
+# - Grafana integration (Cloud and Local/Self-hosted)
+# - PostgreSQL database for persistence
+# - Optional Redis for caching and session management
+# - Multiple secret providers (Sealed Secrets, HashiCorp Vault, Azure, AWS, GCP)
+# - HAProxy for internal load balancing
+# - Security-first architecture
+#
+# Quick Start (Development with Guest Access):
+#   helm install devops-portal ./deployment/helm -n <namespace> \
+#     --set auth.guest.enabled=true \
+#     --set auth.environment=development
+#
+# Production with GitHub SSO:
+#   helm install devops-portal ./deployment/helm -n <namespace> \
+#     --set auth.github.enabled=true \
+#     --set backstage.baseUrl=https://devops.example.com
+#
+# With Redis for sessions/caching:
+#   helm install devops-portal ./deployment/helm -n <namespace> \
+#     --set redis.enabled=true
+# ============================================================================
 
-replicaCount: 2
+replicaCount: 1
 
+# ============================================================================
+# Organization Configuration
+# ============================================================================
+organization:
+  name: RadiantLogic
+
+# ============================================================================
+# Image Configuration
+# ============================================================================
 image:
-  repository: backstage-gitops
+  repository: rahulnutakki/backstage-gitops
   pullPolicy: IfNotPresent
-  tag: "latest"
+  tag: ""
 
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# ============================================================================
+# Service Account
+# ============================================================================
 serviceAccount:
   create: true
   annotations: {}
-  name: "backstage-gitops"
+    # For AWS IRSA:
+    # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/devops-portal-role
+    # For GCP Workload Identity:
+    # iam.gke.io/gcp-service-account: devops-portal@PROJECT_ID.iam.gserviceaccount.com
+  name: ""
 
+# ============================================================================
+# Pod Configuration
+# ============================================================================
 podAnnotations: {}
 
 podSecurityContext:
-  fsGroup: 1000
+  fsGroup: 65534
 
 securityContext:
   runAsNonRoot: true
-  runAsUser: 1000
+  runAsUser: 65534
+  runAsGroup: 65534
   capabilities:
     drop:
     - ALL
   readOnlyRootFilesystem: false
 
+# ============================================================================
+# Service Configuration
+# ============================================================================
 service:
   type: ClusterIP
   port: 80
-  # Note: targetPort is now automatically set to the named port "http" (7007)
-  # This ensures proper port-forwarding: kubectl port-forward svc/<name> 7007:80
+  targetPort: 7007
   annotations: {}
 
+# ============================================================================
+# Ingress Configuration
+# ============================================================================
 ingress:
-  enabled: true
+  enabled: false
   className: nginx
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  
+  # AWS ALB settings (for Duplo/EKS)
+  alb:
+    scheme: internet-facing
+    targetType: ip
+    certificateArn: ""
+    tags: ""
+    groupName: ""
+    healthcheckPath: /
+    successCodes: "200-399"
+  
+  annotations: {}
+  
   hosts:
-    - host: backstage-gitops.radiantlogic.com
+    - host: devops-portal.example.com
       paths:
         - path: /
           pathType: Prefix
-  tls:
-    - secretName: backstage-gitops-tls
-      hosts:
-        - backstage-gitops.radiantlogic.com
+  
+  tls: []
 
+# ============================================================================
+# Resources
+# ============================================================================
 resources:
   limits:
     cpu: 1000m
     memory: 1Gi
   requests:
-    cpu: 500m
+    cpu: 200m
     memory: 512Mi
 
 appDist:
-  writable: false
+  writable: true
 
+# ============================================================================
+# Autoscaling (HPA)
+# ============================================================================
 autoscaling:
   enabled: false
   minReplicas: 2
@@ -72,15 +136,21 @@ autoscaling:
   targetCPUUtilizationPercentage: 80
   targetMemoryUtilizationPercentage: 80
 
+# ============================================================================
+# Scheduling
+# ============================================================================
 nodeSelector: {}
 
 tolerations: []
 
 affinity: {}
 
+# ============================================================================
+# Health Probes
+# ============================================================================
 livenessProbe:
   httpGet:
-    path: /api/gitops/health/live
+    path: /
     port: 7007
   initialDelaySeconds: 30
   periodSeconds: 10
@@ -89,14 +159,16 @@ livenessProbe:
 
 readinessProbe:
   httpGet:
-    path: /api/gitops/health/ready
+    path: /
     port: 7007
   initialDelaySeconds: 10
   periodSeconds: 5
   timeoutSeconds: 3
   failureThreshold: 3
 
+# ============================================================================
 # PostgreSQL Configuration
+# ============================================================================
 postgres:
   enabled: true
   image:
@@ -104,46 +176,473 @@ postgres:
     tag: "14"
   storage:
     size: 10Gi
-    storageClass: gp3
-  host: postgres-service
+    storageClass: ""
+  host: ""
   port: 5432
   database: backstage
   username: backstage
-  # Password should be set in secrets
   ssl:
     enabled: false
     rejectUnauthorized: false
+  nodeSelector: {}
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
 
+# ============================================================================
 # GitHub Configuration
+# ============================================================================
 github:
-  organization: radiantlogic-saas
-  # Token should be set in secrets
+  organization: ""
 
+# ============================================================================
 # ArgoCD Configuration
+# ============================================================================
+# Supports both external ArgoCD (via token) and cluster-local (via service account)
 argocd:
-  enabled: true
-  url: https://argocd.radiantlogic.com
-  # Token should be set in secrets
+  enabled: false
+  # ArgoCD server URL (e.g., https://argocd.example.com or http://argocd-server.argocd.svc)
+  url: ""
+  # Namespace where ArgoCD is deployed (for service account access)
+  namespace: argocd
+  # Use in-cluster service account instead of token (more secure for same-cluster)
+  # When true, DevOps Portal will use its service account to authenticate with ArgoCD
+  useServiceAccount: false
+  # Skip TLS verification (not recommended for production)
+  insecure: false
 
-# GitOps auth configuration
+# ============================================================================
+# Authentication Configuration
+# ============================================================================
+# Security Note: Authentication is critical for production deployments.
+# - Use OAuth providers (GitHub, Google, Microsoft) for production
+# - Guest mode should ONLY be used in development/testing
+# - All OAuth tokens are handled securely server-side, never exposed to frontend
+auth:
+  # Environment: 'development' or 'production'
+  # Controls security behaviors like guest mode availability
+  environment: production
+  
+  # Guest Access (Development/Testing ONLY)
+  # WARNING: Bypasses all authentication - DO NOT enable in production
+  guest:
+    enabled: false
+    # Must be true to allow guest in production (DANGEROUS)
+    dangerouslyAllowOutsideDevelopment: false
+  
+  # GitHub OAuth (Recommended for Production)
+  github:
+    enabled: true
+    # For GitHub Enterprise, uncomment and set:
+    # enterpriseInstanceUrl: https://github.mycompany.com
+  
+  # Google OAuth
+  google:
+    enabled: false
+  
+  # Microsoft/Azure AD OAuth
+  microsoft:
+    enabled: false
+  
+  # GitLab OAuth
+  gitlab:
+    enabled: false
+    # For self-hosted GitLab:
+    # baseUrl: https://gitlab.mycompany.com
+
+# GitOps Plugin Authentication Settings
 gitopsAuth:
+  # Allow unauthenticated API access (uses static tokens)
+  # WARNING: Set to true only in development
   allowUnauthenticated: false
+  # Require authentication for write operations (recommended)
+  requireAuthForWrites: true
 
+# GitOps Plugin Settings
+gitops:
+  # Use user's OAuth token when available (more secure, user-scoped access)
+  useOAuthToken: true
+
+# ============================================================================
+# Grafana Configuration
+# ============================================================================
+# Supports both Grafana Cloud and self-hosted/local instances
+grafana:
+  enabled: false
+  # Type: 'cloud' for Grafana Cloud, 'local' for self-hosted
+  type: local
+  # Grafana URL (e.g., https://your-stack.grafana.net or http://grafana.monitoring.svc)
+  url: ""
+  # For Grafana Cloud:
+  cloudStackSlug: ""
+  # Use service account token (recommended) instead of API key
+  useServiceAccount: true
+  # Specific dashboards to display (optional)
+  # dashboards:
+  #   - uid: "kubernetes-overview"
+  #     name: "Kubernetes Overview"
+  #   - uid: "application-metrics"
+  #     name: "Application Metrics"
+
+# ============================================================================
+# GitLab Configuration
+# ============================================================================
+gitlab:
+  enabled: false
+  # GitLab host (gitlab.com or self-hosted)
+  host: gitlab.com
+  # Full GitLab URL
+  url: https://gitlab.com
+  # For self-hosted GitLab API:
+  # apiBaseUrl: https://gitlab.mycompany.com/api/v4
+
+# ============================================================================
+# Uptime Kuma Configuration
+# ============================================================================
+uptimeKuma:
+  enabled: false
+  url: ""
+
+# ============================================================================
+# Redis Configuration (Optional - for sessions, caching, queues)
+# ============================================================================
+# Redis provides:
+# - Faster session storage (vs memory)
+# - Distributed caching for multi-replica deployments
+# - Queue support for background jobs (Bull compatible)
+redis:
+  enabled: false
+  # Deploy Redis as part of this chart
+  deploy: true
+  image:
+    repository: redis
+    tag: "7-alpine"
+  # External Redis (if deploy: false)
+  host: ""
+  port: 6379
+  # Password protection (recommended)
+  password: ""
+  # TLS configuration
+  tls:
+    enabled: false
+  # Resource limits
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  # Persistence for Redis data
+  persistence:
+    enabled: false
+    size: 1Gi
+    storageClass: ""
+
+# ============================================================================
 # Backstage App Configuration
+# ============================================================================
 backstage:
-  baseUrl: https://backstage-gitops.radiantlogic.com
+  title: DevOps Portal
+  baseUrl: http://localhost:7007
   logLevel: info
 
-# Additional environment variables for the container
+# ============================================================================
+# Scaffolder Configuration
+# ============================================================================
+scaffolder:
+  author:
+    name: DevOps Portal
+    email: devops@example.com
+  commitMessage: "Changes from DevOps Portal"
+
+# ============================================================================
+# Catalog Configuration
+# ============================================================================
+catalog:
+  # Add catalog locations (GitHub repos, URLs, etc.)
+  locations: []
+  # Example:
+  # - type: url
+  #   target: https://github.com/org/repo/blob/main/catalog-info.yaml
+
+# ============================================================================
+# Extra Environment Variables
+# ============================================================================
 extraEnv: []
 
-# Secret references
+# ============================================================================
+# Secrets Configuration
+# ============================================================================
+# Supports multiple secret providers:
+# - "kubernetes" (default): Use existing Kubernetes secret
+# - "sealed-secrets": Use Bitnami Sealed Secrets (encrypted, GitOps-safe)
+# - "external-secrets": Use External Secrets Operator (Vault, Azure, AWS, GCP)
+# ============================================================================
 secrets:
-  create: false
+  # Secret provider: kubernetes | sealed-secrets | external-secrets
+  provider: kubernetes
+  
+  # Name of the secret (created by provider or existing)
   name: backstage-secrets
+  
+  # For provider: kubernetes (use existing secret)
+  # Create the secret manually:
+  #   kubectl create secret generic backstage-secrets \
+  #     --from-literal=GITHUB_TOKEN=xxx ...
+  create: false
+  
+  # Key mappings (same for all providers)
+  # Core secrets
   githubToken:
     key: GITHUB_TOKEN
   argoCdToken:
     key: ARGOCD_TOKEN
   postgresPassword:
     key: POSTGRES_PASSWORD
+  authSessionSecret:
+    key: AUTH_SESSION_SECRET
+  
+  # GitHub OAuth
+  githubOAuthClientId:
+    key: GITHUB_OAUTH_CLIENT_ID
+  githubOAuthClientSecret:
+    key: GITHUB_OAUTH_CLIENT_SECRET
+  
+  # Google OAuth (optional)
+  googleOAuthClientId:
+    key: GOOGLE_OAUTH_CLIENT_ID
+  googleOAuthClientSecret:
+    key: GOOGLE_OAUTH_CLIENT_SECRET
+  
+  # Microsoft OAuth (optional)
+  microsoftOAuthClientId:
+    key: MICROSOFT_OAUTH_CLIENT_ID
+  microsoftOAuthClientSecret:
+    key: MICROSOFT_OAUTH_CLIENT_SECRET
+  microsoftTenantId:
+    key: MICROSOFT_TENANT_ID
+  
+  # GitLab (optional)
+  gitlabToken:
+    key: GITLAB_TOKEN
+  gitlabOAuthClientId:
+    key: GITLAB_OAUTH_CLIENT_ID
+  gitlabOAuthClientSecret:
+    key: GITLAB_OAUTH_CLIENT_SECRET
+  
+  # Grafana (optional)
+  grafanaSaToken:
+    key: GRAFANA_SA_TOKEN
+  grafanaApiKey:
+    key: GRAFANA_API_KEY
+  
+  # Redis (optional)
+  redisPassword:
+    key: REDIS_PASSWORD
+  
+  # Uptime Kuma (optional)
+  uptimeKumaApiKey:
+    key: UPTIME_KUMA_API_KEY
+  
+  # ============================================================================
+  # Sealed Secrets Configuration (provider: sealed-secrets)
+  # ============================================================================
+  # Bitnami Sealed Secrets encrypts secrets so they can be safely stored in Git.
+  # 
+  # Prerequisites:
+  #   1. Install Sealed Secrets controller:
+  #      kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.24.5/controller.yaml
+  #   2. Install kubeseal CLI
+  #   3. Generate encrypted values using the script:
+  #      ./deployment/scripts/seal-secrets.sh
+  # ============================================================================
+  sealedSecrets:
+    # Encrypted secret data (generated by kubeseal)
+    # Each value should be the base64-encoded encrypted string
+    encryptedData: {}
+      # GITHUB_TOKEN: AgBy3i4OJSWK+PiTySYZZA9rO43cGDEq...
+      # GITHUB_OAUTH_CLIENT_ID: AgBy3i4OJSWK+PiTySYZZA9rO43cGDEq...
+      # GITHUB_OAUTH_CLIENT_SECRET: AgBy3i4OJSWK+PiTySYZZA9rO43cGDEq...
+      # POSTGRES_PASSWORD: AgBy3i4OJSWK+PiTySYZZA9rO43cGDEq...
+      # AUTH_SESSION_SECRET: AgBy3i4OJSWK+PiTySYZZA9rO43cGDEq...
+      # ARGOCD_TOKEN: AgBy3i4OJSWK+PiTySYZZA9rO43cGDEq...
+  
+  # ============================================================================
+  # External Secrets Configuration (provider: external-secrets)
+  # ============================================================================
+  # External Secrets Operator syncs secrets from external vaults.
+  # 
+  # Prerequisites:
+  #   1. Install External Secrets Operator:
+  #      helm repo add external-secrets https://charts.external-secrets.io
+  #      helm install external-secrets external-secrets/external-secrets \
+  #        -n external-secrets --create-namespace
+  # ============================================================================
+  externalSecrets:
+    # Provider: hashicorp-vault | azure-keyvault | aws-secrets-manager | gcp-secret-manager
+    provider: hashicorp-vault
+    
+    # How often to sync secrets
+    refreshInterval: 1h
+    
+    # Base path in the secret store for devops-portal secrets
+    basePath: devops-portal
+    
+    # Create SecretStore resource (set to false if using ClusterSecretStore)
+    createSecretStore: true
+    
+    # Reference to existing SecretStore/ClusterSecretStore
+    secretStoreRef:
+      name: devops-portal-secret-store
+      kind: SecretStore  # or ClusterSecretStore
+    
+    # Custom data mappings (optional - uses defaults if not specified)
+    # data:
+    #   - secretKey: GITHUB_TOKEN
+    #     remoteKey: devops-portal/github
+    #     property: token
+    
+    # ------------------------------------------------------------------------
+    # HashiCorp Vault Configuration
+    # ------------------------------------------------------------------------
+    vault:
+      # Vault server URL
+      server: https://vault.example.com
+      # Secrets engine path (usually "secret" for KV v2)
+      path: secret
+      # KV version: v1 or v2
+      version: v2
+      # Vault namespace (Enterprise only)
+      namespace: ""
+      
+      # Authentication method
+      auth:
+        # Kubernetes auth (recommended for K8s deployments)
+        kubernetes:
+          mountPath: kubernetes
+          role: devops-portal
+          serviceAccountRef:
+            name: ""  # Uses chart's service account if empty
+        
+        # Token auth (for development/testing)
+        # token:
+        #   secretName: vault-token
+        #   key: token
+        
+        # AppRole auth
+        # appRole:
+        #   path: approle
+        #   roleId: "your-role-id"
+        #   secretRef:
+        #     name: vault-approle
+        #     key: secret-id
+    
+    # ------------------------------------------------------------------------
+    # Azure Key Vault Configuration
+    # ------------------------------------------------------------------------
+    azure:
+      # Key Vault URL
+      vaultUrl: https://your-keyvault.vault.azure.net/
+      # Azure AD tenant ID
+      tenantId: ""
+      # Auth type: ManagedIdentity (recommended) or ServicePrincipal
+      authType: ManagedIdentity
+      # For ServicePrincipal auth:
+      # authSecretRef:
+      #   name: azure-sp-credentials
+    
+    # ------------------------------------------------------------------------
+    # AWS Secrets Manager Configuration
+    # ------------------------------------------------------------------------
+    aws:
+      # AWS region
+      region: us-west-2
+      # IAM role for IRSA (recommended)
+      role: ""
+      # For explicit credentials (not recommended):
+      # auth:
+      #   secretRef:
+      #     name: aws-credentials
+    
+    # ------------------------------------------------------------------------
+    # GCP Secret Manager Configuration
+    # ------------------------------------------------------------------------
+    gcp:
+      # GCP project ID
+      projectID: ""
+      # Authentication
+      # auth:
+      #   workloadIdentity:
+      #     clusterLocation: us-central1
+      #     clusterName: my-cluster
+      #   # Or explicit credentials:
+      #   # secretRef:
+      #   #   name: gcp-credentials
+      #   #   key: credentials.json
+
+# ============================================================================
+# HAProxy Configuration (Internal Load Balancer)
+# ============================================================================
+# HAProxy provides internal routing and load balancing between services.
+# Useful for:
+# - Routing to multiple backend services through a single endpoint
+# - Health checking and circuit breaking
+# - SSL termination for internal services
+# ============================================================================
+haproxy:
+  enabled: false
+  
+  # Number of HAProxy replicas
+  replicas: 1
+  
+  # HAProxy image
+  image:
+    repository: haproxy
+    tag: "2.9-alpine"
+    pullPolicy: IfNotPresent
+  
+  # Port HAProxy listens on
+  port: 8080
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 80
+  
+  # Resource limits
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  
+  # Extra environment variables for HAProxy
+  extraEnv: []
+  
+  # ArgoCD routing through HAProxy
+  argocd:
+    # Add Authorization header with ARGOCD_TOKEN
+    authHeader: true
+  
+  # Custom backend routes
+  # Example:
+  # customRoutes:
+  #   - name: my-service
+  #     pathPrefix: /api/my-service
+  #     stripPrefix: true
+  #     balance: roundrobin
+  #     healthCheck:
+  #       path: /health
+  #       expectedStatus: 200
+  #     servers:
+  #       - address: my-service.default.svc.cluster.local:8080
+  #         ssl: false
+  #         checkInterval: 10s
+  customRoutes: []

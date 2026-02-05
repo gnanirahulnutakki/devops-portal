@@ -396,7 +396,7 @@ export const HomePage = () => {
                         <ListItemText
                           primary={activity.message}
                           secondary={
-                            <Box display="flex" alignItems="center" gap={1}>
+                            <Box display="flex" alignItems="center" style={{ gap: 1 * 8 }}>
                               <Typography variant="caption">
                                 {activity.user}
                               </Typography>
@@ -425,7 +425,7 @@ export const HomePage = () => {
             <InfoCard>
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={4}>
-                  <Box display="flex" alignItems="center" gap={1}>
+                  <Box display="flex" alignItems="center" style={{ gap: 1 * 8 }}>
                     <CheckCircleIcon style={{ color: '#00b12b' }} />
                     <Box>
                       <Typography variant="body2" color="textSecondary">
@@ -442,7 +442,7 @@ export const HomePage = () => {
                 </Grid>
 
                 <Grid item xs={12} sm={4}>
-                  <Box display="flex" alignItems="center" gap={1}>
+                  <Box display="flex" alignItems="center" style={{ gap: 1 * 8 }}>
                     <CheckCircleIcon style={{ color: '#00b12b' }} />
                     <Box>
                       <Typography variant="body2" color="textSecondary">
@@ -459,7 +459,7 @@ export const HomePage = () => {
                 </Grid>
 
                 <Grid item xs={12} sm={4}>
-                  <Box display="flex" alignItems="center" gap={1}>
+                  <Box display="flex" alignItems="center" style={{ gap: 1 * 8 }}>
                     <WarningIcon style={{ color: '#e25a1a' }} />
                     <Box>
                       <Typography variant="body2" color="textSecondary">

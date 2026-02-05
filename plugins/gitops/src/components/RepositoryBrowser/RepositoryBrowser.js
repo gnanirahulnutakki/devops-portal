@@ -94,24 +94,24 @@ export const RepositoryBrowser = () => {
                                         params.InputProps.startAdornment)),
                                 } })), renderOption: (option) => {
                                 const branch = branches.find(b => b.name === option);
-                                return (React.createElement(Box, { display: "flex", alignItems: "center", gap: 1 },
+                                return (React.createElement(Box, { display: "flex", alignItems: "center", style: { gap: 8 } },
                                     React.createElement("span", null, option),
                                     branch?.protected && React.createElement(Chip, { label: "protected", size: "small" })));
                             }, fullWidth: true })),
                     React.createElement(Grid, { item: true, md: 4, xs: 12 },
-                        React.createElement(Autocomplete, { options: commonFiles, getOptionLabel: (option) => typeof option === 'string' ? option : option.label, value: commonFiles.find(f => f.path === selectedFile) || null, onChange: (_, newValue) => setSelectedFile(newValue ? newValue.path : ''), disabled: !selectedBranch, renderInput: (params) => (React.createElement(TextField, { ...params, label: "File", margin: "normal", placeholder: "Search files...", InputProps: {
+                        React.createElement(Autocomplete, { options: commonFiles, getOptionLabel: (option) => typeof option === 'string' ? option : option.label, value: commonFiles.find(f => f.path === selectedFile) || null, onChange: (_, newValue) => setSelectedFile(newValue && typeof newValue !== 'string' ? newValue.path : ''), disabled: !selectedBranch, renderInput: (params) => (React.createElement(TextField, { ...params, label: "File", margin: "normal", placeholder: "Search files...", InputProps: {
                                     ...params.InputProps,
                                     startAdornment: (React.createElement(React.Fragment, null,
                                         React.createElement(DescriptionIcon, { style: { marginLeft: 8, marginRight: 4, color: '#09143F' } }),
                                         params.InputProps.startAdornment)),
                                 } })), fullWidth: true }))))),
         React.createElement(Grid, { item: true, xs: 12 },
-            React.createElement(InfoCard, { title: React.createElement(Box, { display: "flex", alignItems: "center", gap: 1 },
+            React.createElement(InfoCard, { title: React.createElement(Box, { display: "flex", alignItems: "center", style: { gap: 8 } },
                     React.createElement(DescriptionIcon, { style: { color: '#09143F' } }),
                     "File Viewer: ",
                     commonFiles.find(f => f.path === selectedFile)?.label || 'Select a file') }, fileContent ? (React.createElement(Box, null,
                 React.createElement(Box, { mb: 2 },
-                    React.createElement(Box, { display: "flex", flexWrap: "wrap", gap: 1, mb: 2 },
+                    React.createElement(Box, { display: "flex", flexWrap: "wrap", style: { gap: 8, marginBottom: 16 } },
                         React.createElement(Chip, { icon: React.createElement(AccountTreeIcon, null), label: `Branch: ${fileContent.branch}`, color: "primary", variant: "outlined" }),
                         React.createElement(Chip, { label: `SHA: ${fileContent.sha.substring(0, 7)}`, variant: "outlined" }),
                         React.createElement(Chip, { label: `Size: ${fileContent.size} bytes`, variant: "outlined" })),

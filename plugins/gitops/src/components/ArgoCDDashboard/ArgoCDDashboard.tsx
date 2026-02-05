@@ -98,7 +98,7 @@ export const ArgoCDDashboard = () => {
       </Grid>
 
       <Grid item xs={12}>
-        <Box display="flex" gap={2} mb={2}>
+        <Box display="flex" style={{ gap: 2 * 8 }} mb={2}>
           <Chip label={`Total: ${applications.length}`} />
           <Chip label={`Synced: ${syncedCount}`} color="primary" />
           <Chip label={`Out of Sync: ${outOfSyncCount}`} color="secondary" />

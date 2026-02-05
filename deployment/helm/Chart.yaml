@@ -1,18 +1,47 @@
 apiVersion: v2
-name: backstage-gitops
-description: Backstage GitOps Management Portal for multi-branch configuration management
+name: devops-portal
+description: |
+  DevOps Portal - A Backstage-based GitOps management portal for multi-branch 
+  configuration management with GitHub, ArgoCD, and enterprise vault integrations.
+
 type: application
-version: 1.0.0
-appVersion: "1.0.0"
+version: 2.0.0
+appVersion: "2.0.0"
+
 keywords:
   - backstage
   - gitops
   - argocd
   - kubernetes
-home: https://github.com/radiantlogic-saas/backstage-gitops
+  - devops
+  - github
+  - vault
+  - secrets
+
+home: https://github.com/gnanirahulnutakki/devops-portal
+
 sources:
-  - https://github.com/radiantlogic-saas/backstage-gitops
+  - https://github.com/gnanirahulnutakki/devops-portal
+
 maintainers:
-  - name: Platform Team
-    email: platform@radiantlogic.com
+  - name: Rahul Nutakki
+    email: rahul.nutakki@radiantlogic.com
+
+annotations:
+  # Artifact Hub annotations
+  artifacthub.io/changes: |
+    - kind: added
+      description: Sealed Secrets support for GitOps-safe secret storage
+    - kind: added
+      description: External Secrets Operator integration (Vault, Azure, AWS, GCP)
+    - kind: added
+      description: HAProxy for internal load balancing and routing
+    - kind: added
+      description: AWS ALB ingress support for DuploCloud/EKS
+    - kind: added
+      description: nip.io dynamic DNS support
+  artifacthub.io/containsSecurityUpdates: "false"
+  artifacthub.io/license: MIT
+  artifacthub.io/prerelease: "false"
+
 dependencies: []

@@ -1,13 +1,18 @@
 # Values for saasops1 deployment
 # Namespace: duploservices-saasops1
 # NodeSelector required: tenantname pointing to namespace
+#
+# Usage:
+#   helm upgrade --install devops-portal ./deployment/helm \
+#     -n duploservices-saasops1 \
+#     -f deployment/helm/values-saasops1.yaml
 
 replicaCount: 1
 
 image:
-  repository: rahulnutakki/devprotal
+  repository: rahulnutakki/backstage-gitops
   pullPolicy: Always
-  tag: "latest"
+  tag: "v4"
 
 nameOverride: "devops-portal"
 fullnameOverride: "devops-portal"
@@ -40,11 +45,49 @@ securityContext:
 
 service:
   type: ClusterIP
-  port: 7007
+  port: 80
+  targetPort: 7007
   annotations: {}
 
+# ============================================================================
+# Ingress Configuration - AWS ALB for DuploCloud
+# ============================================================================
+# nip.io usage: After deployment, get the ALB hostname:
+#   kubectl get ingress -n duploservices-saasops1 devops-portal -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+# Then update the host to: devops-portal.<ALB-IP>.nip.io
+# Or use the script: ./deployment/scripts/update-nip-io-host.sh
 ingress:
-  enabled: false
+  enabled: true
+  className: alb
+  
+  # ALB-specific configuration for Duplo
+  alb:
+    scheme: internet-facing
+    targetType: ip
+    # Certificate ARN from ACM (optional - for HTTPS with custom domain)
+    # certificateArn: arn:aws:acm:us-west-2:ACCOUNT_ID:certificate/CERT_ID
+    # Duplo tags (required for proper resource tracking)
+    tags: "duplo-project=saasops1,TENANT_NAME=saasops1"
+    # ALB group for sharing (optional)
+    # groupName: shared-alb
+    # Health check configuration
+    healthcheckPath: /
+    successCodes: "200-399"
+  
+  # Additional annotations
+  annotations: {}
+  
+  hosts:
+    # Using nip.io for dynamic DNS - update after ALB is created
+    # Format: <app-name>.<ALB-IP>.nip.io
+    # Example: devops-portal.52-10-20-30.nip.io
+    - host: devops-portal.nip.io
+      paths:
+        - path: /
+          pathType: Prefix
+  
+  # TLS configuration (optional - ALB handles SSL termination with ACM)
+  tls: []
 
 resources:
   limits:
@@ -65,7 +108,7 @@ affinity: {}
 
 livenessProbe:
   httpGet:
-    path: /api/gitops/health
+    path: /
     port: 7007
   initialDelaySeconds: 30
   periodSeconds: 10
@@ -74,13 +117,16 @@ livenessProbe:
 
 readinessProbe:
   httpGet:
-    path: /api/gitops/health
+    path: /
     port: 7007
   initialDelaySeconds: 10
   periodSeconds: 5
   timeoutSeconds: 3
   failureThreshold: 3
 
+# ============================================================================
+# PostgreSQL Configuration
+# ============================================================================
 postgres:
   enabled: true
   image:
@@ -106,36 +152,74 @@ postgres:
       cpu: 50m
       memory: 128Mi
 
+# ============================================================================
+# GitHub Configuration
+# ============================================================================
 github:
   organization: radiantlogic-saas
 
+# ============================================================================
+# ArgoCD Configuration
+# ============================================================================
 argocd:
-  enabled: false
-  url: ""
+  enabled: true
+  url: https://argocd.radiantlogic.com
+
+# ============================================================================
+# Authentication Configuration
+# ============================================================================
+auth:
+  # Set to development to allow guest mode
+  environment: development
+  # Guest mode for quick testing without OAuth
+  guest:
+    enabled: true
+    dangerouslyAllowOutsideDevelopment: true
+  github:
+    enabled: true
+  google:
+    enabled: false
+  microsoft:
+    enabled: false
 
 gitopsAuth:
-  allowUnauthenticated: true
+  allowUnauthenticated: false
 
+# ============================================================================
+# Grafana Configuration (optional)
+# ============================================================================
 grafana:
   enabled: false
   url: ""
 
+# ============================================================================
+# Backstage App Configuration
+# ============================================================================
+# Note: baseUrl will be updated after ingress is created with nip.io
 backstage:
-  baseUrl: http://localhost:7007
-  logLevel: debug
+  baseUrl: http://devops-portal.nip.io
+  logLevel: info
 
+# ============================================================================
+# Extra Environment Variables
+# ============================================================================
 extraEnv:
   - name: NODE_ENV
-    value: "development"
+    value: "production"
   - name: LOG_LEVEL
-    value: "debug"
-  - name: AUTH_SESSION_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: backstage-secrets
-        key: AUTH_SESSION_SECRET
-        optional: true
+    value: "info"
 
+# ============================================================================
+# Secrets Configuration
+# ============================================================================
+# Create secrets first:
+#   kubectl create secret generic backstage-secrets -n duploservices-saasops1 \
+#     --from-literal=GITHUB_TOKEN=<token> \
+#     --from-literal=ARGOCD_TOKEN=<token> \
+#     --from-literal=POSTGRES_PASSWORD=<password> \
+#     --from-literal=GITHUB_OAUTH_CLIENT_ID=<client_id> \
+#     --from-literal=GITHUB_OAUTH_CLIENT_SECRET=<client_secret> \
+#     --from-literal=AUTH_SESSION_SECRET=$(openssl rand -hex 32)
 secrets:
   create: false
   name: backstage-secrets
@@ -145,3 +229,9 @@ secrets:
     key: ARGOCD_TOKEN
   postgresPassword:
     key: POSTGRES_PASSWORD
+  githubOAuthClientId:
+    key: GITHUB_OAUTH_CLIENT_ID
+  githubOAuthClientSecret:
+    key: GITHUB_OAUTH_CLIENT_SECRET
+  authSessionSecret:
+    key: AUTH_SESSION_SECRET

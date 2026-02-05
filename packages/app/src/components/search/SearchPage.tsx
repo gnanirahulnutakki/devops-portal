@@ -8,6 +8,8 @@ import {
 } from '@backstage/plugin-search-react';
 import { Content, Header, Page } from '@backstage/core-components';
 import { Grid } from '@material-ui/core';
+import CategoryIcon from '@material-ui/icons/Category';
+import DescriptionIcon from '@material-ui/icons/Description';
 
 export const searchPage = (
   <Page themeId="home">
@@ -25,10 +27,12 @@ export const searchPage = (
               {
                 value: 'software-catalog',
                 name: 'Software Catalog',
+                icon: <CategoryIcon />,
               },
               {
                 value: 'techdocs',
                 name: 'Documentation',
+                icon: <DescriptionIcon />,
               },
             ]}
           />
