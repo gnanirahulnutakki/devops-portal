@@ -15,7 +15,6 @@
  * - crypto-js for AES encryption
  */
 
-import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
 import bcrypt from 'bcrypt';
 import CryptoJS from 'crypto-js';
@@ -23,6 +22,71 @@ import crypto from 'crypto';
 import { Knex } from 'knex';
 import { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger';
+
+// TOTP implementation using crypto directly (compatible with RFC 6238)
+// This avoids the complex otplib v13 API
+const TOTP_PERIOD = 30;
+const TOTP_DIGITS = 6;
+
+function generateTOTPSecret(): string {
+  // Generate 20 random bytes and encode as base32
+  const buffer = crypto.randomBytes(20);
+  const base32chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let result = '';
+  for (let i = 0; i < buffer.length; i++) {
+    result += base32chars[buffer[i] % 32];
+  }
+  return result;
+}
+
+function base32Decode(encoded: string): Buffer {
+  const base32chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const cleanedInput = encoded.toUpperCase().replace(/=+$/, '');
+  let bits = '';
+  for (const char of cleanedInput) {
+    const val = base32chars.indexOf(char);
+    if (val === -1) continue;
+    bits += val.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    bytes.push(parseInt(bits.substring(i, i + 8), 2));
+  }
+  return Buffer.from(bytes);
+}
+
+function generateTOTP(secret: string, counter?: number): string {
+  const time = counter ?? Math.floor(Date.now() / 1000 / TOTP_PERIOD);
+  const timeBuffer = Buffer.alloc(8);
+  timeBuffer.writeBigInt64BE(BigInt(time));
+  
+  const key = base32Decode(secret);
+  const hmac = crypto.createHmac('sha1', key).update(timeBuffer).digest();
+  
+  const offset = hmac[hmac.length - 1] & 0xf;
+  const binary = ((hmac[offset] & 0x7f) << 24) |
+                 ((hmac[offset + 1] & 0xff) << 16) |
+                 ((hmac[offset + 2] & 0xff) << 8) |
+                 (hmac[offset + 3] & 0xff);
+  
+  const otp = binary % Math.pow(10, TOTP_DIGITS);
+  return otp.toString().padStart(TOTP_DIGITS, '0');
+}
+
+function verifyTOTP(token: string, secret: string, window = 1): boolean {
+  const currentCounter = Math.floor(Date.now() / 1000 / TOTP_PERIOD);
+  for (let i = -window; i <= window; i++) {
+    const expectedToken = generateTOTP(secret, currentCounter + i);
+    if (token === expectedToken) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function generateTOTPUri(label: string, issuer: string, secret: string): string {
+  return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(label)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=${TOTP_DIGITS}&period=${TOTP_PERIOD}`;
+}
 
 // Types
 export interface TwoFactorSetup {
@@ -72,10 +136,7 @@ export class TwoFactorAuthService {
     this.db = db;
     this.config = { ...DEFAULT_CONFIG, ...config };
 
-    // Configure otplib
-    authenticator.options = {
-      window: this.config.window,
-    };
+    // TOTP window is configured via the verifyTOTP function
 
     logger.info('TwoFactorAuthService initialized', {
       issuer: this.config.issuer,
@@ -93,10 +154,10 @@ export class TwoFactorAuthService {
    */
   async generateSetup(userId: string, userEmail: string): Promise<TwoFactorSetup> {
     // Generate secret
-    const secret = authenticator.generateSecret();
+    const secret = generateTOTPSecret();
 
     // Create otpauth URL
-    const otpauthUrl = authenticator.keyuri(userEmail, this.config.issuer, secret);
+    const otpauthUrl = generateTOTPUri(userEmail, this.config.issuer, secret);
 
     // Generate QR code as data URL
     const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
@@ -157,7 +218,7 @@ export class TwoFactorAuthService {
 
       // Decrypt and verify
       const secret = this.decryptSecret(twoFactor.totp_secret);
-      const isValid = authenticator.verify({ token: code, secret });
+      const isValid = verifyTOTP(code, secret, this.config.window);
 
       if (!isValid) {
         return { success: false, error: 'Invalid verification code' };
@@ -194,7 +255,7 @@ export class TwoFactorAuthService {
 
       // Decrypt and verify TOTP
       const secret = this.decryptSecret(twoFactor.totp_secret);
-      const isValid = authenticator.verify({ token: code, secret });
+      const isValid = verifyTOTP(code, secret, this.config.window);
 
       if (isValid) {
         await this.db('user_2fa').where('user_id', userId).update({

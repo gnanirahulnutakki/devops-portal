@@ -38,10 +38,10 @@ import {
   InputBase,
   Fade,
   Grow,
-  Skeleton,
   Badge,
   useTheme,
 } from '@material-ui/core';
+import { Skeleton } from '@material-ui/lab';
 import {
   Page,
   Header,

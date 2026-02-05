@@ -22,9 +22,9 @@ import {
   InputAdornment,
   IconButton,
   Collapse,
-  Alert,
   makeStyles,
 } from '@material-ui/core';
+import { Alert } from '@material-ui/lab';
 import GitHubIcon from '@material-ui/icons/GitHub';
 import PersonIcon from '@material-ui/icons/Person';
 import EmailIcon from '@material-ui/icons/Email';

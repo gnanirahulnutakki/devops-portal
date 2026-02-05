@@ -725,7 +725,7 @@ export const MonitoringPage = () => {
                               <Typography variant="body2" noWrap>
                                 {dash.title}
                               </Typography>
-                              <Box display="flex" gap={0.5} mt={1} flexWrap="wrap">
+                              <Box display="flex" style={{ gap: '4px' }} mt={1} flexWrap="wrap">
                                 {dash.tags?.slice(0, 2).map((tag) => (
                                   <Chip key={tag} label={tag} size="small" />
                                 ))}
