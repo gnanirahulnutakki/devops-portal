@@ -1,0 +1,152 @@
+# =============================================================================
+# DevOps Portal - Development/Testing Values
+# =============================================================================
+# Usage: helm install devops-portal ./helm/devops-portal -f helm/devops-portal/values-dev.yaml
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/gnanirahulnutakki/devops-portal
+  tag: "dev"
+  pullPolicy: Always
+
+config:
+  baseUrl: "http://devops-portal.local"
+  enableCredentialsAuth: true  # Enable local login for testing
+  logLevel: "debug"
+  bcryptRounds: 10  # Faster for dev
+
+# Disable autoscaling for dev
+autoscaling:
+  enabled: false
+
+# Lower resources for dev
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+# Simple ingress without TLS
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  hosts:
+    - host: devops-portal.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# PostgreSQL - development config
+postgresql:
+  enabled: true
+  auth:
+    username: devops_portal
+    database: devops_portal
+    existingSecret: devops-portal-postgresql-dev
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
+  primary:
+    persistence:
+      enabled: true
+      size: 1Gi
+    resources:
+      limits:
+        cpu: 250m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
+
+# Redis - standalone for dev
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+    existingSecret: devops-portal-redis-dev
+    existingSecretPasswordKey: redis-password
+  master:
+    persistence:
+      enabled: false  # No persistence for dev
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 25m
+        memory: 64Mi
+
+# MinIO - enabled for S3 testing
+minio:
+  enabled: true
+  mode: standalone
+  auth:
+    existingSecret: devops-portal-minio-dev
+  defaultBuckets: "devops-portal-storage"
+  persistence:
+    enabled: true
+    size: 5Gi
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  # Enable console access
+  ingress:
+    enabled: true
+    hostname: minio-console.local
+
+# Integrations - connect to namespace services
+integrations:
+  argocd:
+    enabled: true
+    url: "https://argocd-server.argocd.svc.cluster.local"
+    existingSecret: devops-portal-argocd-dev
+    insecure: true
+  
+  grafana:
+    enabled: true
+    url: "http://grafana.monitoring.svc.cluster.local:3000"
+    existingSecret: devops-portal-grafana-dev
+  
+  prometheus:
+    enabled: true
+    url: "http://prometheus-server.monitoring.svc.cluster.local:80"
+  
+  github:
+    enabled: false  # Disable for dev
+  
+  keycloak:
+    enabled: false  # Disable for dev
+
+# Disable network policies for dev
+networkPolicy:
+  enabled: false
+
+# Disable PDB for single replica
+podDisruptionBudget:
+  enabled: false
+
+# ServiceMonitor for local prometheus
+serviceMonitor:
+  enabled: false
+
+# Init containers
+initContainers:
+  waitForDb:
+    enabled: true
+  migrate:
+    enabled: true
+
+# Seed database with demo data
+jobs:
+  seed:
+    enabled: true

@@ -13,15 +13,9 @@ dist-types/
 build/
 *.tsbuildinfo
 
-# Compiled TypeScript in src directories (should only exist in dist/)
-plugins/**/src/**/*.js
-plugins/**/src/**/*.js.map
-plugins/**/src/**/*.d.ts
-plugins/**/src/**/*.d.ts.map
-packages/**/src/**/*.js
-packages/**/src/**/*.js.map
-packages/**/src/**/*.d.ts
-packages/**/src/**/*.d.ts.map
+# Next.js
+.next/
+out/
 
 # Misc
 .DS_Store
@@ -54,20 +48,11 @@ docker-build*.log
 
 # OS
 Thumbs.db
-.DS_Store
-
-# Backstage specific
-.backstage/
 
 # Temporary files
 tmp/
 temp/
 .cache/
-
-# Docker (optional - we want to keep Dockerfile and docker-compose)
-# Uncomment if you don't want Docker files in repo
-# Dockerfile
-# docker-compose.yml
 
 # Yarn
 yarn-error.log
@@ -75,3 +60,10 @@ yarn-error.log
 .yarn/unplugged
 .yarn/build-state.yml
 .yarn/install-state.gz
+
+# Helm
+helm/devops-portal/charts/
+helm/devops-portal/scripts/sealed-secrets/
+
+# Prisma
+prisma/migrations/*.sql.tmp

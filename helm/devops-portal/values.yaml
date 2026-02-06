@@ -1,0 +1,479 @@
+# =============================================================================
+# DevOps Portal v2 - Helm Values
+# Enterprise DevOps Management Portal
+# =============================================================================
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/gnanirahulnutakki/devops-portal
+  pullPolicy: IfNotPresent
+  tag: ""  # Defaults to Chart appVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+# =============================================================================
+# Pod Configuration
+# =============================================================================
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3000"
+  prometheus.io/path: "/api/metrics"
+
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1001
+  runAsNonRoot: true
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false  # Next.js needs write access for .next cache
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+# =============================================================================
+# Ingress (DuploCloud compatible)
+# =============================================================================
+ingress:
+  enabled: true
+  className: ""  # Leave empty for DuploCloud managed ingress
+  annotations:
+    # DuploCloud/AWS ALB annotations
+    # kubernetes.io/ingress.class: alb
+    # alb.ingress.kubernetes.io/scheme: internet-facing
+    # alb.ingress.kubernetes.io/target-type: ip
+    # Standard nginx annotations
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+  hosts:
+    - host: devops-portal.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # - secretName: devops-portal-tls
+  #   hosts:
+  #     - devops-portal.example.com
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# =============================================================================
+# Pod Disruption Budget
+# =============================================================================
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# =============================================================================
+# Probes
+# =============================================================================
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+startupProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 30
+
+# =============================================================================
+# Node Selection
+# =============================================================================
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - devops-portal
+          topologyKey: kubernetes.io/hostname
+
+# =============================================================================
+# Application Configuration
+# =============================================================================
+config:
+  # Base URL for the application
+  baseUrl: "https://devops-portal.example.com"
+  
+  # NextAuth configuration
+  nextAuth:
+    # NEXTAUTH_URL is auto-set from baseUrl
+    # NEXTAUTH_SECRET should be in sealed secret
+    sessionMaxAge: 28800  # 8 hours
+  
+  # Enable credentials-based login (for development/testing)
+  enableCredentialsAuth: false
+  
+  # Bcrypt rounds for password hashing
+  bcryptRounds: 12
+  
+  # Logging level
+  logLevel: "info"
+
+# =============================================================================
+# Secrets Configuration
+# =============================================================================
+secrets:
+  # Use sealed secrets (recommended for GitOps)
+  useSealedSecrets: true
+  
+  # Name of the sealed secret containing all secrets
+  sealedSecretName: devops-portal-sealed-secrets
+  
+  # If not using sealed secrets, specify existing secret name
+  existingSecret: ""
+  
+  # Create regular secret (NOT recommended for production)
+  # Only use for initial testing before sealing
+  create: false
+  values:
+    # These will be base64 encoded if secrets.create=true
+    # NEVER commit real values - use sealed secrets instead
+    NEXTAUTH_SECRET: ""
+    ENCRYPTION_KEY: ""
+    DATABASE_URL: ""
+    REDIS_URL: ""
+
+# =============================================================================
+# Sealed Secrets
+# =============================================================================
+sealedSecrets:
+  # Install sealed-secrets controller (skip if already installed cluster-wide)
+  install: false
+  
+  # Controller configuration (if installing)
+  controller:
+    namespace: kube-system
+
+# =============================================================================
+# Database - PostgreSQL (Bitnami)
+# =============================================================================
+postgresql:
+  enabled: true
+  auth:
+    username: devops_portal
+    database: devops_portal
+    # Use sealed secret for passwords
+    existingSecret: devops-portal-postgresql-sealed
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: ""  # Use default or specify
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+    # Pod security context
+    podSecurityContext:
+      fsGroup: 1001
+    containerSecurityContext:
+      runAsUser: 1001
+      runAsNonRoot: true
+
+# External database (if postgresql.enabled=false)
+externalDatabase:
+  host: ""
+  port: 5432
+  database: devops_portal
+  username: devops_portal
+  # Reference sealed secret for password
+  existingSecret: ""
+  existingSecretPasswordKey: password
+  sslMode: "require"
+
+# =============================================================================
+# Cache - Redis (Bitnami)
+# =============================================================================
+redis:
+  enabled: true
+  architecture: standalone  # or 'replication' for HA
+  auth:
+    enabled: true
+    existingSecret: devops-portal-redis-sealed
+    existingSecretPasswordKey: redis-password
+  master:
+    persistence:
+      enabled: true
+      size: 2Gi
+      storageClass: ""
+    resources:
+      limits:
+        cpu: 250m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
+  replica:
+    replicaCount: 0  # Set to 1+ for HA
+
+# External Redis (if redis.enabled=false)
+externalRedis:
+  host: ""
+  port: 6379
+  existingSecret: ""
+  existingSecretPasswordKey: password
+
+# =============================================================================
+# Object Storage - MinIO (Bitnami)
+# =============================================================================
+minio:
+  enabled: true
+  mode: standalone  # or 'distributed' for HA
+  auth:
+    # Use sealed secret
+    existingSecret: devops-portal-minio-sealed
+  defaultBuckets: "devops-portal-storage"
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  # Service configuration
+  service:
+    type: ClusterIP
+    ports:
+      api: 9000
+      console: 9001
+  # Ingress for MinIO Console (optional)
+  ingress:
+    enabled: false
+    hostname: minio-console.example.com
+
+# External S3 (if minio.enabled=false, or for AWS S3)
+externalS3:
+  enabled: false
+  bucket: ""
+  region: "us-west-2"
+  endpoint: ""  # Leave empty for AWS S3
+  pathStyle: false  # Set true for MinIO
+  # Credentials from sealed secret
+  existingSecret: ""
+  accessKeyIdKey: access-key-id
+  secretAccessKeyKey: secret-access-key
+
+# =============================================================================
+# Integrations - Internal Service URLs
+# =============================================================================
+integrations:
+  # ArgoCD Integration
+  argocd:
+    enabled: true
+    # Internal URL (within cluster)
+    url: "https://argocd-server.argocd.svc.cluster.local"
+    # Use sealed secret for token
+    existingSecret: devops-portal-argocd-sealed
+    tokenKey: token
+    # Skip TLS verification for internal communication
+    insecure: true
+  
+  # Grafana Integration
+  grafana:
+    enabled: true
+    # Internal URL
+    url: "http://grafana.monitoring.svc.cluster.local:3000"
+    # Use sealed secret for API key
+    existingSecret: devops-portal-grafana-sealed
+    apiKeyKey: api-key
+  
+  # Prometheus Integration
+  prometheus:
+    enabled: true
+    # Internal URL
+    url: "http://prometheus-server.monitoring.svc.cluster.local:80"
+    # Optional basic auth
+    existingSecret: ""
+    usernameKey: username
+    passwordKey: password
+  
+  # GitHub Integration
+  github:
+    enabled: true
+    # OAuth App credentials (from sealed secret)
+    existingSecret: devops-portal-github-sealed
+    clientIdKey: client-id
+    clientSecretKey: client-secret
+  
+  # Keycloak Integration (SSO)
+  keycloak:
+    enabled: false
+    issuer: "https://keycloak.example.com/realms/devops"
+    existingSecret: devops-portal-keycloak-sealed
+    clientIdKey: client-id
+    clientSecretKey: client-secret
+
+# =============================================================================
+# Network Policy
+# =============================================================================
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: duploservices-*
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432  # PostgreSQL
+        - protocol: TCP
+          port: 6379  # Redis
+        - protocol: TCP
+          port: 9000  # MinIO
+        - protocol: TCP
+          port: 443   # HTTPS (GitHub, ArgoCD external)
+        - protocol: TCP
+          port: 80    # HTTP (internal services)
+
+# =============================================================================
+# Service Monitor (Prometheus Operator)
+# =============================================================================
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+  annotations: {}
+  namespace: ""  # Deploy to same namespace if empty
+  honorLabels: true
+  metricRelabelings: []
+  relabelings: []
+
+# =============================================================================
+# Init Containers
+# =============================================================================
+initContainers:
+  # Wait for database to be ready
+  waitForDb:
+    enabled: true
+    image: busybox:1.36
+    command: ["sh", "-c", "until nc -z $DB_HOST $DB_PORT; do echo waiting for database; sleep 2; done"]
+  
+  # Run database migrations
+  migrate:
+    enabled: true
+    command: ["npx", "prisma", "migrate", "deploy"]
+
+# =============================================================================
+# Jobs
+# =============================================================================
+jobs:
+  # Database seeding job (runs once on install)
+  seed:
+    enabled: false
+    command: ["npm", "run", "db:seed"]
+    restartPolicy: Never
+    backoffLimit: 3
+
+# =============================================================================
+# Extra Environment Variables
+# =============================================================================
+extraEnv: []
+  # - name: CUSTOM_VAR
+  #   value: "custom-value"
+
+extraEnvFrom: []
+  # - secretRef:
+  #     name: additional-secrets
+
+# =============================================================================
+# Extra Volumes and Volume Mounts
+# =============================================================================
+extraVolumes: []
+extraVolumeMounts: []
+
+# =============================================================================
+# Annotations for all resources
+# =============================================================================
+commonAnnotations: {}
+commonLabels: {}

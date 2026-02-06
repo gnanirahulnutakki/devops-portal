@@ -1,1 +1,0 @@
-export { CommitToBranchDialog } from './CommitToBranchDialog';
