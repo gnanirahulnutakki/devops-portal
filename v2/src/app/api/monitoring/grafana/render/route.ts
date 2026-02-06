@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireApiAuth, withApiHandler } from '@/lib/api';
-import { getGrafanaRenderUrl, proxyGrafanaRender } from '@/lib/integrations/grafana-render';
+import { getRenderUrl, proxyRender } from '@/lib/services/grafana';
+import { getOrganizationIdFromHeaders } from '@/lib/api-context';
 
 export const GET = withApiHandler(async (request: Request) => {
   const authResult = await requireApiAuth();
@@ -11,13 +12,16 @@ export const GET = withApiHandler(async (request: Request) => {
   const panelId = searchParams.get('panelId') ?? '1';
   const width = searchParams.get('width') ?? '1000';
   const height = searchParams.get('height') ?? '500';
-  const theme = searchParams.get('theme') ?? 'light';
+  const themeParam = searchParams.get('theme');
+  const theme: 'light' | 'dark' = themeParam === 'dark' ? 'dark' : 'light';
+  const from = searchParams.get('from') ?? undefined;
+  const to = searchParams.get('to') ?? undefined;
 
   if (!uid) {
     return NextResponse.json({ success: false, error: { code: 'UID_REQUIRED', message: 'uid is required' } }, { status: 400 });
   }
 
-  const url = getGrafanaRenderUrl({ uid, panelId, width, height, theme });
-  return proxyGrafanaRender(url);
+  const orgId = getOrganizationIdFromHeaders();
+  const url = await getRenderUrl(orgId, { uid, panelId, width, height, theme, from, to });
+  return proxyRender(orgId, url);
 });
-
