@@ -8,6 +8,7 @@ import {
   updateBulkOperationProgress,
   TenantJobPayload,
 } from './worker-context';
+import { initQueueMetrics, trackWorkerActivity } from './queue-metrics';
 
 // =============================================================================
 // Queue Configuration
@@ -233,9 +234,13 @@ async function processBulkRestart(
 
 // Create worker (only in non-edge runtime)
 let worker: Worker<JobData> | null = null;
+let cleanupMetrics: (() => Promise<void>) | null = null;
 
 export function startWorker() {
   if (worker) return;
+  
+  // Initialize queue metrics collection
+  cleanupMetrics = initQueueMetrics(bulkOperationsQueue, 'bulk-operations', connection);
   
   worker = new Worker<JobData>('bulk-operations', processJob, {
     connection,
@@ -258,12 +263,23 @@ export function startWorker() {
     logger.error({ error: error.message }, 'Worker error');
   });
   
+  // Track worker activity
+  worker.on('active', async () => {
+    const workers = await bulkOperationsQueue.getWorkers();
+    trackWorkerActivity('bulk-operations', workers.length);
+  });
+  
   logger.info('Bulk operations worker started');
 }
 
-export function stopWorker() {
+export async function stopWorker() {
+  if (cleanupMetrics) {
+    await cleanupMetrics();
+    cleanupMetrics = null;
+  }
+  
   if (worker) {
-    worker.close();
+    await worker.close();
     worker = null;
     logger.info('Bulk operations worker stopped');
   }

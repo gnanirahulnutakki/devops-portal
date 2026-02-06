@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,7 +15,7 @@ interface Organization {
   role: string;
 }
 
-export default function SelectOrganizationPage() {
+function SelectOrganizationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { status } = useSession();
@@ -39,18 +39,18 @@ export default function SelectOrganizationPage() {
   async function fetchOrganizations() {
     try {
       const response = await fetch('/api/organizations');
-      const data = await response.json();
+      const result = await response.json();
       
-      if (data.success) {
-        setOrganizations(data.data);
+      if (response.ok && result.data) {
+        setOrganizations(result.data);
         
         // If only one org, auto-select it
-        if (data.data.length === 1) {
-          selectOrganization(data.data[0].id);
+        if (result.data.length === 1) {
+          selectOrganization(result.data[0].id);
         }
       }
-    } catch (error) {
-      console.error('Failed to fetch organizations:', error);
+    } catch {
+      // Silently fail - user will see empty state
     } finally {
       setLoading(false);
     }
@@ -130,5 +130,31 @@ export default function SelectOrganizationPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-4 w-64 mt-2" />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function SelectOrganizationPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <SelectOrganizationContent />
+    </Suspense>
   );
 }

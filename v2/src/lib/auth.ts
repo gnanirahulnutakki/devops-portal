@@ -2,10 +2,24 @@ import NextAuth from 'next-auth';
 import type { NextAuthConfig } from 'next-auth';
 import KeycloakProvider from 'next-auth/providers/keycloak';
 import GitHubProvider from 'next-auth/providers/github';
+import CredentialsProvider from 'next-auth/providers/credentials';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from './prisma';
 import { githubTokens } from './token-store';
 import { logger } from './logger';
+import crypto from 'crypto';
+
+// =============================================================================
+// Password Hashing (simple for dev, use bcrypt/argon2 in production)
+// =============================================================================
+
+function hashPassword(password: string): string {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+function verifyPassword(password: string, hash: string): boolean {
+  return hashPassword(password) === hash;
+}
 
 // =============================================================================
 // Auth Configuration
@@ -15,28 +29,85 @@ export const authConfig: NextAuthConfig = {
   adapter: PrismaAdapter(prisma),
   
   providers: [
-    // Primary: Keycloak SSO
-    KeycloakProvider({
-      clientId: process.env.KEYCLOAK_ID!,
-      clientSecret: process.env.KEYCLOAK_SECRET!,
-      issuer: process.env.KEYCLOAK_ISSUER,
-      authorization: {
-        params: {
-          scope: 'openid email profile',
+    // Development: Credentials login (email/password)
+    // Only enabled when ENABLE_CREDENTIALS_AUTH=true
+    ...(process.env.ENABLE_CREDENTIALS_AUTH === 'true' ? [
+      CredentialsProvider({
+        id: 'credentials',
+        name: 'Email & Password',
+        credentials: {
+          email: { label: 'Email', type: 'email', placeholder: 'admin@example.com' },
+          password: { label: 'Password', type: 'password', placeholder: '••••••••' },
         },
-      },
-    }),
+        async authorize(credentials) {
+          if (!credentials?.email || !credentials?.password) {
+            return null;
+          }
+
+          const email = credentials.email as string;
+          const password = credentials.password as string;
+
+          // Find user by email
+          const user = await prisma.user.findUnique({
+            where: { email },
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              image: true,
+              passwordHash: true,
+            },
+          });
+
+          if (!user) {
+            logger.warn({ email }, 'Login attempt for non-existent user');
+            return null;
+          }
+
+          // Verify password
+          if (!user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+            logger.warn({ email }, 'Invalid password attempt');
+            return null;
+          }
+
+          logger.info({ userId: user.id, email }, 'Credentials login successful');
+          
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            image: user.image,
+          };
+        },
+      }),
+    ] : []),
+
+    // Primary: Keycloak SSO (only if configured)
+    ...(process.env.KEYCLOAK_ID && process.env.KEYCLOAK_SECRET && process.env.KEYCLOAK_ISSUER ? [
+      KeycloakProvider({
+        clientId: process.env.KEYCLOAK_ID,
+        clientSecret: process.env.KEYCLOAK_SECRET,
+        issuer: process.env.KEYCLOAK_ISSUER,
+        authorization: {
+          params: {
+            scope: 'openid email profile',
+          },
+        },
+      }),
+    ] : []),
     
-    // Secondary: Direct GitHub OAuth (for GitHub token acquisition)
-    GitHubProvider({
-      clientId: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          scope: 'read:user user:email repo read:org',
+    // Secondary: Direct GitHub OAuth (only if configured)
+    ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET ? [
+      GitHubProvider({
+        clientId: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        authorization: {
+          params: {
+            scope: 'read:user user:email repo read:org',
+          },
         },
-      },
-    }),
+      }),
+    ] : []),
   ],
 
   session: {

@@ -26,7 +26,14 @@ import {
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Badge } from '@/components/ui/badge';
-import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from 'cmdk';
+import { 
+  CommandDialog, 
+  CommandInput, 
+  CommandList, 
+  CommandEmpty, 
+  CommandGroup, 
+  CommandItem 
+} from '@/components/ui/command';
 import { useState, useEffect } from 'react';
 
 interface HeaderProps {

@@ -158,7 +158,7 @@ export function GrafanaFolderList() {
               </div>
               <Button variant="ghost" size="icon" asChild>
                 <a
-                  href={folder.url}
+                  href={`${process.env.NEXT_PUBLIC_GRAFANA_URL || ''}${folder.url}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={`Open ${folder.title} in Grafana`}

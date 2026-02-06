@@ -1,0 +1,227 @@
+# =============================================================================
+# DevOps Portal - Prometheus Alerting Rules
+# Deploy to Prometheus via ConfigMap or PrometheusRule CRD
+# =============================================================================
+
+groups:
+  - name: devops-portal-slo
+    interval: 30s
+    rules:
+      # -------------------------------------------------------------------------
+      # API Availability SLO
+      # Target: 99.9% availability (error rate < 0.1%)
+      # -------------------------------------------------------------------------
+      - alert: DevOpsPortalHighErrorRate
+        expr: |
+          (
+            sum(rate(devops_portal_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(devops_portal_http_requests_total[5m]))
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal error rate above 1%"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-errors"
+
+      - alert: DevOpsPortalCriticalErrorRate
+        expr: |
+          (
+            sum(rate(devops_portal_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(devops_portal_http_requests_total[5m]))
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal error rate critical (>5%)"
+          description: "Error rate is {{ $value | humanizePercentage }} - immediate investigation required"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-errors"
+
+      # -------------------------------------------------------------------------
+      # API Latency SLO
+      # Target: p95 < 500ms, p99 < 1s
+      # -------------------------------------------------------------------------
+      - alert: DevOpsPortalHighLatency
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(devops_portal_http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal p95 latency above 500ms"
+          description: "p95 latency is {{ $value | humanizeDuration }} over the last 5 minutes"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-latency"
+
+      - alert: DevOpsPortalCriticalLatency
+        expr: |
+          histogram_quantile(0.99, 
+            sum(rate(devops_portal_http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: critical
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal p99 latency above 2s"
+          description: "p99 latency is {{ $value | humanizeDuration }} - performance severely degraded"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-latency"
+
+  - name: devops-portal-queue
+    interval: 30s
+    rules:
+      # -------------------------------------------------------------------------
+      # Queue Health
+      # Target: Queue depth < 100, success rate > 95%
+      # -------------------------------------------------------------------------
+      - alert: DevOpsPortalQueueBacklog
+        expr: sum(devops_portal_queue_depth{state="waiting"}) > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal queue backlog growing"
+          description: "{{ $value }} jobs waiting in queue for >5 minutes"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-queue"
+
+      - alert: DevOpsPortalQueueCriticalBacklog
+        expr: sum(devops_portal_queue_depth{state="waiting"}) > 100
+        for: 2m
+        labels:
+          severity: critical
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal queue backlog critical"
+          description: "{{ $value }} jobs waiting - queue processing may be stuck"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-queue"
+
+      - alert: DevOpsPortalQueueHighFailureRate
+        expr: |
+          (
+            sum(rate(devops_portal_queue_jobs_total{status="failed"}[5m]))
+            /
+            sum(rate(devops_portal_queue_jobs_total[5m]))
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal queue job failure rate above 10%"
+          description: "{{ $value | humanizePercentage }} of jobs are failing"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-queue-failures"
+
+      - alert: DevOpsPortalNoWorkers
+        expr: |
+          sum(devops_portal_queue_depth{state="waiting"}) > 0
+          and
+          sum(devops_portal_queue_workers_active) == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal has queued jobs but no active workers"
+          description: "{{ $value }} jobs waiting but worker count is 0"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-workers"
+
+  - name: devops-portal-integrations
+    interval: 30s
+    rules:
+      # -------------------------------------------------------------------------
+      # External Integration Health
+      # -------------------------------------------------------------------------
+      - alert: DevOpsPortalIntegrationErrors
+        expr: |
+          sum by (integration) (rate(devops_portal_integration_errors_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal {{ $labels.integration }} integration errors"
+          description: "Integration {{ $labels.integration }} has elevated error rate"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-integrations"
+
+      - alert: DevOpsPortalIntegrationHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (integration, le) (rate(devops_portal_integration_request_duration_seconds_bucket[5m]))
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal {{ $labels.integration }} integration slow"
+          description: "Integration {{ $labels.integration }} p95 latency is {{ $value | humanizeDuration }}"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-integrations"
+
+  - name: devops-portal-security
+    interval: 30s
+    rules:
+      # -------------------------------------------------------------------------
+      # Security & Tenant Isolation
+      # -------------------------------------------------------------------------
+      - alert: DevOpsPortalTenantViolations
+        expr: sum(rate(devops_portal_tenant_violations_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal tenant isolation violations detected"
+          description: "{{ $value }} tenant violations per second - potential security issue"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-security"
+
+      - alert: DevOpsPortalHighRateLimitHits
+        expr: |
+          sum by (limiter_type) (rate(devops_portal_rate_limit_hits_total[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal rate limiting active"
+          description: "{{ $labels.limiter_type }} rate limiter triggered frequently"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-ratelimit"
+
+  - name: devops-portal-resources
+    interval: 30s
+    rules:
+      # -------------------------------------------------------------------------
+      # Resource Usage (from Node.js default metrics)
+      # -------------------------------------------------------------------------
+      - alert: DevOpsPortalHighMemory
+        expr: |
+          devops_portal_nodejs_heap_size_used_bytes 
+          / 
+          devops_portal_nodejs_heap_size_total_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal high memory usage"
+          description: "Heap usage is {{ $value | humanizePercentage }}"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-memory"
+
+      - alert: DevOpsPortalHighEventLoopLag
+        expr: devops_portal_nodejs_eventloop_lag_seconds > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: devops-portal
+        annotations:
+          summary: "DevOps Portal event loop lag detected"
+          description: "Event loop lag is {{ $value | humanizeDuration }}"
+          runbook_url: "https://wiki.example.com/runbooks/devops-portal-performance"

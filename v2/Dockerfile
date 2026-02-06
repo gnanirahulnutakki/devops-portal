@@ -1,38 +1,46 @@
 # =============================================================================
-# DevOps Portal v2 - Production Dockerfile
-# Multi-stage build for optimal image size
+# DevOps Portal - Production Dockerfile
+# Multi-stage build for optimized production image
 # =============================================================================
 
 # Stage 1: Dependencies
-FROM node:22-alpine AS deps
+FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
-RUN \
-  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
-  elif [ -f package-lock.json ]; then npm ci; \
-  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile; \
-  else echo "Lockfile not found." && exit 1; \
-  fi
+# Copy package files
+COPY package.json package-lock.json ./
+COPY prisma ./prisma/
+
+# Install dependencies
+RUN npm ci --only=production && npm cache clean --force
 
 # Stage 2: Builder
-FROM node:22-alpine AS builder
+FROM node:20-alpine AS builder
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
+# Copy all files
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Generate Prisma client
-RUN npx prisma generate
+# Build arguments for build-time env
+ARG DATABASE_URL
+ARG NEXTAUTH_SECRET
+ARG NEXTAUTH_URL
 
-# Build application
+ENV DATABASE_URL=${DATABASE_URL}
+ENV NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+ENV NEXTAUTH_URL=${NEXTAUTH_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+
+# Generate Prisma client and build
+RUN npx prisma generate
 RUN npm run build
 
-# Stage 3: Runner
-FROM node:22-alpine AS runner
+# Stage 3: Production Runner
+FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -62,7 +70,7 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 CMD ["node", "server.js"]

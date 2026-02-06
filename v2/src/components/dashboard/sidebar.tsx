@@ -16,6 +16,7 @@ import {
   GitPullRequest,
   Bell,
   Users,
+  HardDrive,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,7 @@ const navItems: NavItem[] = [
   { title: 'Deployments', href: '/deployments', icon: Rocket },
   { title: 'ArgoCD', href: '/argocd', icon: GitBranch },
   { title: 'Monitoring', href: '/monitoring', icon: Activity },
+  { title: 'Storage', href: '/storage', icon: HardDrive },
   { title: 'Clusters', href: '/clusters', icon: Server },
   { title: 'Alerts', href: '/alerts', icon: Bell, badge: '3' },
 ];

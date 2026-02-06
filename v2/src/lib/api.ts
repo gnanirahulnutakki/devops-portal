@@ -10,6 +10,10 @@ import {
   requireRole, 
   logAuditEvent 
 } from './api-context';
+import {
+  recordHttpRequest,
+  recordRateLimitHit,
+} from './metrics';
 
 // =============================================================================
 // API Response Helpers
@@ -308,6 +312,7 @@ export interface TenantApiOptions {
  * 4. Applies rate limiting per organization
  * 5. Optionally validates required role
  * 6. Optionally logs audit events
+ * 7. Records metrics for monitoring
  * 
  * ALWAYS use this for routes that access tenant-scoped data
  */
@@ -316,6 +321,11 @@ export function withTenantApiHandler(
   options: TenantApiOptions = {}
 ): ApiHandler {
   return async (request: Request) => {
+    const startTime = Date.now();
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const method = request.method;
+    
     try {
       // This throws if auth fails or membership invalid
       return await withApiContext(async (ctx) => {
@@ -329,12 +339,18 @@ export function withTenantApiHandler(
           const identifier = `${ctx.tenant.organizationId}:${ctx.tenant.userId}`;
           const rateLimitResponse = await withRateLimit(options.rateLimit, identifier);
           if (rateLimitResponse) {
+            // Record rate limit hit
+            recordRateLimitHit(options.rateLimit, ctx.tenant.organizationId);
+            recordHttpRequest(method, path, 429, Date.now() - startTime, ctx.tenant.organizationId);
             return rateLimitResponse;
           }
         }
         
         // Execute handler
         const response = await handler(request, ctx);
+        
+        // Record metrics
+        recordHttpRequest(method, path, response.status, Date.now() - startTime, ctx.tenant.organizationId);
         
         // Audit logging
         if (options.audit && response.status < 400) {
@@ -350,18 +366,25 @@ export function withTenantApiHandler(
         return response;
       });
     } catch (error) {
+      const duration = Date.now() - startTime;
+      
       // Handle specific errors gracefully
       if (error instanceof Error) {
         if (error.message.includes('does not have access')) {
+          recordHttpRequest(method, path, 403, duration);
           return forbiddenError('You do not have access to this organization');
         }
         if (error.message.includes('requires') && error.message.includes('role')) {
+          recordHttpRequest(method, path, 403, duration);
           return forbiddenError(error.message);
         }
         if (error.message.includes('x-organization-id')) {
+          recordHttpRequest(method, path, 400, duration);
           return errorResponse('ORGANIZATION_REQUIRED', error.message, 400);
         }
       }
+      
+      recordHttpRequest(method, path, 500, duration);
       return serverError(error);
     }
   };

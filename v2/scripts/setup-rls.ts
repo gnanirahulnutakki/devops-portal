@@ -18,13 +18,15 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Tables that require RLS
+// Tables that require RLS (Prisma uses camelCase column names)
+// Format: { table, column } - column needs to be quoted for camelCase
 const RLS_TABLES = [
-  'clusters',
-  'deployments', 
-  'bulk_operations',
-  'audit_logs',
-  'alert_rules',
+  { table: 'clusters', column: '"organizationId"' },
+  { table: 'deployments', column: '"organizationId"' },
+  { table: 'bulk_operations', column: '"organizationId"' },
+  { table: 'audit_logs', column: '"organizationId"' },
+  { table: 'alert_rules', column: '"organizationId"' },
+  { table: 'integration_credentials', column: '"organizationId"' },
 ];
 
 async function main() {
@@ -37,7 +39,7 @@ async function main() {
 
     // Step 1: Enable RLS on tables
     console.log('📋 Enabling RLS on tenant-scoped tables...');
-    for (const table of RLS_TABLES) {
+    for (const { table } of RLS_TABLES) {
       try {
         await prisma.$executeRawUnsafe(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
         console.log(`   ✓ ${table}`);
@@ -53,7 +55,7 @@ async function main() {
 
     // Step 2: Create RLS policies
     console.log('🔒 Creating RLS policies...');
-    for (const table of RLS_TABLES) {
+    for (const { table, column } of RLS_TABLES) {
       const policyName = `tenant_isolation_${table}`;
       
       // Drop existing policy if exists
@@ -63,11 +65,11 @@ async function main() {
         // Ignore errors from non-existent policies
       }
 
-      // Create new policy
+      // Create new policy using the correct column name (quoted for camelCase)
       await prisma.$executeRawUnsafe(`
         CREATE POLICY ${policyName} ON ${table}
-        USING (organization_id = current_setting('app.organization_id', true)::text)
-        WITH CHECK (organization_id = current_setting('app.organization_id', true)::text)
+        USING (${column} = current_setting('app.organization_id', true)::text)
+        WITH CHECK (${column} = current_setting('app.organization_id', true)::text)
       `);
       console.log(`   ✓ ${policyName}`);
     }
@@ -102,13 +104,15 @@ async function main() {
     }
 
     // Step 5: Create indexes for efficient RLS filtering
+    // Note: Prisma may have already created these indexes, but we ensure they exist
     console.log('\n📊 Creating performance indexes...');
     const indexes = [
-      { table: 'clusters', column: 'organization_id', name: 'idx_clusters_org' },
-      { table: 'deployments', column: 'organization_id', name: 'idx_deployments_org' },
-      { table: 'bulk_operations', column: 'organization_id', name: 'idx_bulk_operations_org' },
-      { table: 'audit_logs', column: 'organization_id', name: 'idx_audit_logs_org' },
-      { table: 'alert_rules', column: 'organization_id', name: 'idx_alert_rules_org' },
+      { table: 'clusters', column: '"organizationId"', name: 'idx_clusters_org_rls' },
+      { table: 'deployments', column: '"organizationId"', name: 'idx_deployments_org_rls' },
+      { table: 'bulk_operations', column: '"organizationId"', name: 'idx_bulk_operations_org_rls' },
+      { table: 'audit_logs', column: '"organizationId"', name: 'idx_audit_logs_org_rls' },
+      { table: 'alert_rules', column: '"organizationId"', name: 'idx_alert_rules_org_rls' },
+      { table: 'integration_credentials', column: '"organizationId"', name: 'idx_integration_credentials_org_rls' },
     ];
 
     for (const idx of indexes) {
@@ -127,7 +131,7 @@ async function main() {
     const rlsCheck = await prisma.$queryRaw<Array<{ relname: string; relrowsecurity: boolean }>>`
       SELECT relname, relrowsecurity 
       FROM pg_class 
-      WHERE relname = ANY(ARRAY['clusters', 'deployments', 'bulk_operations', 'audit_logs', 'alert_rules'])
+      WHERE relname = ANY(ARRAY['clusters', 'deployments', 'bulk_operations', 'audit_logs', 'alert_rules', 'integration_credentials'])
     `;
     
     const allEnabled = rlsCheck.every((t) => t.relrowsecurity);

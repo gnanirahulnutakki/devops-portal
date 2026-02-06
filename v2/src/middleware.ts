@@ -18,6 +18,8 @@ const PUBLIC_PATHS = [
 // Paths that require auth but not organization context
 const ORG_OPTIONAL_PATHS = [
   '/api/organizations',
+  '/api/metrics',
+  '/api/health',
   '/select-organization',
 ];
 
