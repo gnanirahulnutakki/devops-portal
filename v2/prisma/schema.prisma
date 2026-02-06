@@ -1,0 +1,379 @@
+// =============================================================================
+// DevOps Portal v2 - Prisma Schema
+// Multi-tenant architecture with Row Level Security (RLS)
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// Multi-Tenancy
+// =============================================================================
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  logoUrl     String?
+  
+  // Settings
+  settings    Json     @default("{}")
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  memberships    Membership[]
+  clusters       Cluster[]
+  deployments    Deployment[]
+  bulkOperations BulkOperation[]
+  auditLogs      AuditLog[]
+  alertRules     AlertRule[]
+  
+  @@map("organizations")
+}
+
+model Membership {
+  id             String   @id @default(cuid())
+  role           Role     @default(USER)
+  
+  // Relations
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  @@unique([userId, organizationId])
+  @@map("memberships")
+}
+
+enum Role {
+  USER      // Read-only
+  READWRITE // Read + write operations
+  ADMIN     // Full access including user management
+}
+
+// =============================================================================
+// Authentication (NextAuth.js)
+// =============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  
+  // Auth
+  accounts      Account[]
+  sessions      Session[]
+  
+  // Organization membership
+  memberships   Membership[]
+  
+  // Activity
+  auditLogs     AuditLog[]
+  bulkOperations BulkOperation[]
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// =============================================================================
+// Clusters & Deployments
+// =============================================================================
+
+model Cluster {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String
+  provider    String   // aws, gcp, azure, on-prem
+  region      String
+  environment String   // production, staging, development
+  
+  // Connection
+  kubeconfig  String?  @db.Text // Encrypted
+  argocdUrl   String?
+  
+  // Status
+  status      ClusterStatus @default(UNKNOWN)
+  lastHealthCheck DateTime?
+  
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  deployments Deployment[]
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([organizationId, slug])
+  @@map("clusters")
+}
+
+enum ClusterStatus {
+  HEALTHY
+  DEGRADED
+  UNHEALTHY
+  UNKNOWN
+}
+
+model Deployment {
+  id          String   @id @default(cuid())
+  name        String
+  namespace   String
+  
+  // Source
+  repository  String
+  branch      String
+  path        String   @default(".")
+  
+  // ArgoCD
+  argoAppName String?
+  syncStatus  SyncStatus @default(UNKNOWN)
+  healthStatus HealthStatus @default(UNKNOWN)
+  
+  // Version
+  currentVersion String?
+  targetVersion  String?
+  
+  // Organization & Cluster scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clusterId      String
+  cluster        Cluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastSyncAt  DateTime?
+  
+  @@unique([clusterId, namespace, name])
+  @@map("deployments")
+}
+
+enum SyncStatus {
+  SYNCED
+  OUT_OF_SYNC
+  SYNCING
+  UNKNOWN
+}
+
+enum HealthStatus {
+  HEALTHY
+  DEGRADED
+  PROGRESSING
+  SUSPENDED
+  MISSING
+  UNKNOWN
+}
+
+// =============================================================================
+// Bulk Operations
+// =============================================================================
+
+model BulkOperation {
+  id          String   @id @default(cuid())
+  type        BulkOperationType
+  status      BulkOperationStatus @default(PENDING)
+  
+  // Input/Output
+  input       Json
+  output      Json?
+  
+  // Progress
+  totalItems  Int      @default(0)
+  completedItems Int   @default(0)
+  failedItems Int      @default(0)
+  
+  // Error handling
+  errors      Json?
+  
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Creator
+  createdById String
+  createdBy   User @relation(fields: [createdById], references: [id])
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  startedAt   DateTime?
+  completedAt DateTime?
+  
+  @@map("bulk_operations")
+}
+
+enum BulkOperationType {
+  FILE_UPDATE
+  SYNC
+  ROLLBACK
+  SCALE
+  RESTART
+}
+
+enum BulkOperationStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// =============================================================================
+// Audit Logging
+// =============================================================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  
+  // Action
+  action      String
+  resource    String
+  resourceId  String?
+  
+  // Details
+  details     Json?
+  metadata    Json?
+  
+  // Result
+  success     Boolean
+  errorMessage String?
+  
+  // Actor
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  ipAddress   String?
+  userAgent   String?
+  
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Tracing
+  traceId     String?
+  spanId      String?
+  
+  // Timestamp
+  createdAt   DateTime @default(now())
+  
+  @@index([organizationId, createdAt])
+  @@index([action, createdAt])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
+
+// =============================================================================
+// Alerting
+// =============================================================================
+
+model AlertRule {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  
+  // Rule definition
+  type        String   // cpu, memory, sync_failure, health_degraded
+  condition   Json     // { threshold: 80, operator: "gt" }
+  
+  // Notification
+  channels    Json     // ["email", "slack"]
+  recipients  Json     // email addresses or webhook URLs
+  
+  // Status
+  enabled     Boolean  @default(true)
+  
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("alert_rules")
+}
+
+// =============================================================================
+// User Preferences
+// =============================================================================
+
+model UserPreference {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  
+  // UI preferences
+  theme       String   @default("system") // light, dark, system
+  sidebarCollapsed Boolean @default(false)
+  dashboardLayout Json?
+  
+  // Notification preferences
+  emailNotifications Boolean @default(true)
+  slackNotifications Boolean @default(false)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("user_preferences")
+}
