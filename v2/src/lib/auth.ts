@@ -94,8 +94,10 @@ export const authConfig: NextAuthConfig = {
     async signIn({ user, account }) {
       logger.info({ userId: user.id, provider: account?.provider }, 'User signed in');
     },
-    async signOut({ session }) {
-      logger.info({ userId: (session as any)?.userId }, 'User signed out');
+    async signOut(message) {
+      // Session may be JWT token or adapter session
+      const sessionData = 'session' in message ? message.session : message.token;
+      logger.info({ sessionData }, 'User signed out');
     },
   },
 

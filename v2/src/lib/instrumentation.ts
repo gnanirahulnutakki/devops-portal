@@ -25,9 +25,9 @@ const sdk = new NodeSDK({
       '@opentelemetry/instrumentation-fs': {
         enabled: false,
       },
-      // Configure HTTP instrumentation
+      // HTTP instrumentation uses default config
       '@opentelemetry/instrumentation-http': {
-        ignoreIncomingPaths: ['/api/health', '/_next/static', '/favicon.ico'],
+        enabled: true,
       },
     }),
   ],

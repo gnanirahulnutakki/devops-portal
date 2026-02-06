@@ -291,9 +291,9 @@ export class GitHubService {
     });
 
     return {
-      sha: data.content!.sha,
-      commitSha: data.commit.sha,
-      commitUrl: data.commit.url,
+      sha: data.content?.sha ?? '',
+      commitSha: data.commit.sha ?? '',
+      commitUrl: data.commit.url ?? '',
     };
   }
 

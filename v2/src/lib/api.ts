@@ -216,7 +216,8 @@ export async function withRateLimit(
 // API Route Handler Wrapper
 // =============================================================================
 
-type ApiHandler = (request: Request, context?: unknown) => Promise<NextResponse>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApiHandler = (request: Request, context?: any) => Promise<NextResponse>;
 
 export function withApiHandler(
   handler: ApiHandler,

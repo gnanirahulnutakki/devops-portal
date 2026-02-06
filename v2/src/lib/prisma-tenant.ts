@@ -120,65 +120,57 @@ export function createTenantPrismaClient(basePrisma: PrismaClient) {
           let modifiedArgs = args;
 
           // Add tenant filtering/scoping based on operation
-          switch (operation) {
-            case 'findFirst':
-            case 'findMany':
-            case 'findUnique':
-            case 'findUniqueOrThrow':
-            case 'findFirstOrThrow':
-            case 'count':
-            case 'aggregate':
-            case 'groupBy':
-              modifiedArgs = addTenantFilter(
-                args as { where?: unknown },
-                organizationId
-              );
-              break;
-
-            case 'create':
-              modifiedArgs = addTenantToData(
-                args as { data?: unknown },
-                organizationId
-              );
-              break;
-
-            case 'createMany':
-              // Add organizationId to each record
-              const createManyArgs = args as { data: unknown[] };
-              modifiedArgs = {
-                ...args,
-                data: createManyArgs.data.map((record) => ({
-                  ...(record as Record<string, unknown>),
-                  organizationId,
-                })),
-              };
-              break;
-
-            case 'update':
-            case 'updateMany':
-            case 'delete':
-            case 'deleteMany':
-              modifiedArgs = addTenantFilter(
-                args as { where?: unknown },
-                organizationId
-              );
-              break;
-
-            case 'upsert':
-              const upsertArgs = args as {
-                where?: unknown;
-                create?: unknown;
-                update?: unknown;
-              };
-              modifiedArgs = {
-                ...addTenantFilter({ where: upsertArgs.where }, organizationId),
-                create: {
-                  ...(upsertArgs.create as Record<string, unknown>),
-                  organizationId,
-                },
-                update: upsertArgs.update,
-              };
-              break;
+          // Using type assertions to handle Prisma's complex types
+          const typedArgs = args as Record<string, unknown>;
+          
+          // Only add organizationId for tenant-scoped models
+          // Skip models that don't have organizationId field (like UserPreference)
+          if (['findFirst', 'findMany', 'findUnique', 'findUniqueOrThrow', 
+               'findFirstOrThrow', 'count', 'aggregate', 'groupBy',
+               'update', 'updateMany', 'delete', 'deleteMany'].includes(operation)) {
+            // Add organizationId to where clause
+            const existingWhere = typedArgs.where as Record<string, unknown> || {};
+            modifiedArgs = {
+              ...typedArgs,
+              where: {
+                ...existingWhere,
+                organizationId,
+              },
+            } as typeof args;
+          } else if (operation === 'create') {
+            // Add organizationId to data
+            const existingData = typedArgs.data as Record<string, unknown> || {};
+            modifiedArgs = {
+              ...typedArgs,
+              data: {
+                ...existingData,
+                organizationId,
+              },
+            } as typeof args;
+          } else if (operation === 'createMany') {
+            // Add organizationId to each record
+            const dataArray = typedArgs.data as Record<string, unknown>[];
+            modifiedArgs = {
+              ...typedArgs,
+              data: dataArray.map((record) => ({
+                ...record,
+                organizationId,
+              })),
+            } as typeof args;
+          } else if (operation === 'upsert') {
+            const existingWhere = typedArgs.where as Record<string, unknown> || {};
+            const existingCreate = typedArgs.create as Record<string, unknown> || {};
+            modifiedArgs = {
+              ...typedArgs,
+              where: {
+                ...existingWhere,
+                organizationId,
+              },
+              create: {
+                ...existingCreate,
+                organizationId,
+              },
+            } as typeof args;
           }
 
           try {

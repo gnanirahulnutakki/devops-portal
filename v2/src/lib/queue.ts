@@ -111,16 +111,16 @@ async function processJob(job: Job<JobData>) {
     
     switch (data.type) {
       case 'BULK_FILE_UPDATE':
-        result = await processBulkFileUpdate(job, data);
+        result = await processBulkFileUpdate(job as Job<BulkFileUpdateJob>, data as BulkFileUpdateJob);
         break;
       case 'BULK_SYNC':
-        result = await processBulkSync(job, data);
+        result = await processBulkSync(job as Job<BulkSyncJob>, data as BulkSyncJob);
         break;
       case 'BULK_RESTART':
-        result = await processBulkRestart(job, data);
+        result = await processBulkRestart(job as Job<BulkRestartJob>, data as BulkRestartJob);
         break;
       default:
-        throw new Error(`Unknown job type: ${(data as any).type}`);
+        throw new Error(`Unknown job type: ${(data as JobData).type}`);
     }
     
     // Update operation status to COMPLETED
