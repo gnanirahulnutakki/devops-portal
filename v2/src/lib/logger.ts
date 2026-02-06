@@ -2,18 +2,16 @@ import pino from 'pino';
 
 const isDev = process.env.NODE_ENV === 'development';
 
+// Note: pino-pretty transport uses worker threads which can cause issues
+// with Next.js server bundling. Use synchronous pretty-printing in dev
+// via the PINO_PRETTY env var or run with: npm run dev | pino-pretty
 export const logger = pino({
   level: process.env.LOG_LEVEL || (isDev ? 'debug' : 'info'),
-  transport: isDev
-    ? {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          ignore: 'pid,hostname',
-          translateTime: 'SYS:standard',
-        },
-      }
-    : undefined,
+  // Don't use transport in Next.js - it causes worker thread issues
+  // Instead use sync formatting or pipe output: npm run dev | pino-pretty
+  formatters: {
+    level: (label) => ({ level: label }),
+  },
   base: {
     service: 'devops-portal',
     version: process.env.npm_package_version || '2.0.0',

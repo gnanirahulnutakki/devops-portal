@@ -12,8 +12,14 @@ interface ArgoCDApplication {
   name: string;
   namespace: string;
   project: string;
-  syncStatus: string;
-  healthStatus: string;
+  syncStatus: {
+    status: string;
+    revision: string;
+  };
+  healthStatus: {
+    status: string;
+    message?: string;
+  };
   source: {
     repoURL: string;
     path: string;
@@ -24,7 +30,7 @@ interface ArgoCDApplication {
     namespace: string;
   };
   createdAt: string;
-  syncedAt?: string;
+  reconciledAt?: string;
 }
 
 interface SyncParams {
@@ -53,10 +59,9 @@ export function useArgoCDApplications(project?: string) {
     queryFn: async () => {
       const params = project ? `?project=${project}` : '';
       const response = await api.get(`argocd/applications${params}`).json<{
-        success: boolean;
         data: ArgoCDApplication[];
       }>();
-      return response.data;
+      return response.data ?? [];
     },
     staleTime: 30 * 1000, // 30 seconds
     refetchInterval: 60 * 1000, // Auto-refresh every minute
@@ -68,7 +73,6 @@ export function useArgoCDApplication(name: string) {
     queryKey: ['argocd', 'application', name],
     queryFn: async () => {
       const response = await api.get(`argocd/applications/${name}`).json<{
-        success: boolean;
         data: ArgoCDApplication;
       }>();
       return response.data;
@@ -86,7 +90,6 @@ export function useSyncApplication() {
       const response = await api.post(`argocd/applications/${name}/sync`, {
         json: { revision, prune, dryRun },
       }).json<{
-        success: boolean;
         data: { phase: string; message: string };
       }>();
       return response.data;
@@ -117,7 +120,6 @@ export function useRefreshApplication() {
   return useMutation({
     mutationFn: async (name: string) => {
       const response = await api.post(`argocd/applications/${name}/refresh`).json<{
-        success: boolean;
         data: ArgoCDApplication;
       }>();
       return response.data;
@@ -160,10 +162,9 @@ export function useApplicationResources(name: string) {
     queryKey: ['argocd', 'application', name, 'resources'],
     queryFn: async () => {
       const response = await api.get(`argocd/applications/${name}/resources`).json<{
-        success: boolean;
         data: ArgoCDResource[];
       }>();
-      return response.data;
+      return response.data ?? [];
     },
     enabled: !!name,
     staleTime: 30 * 1000,
@@ -195,10 +196,9 @@ export function useApplicationHistory(name: string) {
     queryKey: ['argocd', 'application', name, 'history'],
     queryFn: async () => {
       const response = await api.get(`argocd/applications/${name}/history`).json<{
-        success: boolean;
         data: ArgoCDHistoryEntry[];
       }>();
-      return response.data;
+      return response.data ?? [];
     },
     enabled: !!name,
     staleTime: 60 * 1000, // History changes less frequently
@@ -215,10 +215,10 @@ export function useArgoCDProjects() {
     queryFn: async () => {
       // Extract unique projects from applications
       const response = await api.get('argocd/applications').json<{
-        success: boolean;
         data: ArgoCDApplication[];
       }>();
-      const projects = [...new Set(response.data.map(app => app.project))];
+      const apps = response.data ?? [];
+      const projects = [...new Set(apps.map(app => app.project))];
       return projects.sort();
     },
     staleTime: 5 * 60 * 1000, // Projects change rarely

@@ -7,18 +7,29 @@ import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from './prisma';
 import { githubTokens } from './token-store';
 import { logger } from './logger';
-import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 // =============================================================================
-// Password Hashing (simple for dev, use bcrypt/argon2 in production)
+// Password Hashing (bcrypt with configurable cost factor)
 // =============================================================================
 
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
+const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
+
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
 
-function verifyPassword(password: string, hash: string): boolean {
-  return hashPassword(password) === hash;
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  // Support legacy SHA-256 hashes during migration
+  if (hash.length === 64 && /^[a-f0-9]+$/.test(hash)) {
+    const crypto = await import('crypto');
+    const sha256Hash = crypto.createHash('sha256').update(password).digest('hex');
+    if (sha256Hash === hash) {
+      logger.warn('Legacy SHA-256 password detected - consider re-hashing');
+      return true;
+    }
+  }
+  return bcrypt.compare(password, hash);
 }
 
 // =============================================================================
@@ -65,7 +76,7 @@ export const authConfig: NextAuthConfig = {
           }
 
           // Verify password
-          if (!user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+          if (!user.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
             logger.warn({ email }, 'Invalid password attempt');
             return null;
           }

@@ -284,19 +284,43 @@ export const AISearchCard: React.FC<AISearchCardProps> = ({
     inputRef.current?.focus();
   };
 
-  const renderHighlightedContent = (content: string, highlights: string[]) => {
+  /**
+   * Safely render content with highlights as React elements
+   * NO dangerouslySetInnerHTML - prevents XSS from malicious highlight content
+   */
+  const renderHighlightedContent = (content: string, highlights: string[]): React.ReactNode => {
     if (!highlights || highlights.length === 0) {
       return content;
     }
 
-    // Simple highlight rendering
-    let highlightedContent = content;
-    highlights.forEach((highlight) => {
-      const regex = new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-      highlightedContent = highlightedContent.replace(regex, `<mark class="${classes.highlight}">$1</mark>`);
-    });
+    // Build a regex that matches any of the highlight terms
+    const escapedHighlights = highlights.map(h => 
+      h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    );
+    const combinedPattern = new RegExp(`(${escapedHighlights.join('|')})`, 'gi');
 
-    return <span dangerouslySetInnerHTML={{ __html: highlightedContent }} />;
+    // Split content by matches and render as React elements
+    const parts = content.split(combinedPattern);
+    
+    return (
+      <span>
+        {parts.map((part, index) => {
+          // Check if this part matches any highlight (case-insensitive)
+          const isHighlight = highlights.some(
+            h => part.toLowerCase() === h.toLowerCase()
+          );
+          
+          if (isHighlight) {
+            return (
+              <mark key={index} className={classes.highlight}>
+                {part}
+              </mark>
+            );
+          }
+          return <React.Fragment key={index}>{part}</React.Fragment>;
+        })}
+      </span>
+    );
   };
 
   const defaultPlaceholder = mode === 'search'

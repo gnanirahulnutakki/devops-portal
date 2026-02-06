@@ -23,6 +23,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   RefreshCcw,
   Folder,
   File,
@@ -35,12 +41,15 @@ import {
   Loader2,
   Search,
   FolderOpen,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 // =============================================================================
 // Types
 // =============================================================================
+
+type UserRole = 'USER' | 'READWRITE' | 'ADMIN';
 
 interface S3Object {
   key: string;
@@ -57,13 +66,29 @@ interface S3ListResult {
   isTruncated: boolean;
 }
 
-interface ApiResponse {
-  success: boolean;
-  data?: S3ListResult;
+interface ApiResponse<T = S3ListResult> {
+  data?: T;
   error?: {
     code: string;
     message: string;
   };
+}
+
+interface S3BrowserProps {
+  /** User's role in the current organization */
+  userRole?: UserRole;
+}
+
+// =============================================================================
+// Permission Helpers
+// =============================================================================
+
+function canUpload(role: UserRole): boolean {
+  return role === 'READWRITE' || role === 'ADMIN';
+}
+
+function canDelete(role: UserRole): boolean {
+  return role === 'ADMIN';
 }
 
 // =============================================================================
@@ -98,7 +123,7 @@ const fetcher = async (url: string): Promise<ApiResponse> => {
   return data;
 };
 
-export function S3Browser() {
+export function S3Browser({ userRole = 'USER' }: S3BrowserProps) {
   const [currentPrefix, setCurrentPrefix] = useState('');
   const [search, setSearch] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -172,7 +197,7 @@ export function S3Browser() {
       });
 
       const result = await response.json();
-      if (!result.success) {
+      if (result.error) {
         throw new Error(result.error?.message || 'Failed to get download URL');
       }
 
@@ -186,6 +211,11 @@ export function S3Browser() {
 
   // Upload file
   const uploadFile = useCallback(async (file: File) => {
+    if (!canUpload(userRole)) {
+      toast.error('Permission denied', { description: 'Upload requires READWRITE role or higher' });
+      return;
+    }
+
     setUploading(true);
     try {
       const key = currentPrefix + file.name;
@@ -202,7 +232,7 @@ export function S3Browser() {
       });
 
       const result = await response.json();
-      if (!result.success) {
+      if (result.error) {
         throw new Error(result.error?.message || 'Failed to get upload URL');
       }
 
@@ -226,11 +256,17 @@ export function S3Browser() {
     } finally {
       setUploading(false);
     }
-  }, [currentPrefix, mutate]);
+  }, [currentPrefix, mutate, userRole]);
 
   // Delete file
   const confirmDelete = useCallback(async () => {
     if (!deleteKey) return;
+    if (!canDelete(userRole)) {
+      toast.error('Permission denied', { description: 'Delete requires ADMIN role' });
+      setDeleteKey(null);
+      return;
+    }
+
     setDeleting(true);
     try {
       const response = await fetch(`/api/storage/s3?key=${encodeURIComponent(deleteKey)}`, {
@@ -238,7 +274,7 @@ export function S3Browser() {
       });
 
       const result = await response.json();
-      if (!result.success) {
+      if (result.error) {
         throw new Error(result.error?.message || 'Failed to delete');
       }
 
@@ -250,7 +286,7 @@ export function S3Browser() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteKey, mutate]);
+  }, [deleteKey, mutate, userRole]);
 
   // Handle file input
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -299,209 +335,262 @@ export function S3Browser() {
     );
   }
 
+  const showUploadDisabledTooltip = !canUpload(userRole);
+  const showDeleteDisabledTooltip = !canDelete(userRole);
+
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg">S3 Browser</CardTitle>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => mutate()}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCcw className="h-4 w-4" />
-              )}
-            </Button>
-            <div className="relative">
-              <input
-                type="file"
-                id="file-upload"
-                className="sr-only"
-                onChange={handleFileInput}
-                disabled={uploading}
-              />
+    <TooltipProvider>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-lg">S3 Browser</CardTitle>
+              <Badge variant="outline" className="text-xs">
+                {userRole}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-2">
               <Button
-                variant="default"
+                variant="outline"
                 size="sm"
-                asChild
-                disabled={uploading}
+                onClick={() => mutate()}
+                disabled={isLoading}
               >
-                <label htmlFor="file-upload" className="cursor-pointer">
-                  {uploading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Upload className="h-4 w-4 mr-2" />
-                  )}
-                  Upload
-                </label>
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-4 w-4" />
+                )}
               </Button>
+              
+              {/* Upload button with role gating */}
+              <div className="relative">
+                <input
+                  type="file"
+                  id="file-upload"
+                  className="sr-only"
+                  onChange={handleFileInput}
+                  disabled={uploading || !canUpload(userRole)}
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        asChild
+                        disabled={uploading || !canUpload(userRole)}
+                        className={!canUpload(userRole) ? 'opacity-50 cursor-not-allowed' : ''}
+                      >
+                        <label 
+                          htmlFor="file-upload" 
+                          className={canUpload(userRole) ? 'cursor-pointer' : 'cursor-not-allowed'}
+                        >
+                          {uploading ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : !canUpload(userRole) ? (
+                            <Lock className="h-4 w-4 mr-2" />
+                          ) : (
+                            <Upload className="h-4 w-4 mr-2" />
+                          )}
+                          Upload
+                        </label>
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {showUploadDisabledTooltip && (
+                    <TooltipContent>
+                      <p>Requires READWRITE role or higher</p>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </div>
             </div>
           </div>
-        </div>
-      </CardHeader>
+        </CardHeader>
 
-      <CardContent className="space-y-4">
-        {/* Breadcrumbs */}
-        <div className="flex items-center gap-1 text-sm flex-wrap">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => navigateTo('')}
-          >
-            <Home className="h-4 w-4" />
-          </Button>
-          {breadcrumbs.map((crumb) => (
-            <div key={crumb.path} className="flex items-center">
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2"
-                onClick={() => navigateTo(crumb.path)}
-              >
-                {crumb.name}
-              </Button>
-            </div>
-          ))}
-        </div>
-
-        {/* Search */}
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search files..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-
-        {/* File table */}
-        {isLoading ? (
-          <div className="space-y-2">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-12 bg-muted animate-pulse rounded" />
+        <CardContent className="space-y-4">
+          {/* Breadcrumbs */}
+          <div className="flex items-center gap-1 text-sm flex-wrap">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => navigateTo('')}
+            >
+              <Home className="h-4 w-4" />
+            </Button>
+            {breadcrumbs.map((crumb) => (
+              <div key={crumb.path} className="flex items-center">
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => navigateTo(crumb.path)}
+                >
+                  {crumb.name}
+                </Button>
+              </div>
             ))}
           </div>
-        ) : items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <FolderOpen className="h-12 w-12 text-muted-foreground/50 mb-4" />
-            <p className="text-muted-foreground">
-              {search ? 'No files match your search' : 'This folder is empty'}
-            </p>
+
+          {/* Search */}
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search files..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10"
+            />
           </div>
-        ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead>Last Modified</TableHead>
-                  <TableHead className="w-[100px]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((item) => (
-                  <TableRow key={item.key}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {item.type === 'directory' ? (
-                          <Folder className="h-4 w-4 text-blue-500" />
-                        ) : (
-                          <File className="h-4 w-4 text-gray-400" />
-                        )}
-                        {item.type === 'directory' ? (
-                          <Button
-                            variant="link"
-                            className="p-0 h-auto text-foreground hover:text-primary"
-                            onClick={() => navigateTo(item.key)}
-                          >
-                            {getFileName(item.key)}
-                          </Button>
-                        ) : (
-                          <span>{getFileName(item.key)}</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {item.type === 'file' && item.size !== undefined
-                        ? formatBytes(item.size)
-                        : '-'}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {item.type === 'file' && item.lastModified
-                        ? formatDate(item.lastModified)
-                        : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {item.type === 'file' && (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => downloadFile(item.key)}
-                          >
-                            <Download className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => setDeleteKey(item.key)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      )}
-                    </TableCell>
+
+          {/* File table */}
+          {isLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="h-12 bg-muted animate-pulse rounded" />
+              ))}
+            </div>
+          ) : items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <FolderOpen className="h-12 w-12 text-muted-foreground/50 mb-4" />
+              <p className="text-muted-foreground">
+                {search ? 'No files match your search' : 'This folder is empty'}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Last Modified</TableHead>
+                    <TableHead className="w-[100px]">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => (
+                    <TableRow key={item.key}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {item.type === 'directory' ? (
+                            <Folder className="h-4 w-4 text-blue-500" />
+                          ) : (
+                            <File className="h-4 w-4 text-gray-400" />
+                          )}
+                          {item.type === 'directory' ? (
+                            <Button
+                              variant="link"
+                              className="p-0 h-auto text-foreground hover:text-primary"
+                              onClick={() => navigateTo(item.key)}
+                            >
+                              {getFileName(item.key)}
+                            </Button>
+                          ) : (
+                            <span>{getFileName(item.key)}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {item.type === 'file' && item.size !== undefined
+                          ? formatBytes(item.size)
+                          : '-'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {item.type === 'file' && item.lastModified
+                          ? formatDate(item.lastModified)
+                          : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {item.type === 'file' && (
+                          <div className="flex items-center gap-1">
+                            {/* Download - always available */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => downloadFile(item.key)}
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Download</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            
+                            {/* Delete - requires ADMIN role */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={`h-8 w-8 ${canDelete(userRole) ? 'text-destructive hover:text-destructive' : 'text-muted-foreground cursor-not-allowed opacity-50'}`}
+                                    onClick={() => canDelete(userRole) && setDeleteKey(item.key)}
+                                    disabled={!canDelete(userRole)}
+                                  >
+                                    {canDelete(userRole) ? (
+                                      <Trash2 className="h-4 w-4" />
+                                    ) : (
+                                      <Lock className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>{canDelete(userRole) ? 'Delete' : 'Requires ADMIN role'}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
 
-        {/* Pagination indicator */}
-        {data?.data?.isTruncated && (
-          <div className="text-center">
-            <Badge variant="secondary">More files available</Badge>
-          </div>
-        )}
-      </CardContent>
+          {/* Pagination indicator */}
+          {data?.data?.isTruncated && (
+            <div className="text-center">
+              <Badge variant="secondary">More files available</Badge>
+            </div>
+          )}
+        </CardContent>
 
-      {/* Delete confirmation dialog */}
-      <Dialog open={!!deleteKey} onOpenChange={(open) => !open && setDeleteKey(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete file?</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete <strong>{deleteKey && getFileName(deleteKey)}</strong>?
-              This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteKey(null)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
-              {deleting ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-2" />
-              )}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
+        {/* Delete confirmation dialog */}
+        <Dialog open={!!deleteKey} onOpenChange={(open) => !open && setDeleteKey(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete file?</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete <strong>{deleteKey && getFileName(deleteKey)}</strong>?
+                This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteKey(null)} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+                {deleting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-2" />
+                )}
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </Card>
+    </TooltipProvider>
   );
 }

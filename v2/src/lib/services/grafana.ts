@@ -1,12 +1,20 @@
 import prisma from '@/lib/prisma';
 import { createGrafanaClient, fetchJson } from '@/lib/http-client';
+import { getGrafanaCredentials } from './integration-credentials';
 
 /**
  * Check if Grafana is configured (either via env or org settings)
- * This is a quick check that doesn't require DB access for basic env config
+ * Async check that verifies org-scoped credentials or env fallback
  */
-export function isGrafanaConfigured(_organizationId: string): boolean {
-  // For now, just check env vars - org-specific config would need DB lookup
+export async function isGrafanaConfigured(organizationId: string): Promise<boolean> {
+  const creds = await getGrafanaCredentials(organizationId);
+  return creds !== null;
+}
+
+/**
+ * Synchronous env-only check (use sparingly for quick checks)
+ */
+export function isGrafanaConfiguredSync(): boolean {
   return !!(process.env.GRAFANA_URL && process.env.GRAFANA_API_KEY);
 }
 
@@ -46,23 +54,40 @@ interface GrafanaCreds {
 }
 
 async function getGrafanaCreds(organizationId: string): Promise<GrafanaCreds> {
-  // Fetch org settings once; fall back to env
-  const envBase = process.env.GRAFANA_URL;
-  const envKey = process.env.GRAFANA_API_KEY;
-  if (!envBase || !envKey) {
-    throw new Error('Grafana is not configured. Set GRAFANA_URL and GRAFANA_API_KEY');
+  // First try integration credentials (org-scoped)
+  const integrationCreds = await getGrafanaCredentials(organizationId);
+  if (integrationCreds) {
+    return {
+      baseUrl: integrationCreds.url.replace(/\/$/, ''),
+      apiKey: integrationCreds.apiKey,
+    };
   }
 
+  // Fallback to org settings in DB
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
     select: { settings: true },
   });
 
-  const settings = (org?.settings as any) || {};
-  const baseUrl = (settings.grafanaUrl as string) || envBase;
-  const apiKey = (settings.grafanaApiKey as string) || envKey;
+  const settings = (org?.settings as Record<string, unknown>) || {};
+  const settingsUrl = settings.grafanaUrl as string | undefined;
+  const settingsKey = settings.grafanaApiKey as string | undefined;
 
-  return { baseUrl: baseUrl.replace(/\/$/, ''), apiKey };
+  if (settingsUrl && settingsKey) {
+    return {
+      baseUrl: settingsUrl.replace(/\/$/, ''),
+      apiKey: settingsKey,
+    };
+  }
+
+  // Final fallback to env vars
+  const envBase = process.env.GRAFANA_URL;
+  const envKey = process.env.GRAFANA_API_KEY;
+  if (!envBase || !envKey) {
+    throw new Error('Grafana is not configured. Set GRAFANA_URL and GRAFANA_API_KEY or configure integration credentials.');
+  }
+
+  return { baseUrl: envBase.replace(/\/$/, ''), apiKey: envKey };
 }
 
 export async function listDashboards(orgId: string): Promise<GrafanaDashboard[]> {

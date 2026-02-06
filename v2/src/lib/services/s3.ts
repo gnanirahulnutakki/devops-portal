@@ -3,7 +3,8 @@
 // Signed URL generation and file operations
 // =============================================================================
 
-import { getS3Credentials } from './integration-credentials';
+import { XMLParser } from 'fast-xml-parser';
+import { getS3Credentials, S3Credentials } from './integration-credentials';
 import { logger } from '@/lib/logger';
 
 // =============================================================================
@@ -31,18 +32,53 @@ export interface SignedUrlOptions {
   contentDisposition?: string;
 }
 
+interface ExtendedS3Credentials extends S3Credentials {
+  sessionToken?: string; // STS session token
+  pathStyle?: boolean;   // Force path-style URLs
+}
+
 // =============================================================================
-// Configuration Check
+// Configuration Check (async - checks both env and org credentials)
 // =============================================================================
 
-export function isS3Configured(_organizationId: string): boolean {
-  // For now, check env vars - org-specific check would need async
+export async function isS3Configured(organizationId: string): Promise<boolean> {
+  const creds = await getS3Credentials(organizationId);
+  return creds !== null;
+}
+
+// Synchronous check for env-only (quick check, use sparingly)
+export function isS3ConfiguredSync(): boolean {
   return !!(
     process.env.S3_BUCKET &&
-    process.env.AWS_REGION &&
+    (process.env.AWS_REGION || process.env.S3_REGION) &&
     process.env.AWS_ACCESS_KEY_ID &&
     process.env.AWS_SECRET_ACCESS_KEY
   );
+}
+
+// =============================================================================
+// Extended Credentials (with STS and path-style support)
+// =============================================================================
+
+async function getExtendedS3Credentials(
+  organizationId: string
+): Promise<ExtendedS3Credentials | null> {
+  const baseCreds = await getS3Credentials(organizationId);
+  if (!baseCreds) return null;
+
+  return {
+    ...baseCreds,
+    sessionToken: process.env.AWS_SESSION_TOKEN,
+    pathStyle: process.env.S3_PATH_STYLE === 'true' || 
+               (baseCreds.endpoint ? isPathStyleEndpoint(baseCreds.endpoint) : false),
+  };
+}
+
+function isPathStyleEndpoint(endpoint: string): boolean {
+  // Common S3-compatible services that use path-style
+  const pathStyleHosts = ['minio', 'localstack', 'localhost', '127.0.0.1'];
+  const host = new URL(endpoint).hostname.toLowerCase();
+  return pathStyleHosts.some(h => host.includes(h));
 }
 
 // =============================================================================
@@ -95,6 +131,90 @@ function formatDate(date: Date): { dateStamp: string; amzDate: string } {
   return { dateStamp, amzDate };
 }
 
+// URI encode for S3 (RFC 3986)
+function s3UriEncode(str: string): string {
+  return encodeURIComponent(str)
+    .replace(/!/g, '%21')
+    .replace(/'/g, '%27')
+    .replace(/\(/g, '%28')
+    .replace(/\)/g, '%29')
+    .replace(/\*/g, '%2A');
+}
+
+// URI encode preserving slashes (for paths)
+function s3UriEncodePath(str: string): string {
+  return str.split('/').map(segment => s3UriEncode(segment)).join('/');
+}
+
+// =============================================================================
+// URL Building Helpers
+// =============================================================================
+
+function buildS3Url(
+  creds: ExtendedS3Credentials,
+  key: string
+): { baseUrl: string; host: string; canonicalUri: string } {
+  const normalizedKey = key.replace(/^\/+/, '');
+  
+  if (creds.endpoint) {
+    // Custom endpoint (MinIO, LocalStack, etc.)
+    const endpointUrl = new URL(creds.endpoint);
+    const host = endpointUrl.host;
+    
+    if (creds.pathStyle) {
+      // Path-style: http://endpoint/bucket/key
+      return {
+        baseUrl: `${endpointUrl.protocol}//${host}/${creds.bucket}`,
+        host,
+        canonicalUri: '/' + creds.bucket + '/' + s3UriEncodePath(normalizedKey),
+      };
+    } else {
+      // Virtual-host style with custom endpoint
+      return {
+        baseUrl: creds.endpoint,
+        host,
+        canonicalUri: '/' + s3UriEncodePath(normalizedKey),
+      };
+    }
+  } else {
+    // Standard AWS S3 - always virtual-host style
+    const host = `${creds.bucket}.s3.${creds.region}.amazonaws.com`;
+    return {
+      baseUrl: `https://${host}`,
+      host,
+      canonicalUri: '/' + s3UriEncodePath(normalizedKey),
+    };
+  }
+}
+
+function buildS3ListUrl(creds: ExtendedS3Credentials): { baseUrl: string; host: string; canonicalUri: string } {
+  if (creds.endpoint) {
+    const endpointUrl = new URL(creds.endpoint);
+    const host = endpointUrl.host;
+    
+    if (creds.pathStyle) {
+      return {
+        baseUrl: `${endpointUrl.protocol}//${host}/${creds.bucket}`,
+        host,
+        canonicalUri: '/' + creds.bucket + '/',
+      };
+    } else {
+      return {
+        baseUrl: creds.endpoint,
+        host,
+        canonicalUri: '/',
+      };
+    }
+  } else {
+    const host = `${creds.bucket}.s3.${creds.region}.amazonaws.com`;
+    return {
+      baseUrl: `https://${host}`,
+      host,
+      canonicalUri: '/',
+    };
+  }
+}
+
 // =============================================================================
 // Signed URL Generation
 // =============================================================================
@@ -105,18 +225,13 @@ export async function generateSignedUrl(
   method: 'GET' | 'PUT' = 'GET',
   options: SignedUrlOptions = {}
 ): Promise<string> {
-  const creds = await getS3Credentials(organizationId);
+  const creds = await getExtendedS3Credentials(organizationId);
   if (!creds) {
     throw new Error('S3 is not configured for this organization');
   }
 
-  const { bucket, region, accessKeyId, secretAccessKey, endpoint } = creds;
   const expiresIn = options.expiresIn ?? 3600;
-
-  // Build host
-  const host = endpoint
-    ? new URL(endpoint).host
-    : `${bucket}.s3.${region}.amazonaws.com`;
+  const { baseUrl, host, canonicalUri } = buildS3Url(creds, key);
 
   const service = 's3';
   const algorithm = 'AWS4-HMAC-SHA256';
@@ -124,34 +239,41 @@ export async function generateSignedUrl(
   const now = new Date();
   const { dateStamp, amzDate } = formatDate(now);
 
-  // Normalize key (remove leading slash)
-  const normalizedKey = key.replace(/^\/+/, '');
+  const credentialScope = `${dateStamp}/${creds.region}/${service}/aws4_request`;
+  const credential = `${creds.accessKeyId}/${credentialScope}`;
 
-  // Build canonical query string for pre-signed URL
-  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
-  const credential = `${accessKeyId}/${credentialScope}`;
+  // Build signed headers list
+  const signedHeadersList = ['host'];
+  if (creds.sessionToken) {
+    signedHeadersList.push('x-amz-security-token');
+  }
+  const signedHeaders = signedHeadersList.sort().join(';');
 
+  // Query parameters for presigned URL
   const queryParams: Record<string, string> = {
     'X-Amz-Algorithm': algorithm,
     'X-Amz-Credential': credential,
     'X-Amz-Date': amzDate,
     'X-Amz-Expires': expiresIn.toString(),
-    'X-Amz-SignedHeaders': 'host',
+    'X-Amz-SignedHeaders': signedHeaders,
   };
 
-  if (options.contentType && method === 'PUT') {
-    queryParams['Content-Type'] = options.contentType;
+  // Add STS session token if present
+  if (creds.sessionToken) {
+    queryParams['X-Amz-Security-Token'] = creds.sessionToken;
   }
 
   const sortedParams = Object.keys(queryParams)
     .sort()
-    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(queryParams[k])}`)
+    .map((k) => `${s3UriEncode(k)}=${s3UriEncode(queryParams[k])}`)
     .join('&');
 
-  // Canonical request
-  const canonicalUri = '/' + normalizedKey.split('/').map(encodeURIComponent).join('/');
-  const canonicalHeaders = `host:${host}\n`;
-  const signedHeaders = 'host';
+  // Build canonical headers
+  let canonicalHeaders = `host:${host}\n`;
+  if (creds.sessionToken) {
+    canonicalHeaders = `host:${host}\nx-amz-security-token:${creds.sessionToken}\n`;
+  }
+
   const payloadHash = 'UNSIGNED-PAYLOAD';
 
   const canonicalRequest = [
@@ -173,18 +295,17 @@ export async function generateSignedUrl(
   ].join('\n');
 
   // Calculate signature
-  const signingKey = await getSigningKey(secretAccessKey, dateStamp, region, service);
+  const signingKey = await getSigningKey(creds.secretAccessKey, dateStamp, creds.region, service);
   const signature = toHex(await hmacSha256(signingKey, stringToSign));
 
   // Build final URL
-  const baseUrl = endpoint || `https://${host}`;
-  const url = `${baseUrl}/${normalizedKey}?${sortedParams}&X-Amz-Signature=${signature}`;
+  const url = `${baseUrl}${canonicalUri}?${sortedParams}&X-Amz-Signature=${signature}`;
 
   return url;
 }
 
 // =============================================================================
-// List Objects (using XML API)
+// List Objects (using XML API with proper parsing)
 // =============================================================================
 
 export async function listObjects(
@@ -193,17 +314,12 @@ export async function listObjects(
   continuationToken?: string,
   maxKeys: number = 100
 ): Promise<S3ListResult> {
-  const creds = await getS3Credentials(organizationId);
+  const creds = await getExtendedS3Credentials(organizationId);
   if (!creds) {
     throw new Error('S3 is not configured for this organization');
   }
 
-  const { bucket, region, accessKeyId, secretAccessKey, endpoint } = creds;
-
-  // Build list request URL
-  const host = endpoint
-    ? new URL(endpoint).host
-    : `${bucket}.s3.${region}.amazonaws.com`;
+  const { baseUrl, host, canonicalUri } = buildS3ListUrl(creds);
 
   const queryParams: Record<string, string> = {
     'list-type': '2',
@@ -220,7 +336,8 @@ export async function listObjects(
   }
 
   const queryString = Object.entries(queryParams)
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${s3UriEncode(k)}=${s3UriEncode(v)}`)
     .join('&');
 
   // Sign the request
@@ -228,21 +345,31 @@ export async function listObjects(
   const { dateStamp, amzDate } = formatDate(now);
   const service = 's3';
   const algorithm = 'AWS4-HMAC-SHA256';
-  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const credentialScope = `${dateStamp}/${creds.region}/${service}/aws4_request`;
 
-  const canonicalUri = '/';
-  const canonicalQueryString = Object.keys(queryParams)
+  // Build signed headers
+  const headersToSign: Record<string, string> = {
+    'host': host,
+    'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+    'x-amz-date': amzDate,
+  };
+  
+  if (creds.sessionToken) {
+    headersToSign['x-amz-security-token'] = creds.sessionToken;
+  }
+
+  const signedHeaders = Object.keys(headersToSign).sort().join(';');
+  const canonicalHeaders = Object.keys(headersToSign)
     .sort()
-    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(queryParams[k])}`)
-    .join('&');
-  const canonicalHeaders = `host:${host}\nx-amz-content-sha256:UNSIGNED-PAYLOAD\nx-amz-date:${amzDate}\n`;
-  const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
+    .map(k => `${k}:${headersToSign[k]}\n`)
+    .join('');
+
   const payloadHash = 'UNSIGNED-PAYLOAD';
 
   const canonicalRequest = [
     'GET',
     canonicalUri,
-    canonicalQueryString,
+    queryString,
     canonicalHeaders,
     signedHeaders,
     payloadHash,
@@ -256,21 +383,27 @@ export async function listObjects(
     canonicalRequestHash,
   ].join('\n');
 
-  const signingKey = await getSigningKey(secretAccessKey, dateStamp, region, service);
+  const signingKey = await getSigningKey(creds.secretAccessKey, dateStamp, creds.region, service);
   const signature = toHex(await hmacSha256(signingKey, stringToSign));
 
-  const authorization = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  const authorization = `${algorithm} Credential=${creds.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  // Build request headers
+  const requestHeaders: Record<string, string> = {
+    'Host': host,
+    'x-amz-date': amzDate,
+    'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+    'Authorization': authorization,
+  };
+  
+  if (creds.sessionToken) {
+    requestHeaders['x-amz-security-token'] = creds.sessionToken;
+  }
 
   // Make request
-  const baseUrl = endpoint || `https://${host}`;
-  const response = await fetch(`${baseUrl}/?${queryString}`, {
+  const response = await fetch(`${baseUrl}?${queryString}`, {
     method: 'GET',
-    headers: {
-      'Host': host,
-      'x-amz-date': amzDate,
-      'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
-      'Authorization': authorization,
-    },
+    headers: requestHeaders,
   });
 
   if (!response.ok) {
@@ -284,44 +417,52 @@ export async function listObjects(
 }
 
 function parseListObjectsResponse(xml: string): S3ListResult {
-  // Simple XML parsing (production should use a proper XML parser)
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    removeNSPrefix: true,
+    parseTagValue: true,
+    trimValues: true,
+  });
+
+  const parsed = parser.parse(xml);
+  const result = parsed.ListBucketResult || {};
+
   const objects: S3Object[] = [];
   const prefixes: string[] = [];
 
-  // Extract <Contents> elements
-  const contentsRegex = /<Contents>([\s\S]*?)<\/Contents>/g;
-  let match;
-  while ((match = contentsRegex.exec(xml)) !== null) {
-    const content = match[1];
-    const key = content.match(/<Key>(.*?)<\/Key>/)?.[1] || '';
-    const size = parseInt(content.match(/<Size>(.*?)<\/Size>/)?.[1] || '0', 10);
-    const lastModified = content.match(/<LastModified>(.*?)<\/LastModified>/)?.[1];
-    const etag = content.match(/<ETag>(.*?)<\/ETag>/)?.[1]?.replace(/"/g, '');
-
-    objects.push({
-      key,
-      size,
-      lastModified: lastModified ? new Date(lastModified) : new Date(),
-      etag,
-      isDirectory: false,
-    });
+  // Handle Contents (can be array or single object)
+  const contents = result.Contents;
+  if (contents) {
+    const contentsArray = Array.isArray(contents) ? contents : [contents];
+    for (const item of contentsArray) {
+      if (item.Key) {
+        objects.push({
+          key: String(item.Key),
+          size: typeof item.Size === 'number' ? item.Size : parseInt(String(item.Size) || '0', 10),
+          lastModified: item.LastModified ? new Date(item.LastModified) : new Date(),
+          etag: item.ETag ? String(item.ETag).replace(/"/g, '') : undefined,
+          isDirectory: false,
+        });
+      }
+    }
   }
 
-  // Extract <CommonPrefixes> elements (directories)
-  const prefixRegex = /<CommonPrefixes>\s*<Prefix>(.*?)<\/Prefix>\s*<\/CommonPrefixes>/g;
-  while ((match = prefixRegex.exec(xml)) !== null) {
-    prefixes.push(match[1]);
+  // Handle CommonPrefixes (directories)
+  const commonPrefixes = result.CommonPrefixes;
+  if (commonPrefixes) {
+    const prefixArray = Array.isArray(commonPrefixes) ? commonPrefixes : [commonPrefixes];
+    for (const item of prefixArray) {
+      if (item.Prefix) {
+        prefixes.push(String(item.Prefix));
+      }
+    }
   }
-
-  // Check for truncation
-  const isTruncated = xml.includes('<IsTruncated>true</IsTruncated>');
-  const continuationToken = xml.match(/<NextContinuationToken>(.*?)<\/NextContinuationToken>/)?.[1];
 
   return {
     objects,
     prefixes,
-    continuationToken,
-    isTruncated,
+    continuationToken: result.NextContinuationToken ? String(result.NextContinuationToken) : undefined,
+    isTruncated: result.IsTruncated === true || result.IsTruncated === 'true',
   };
 }
 
@@ -333,28 +474,36 @@ export async function deleteObject(
   organizationId: string,
   key: string
 ): Promise<void> {
-  const creds = await getS3Credentials(organizationId);
+  const creds = await getExtendedS3Credentials(organizationId);
   if (!creds) {
     throw new Error('S3 is not configured for this organization');
   }
 
-  const { bucket, region, accessKeyId, secretAccessKey, endpoint } = creds;
-
-  const host = endpoint
-    ? new URL(endpoint).host
-    : `${bucket}.s3.${region}.amazonaws.com`;
-
-  const normalizedKey = key.replace(/^\/+/, '');
-  const canonicalUri = '/' + normalizedKey.split('/').map(encodeURIComponent).join('/');
+  const { baseUrl, host, canonicalUri } = buildS3Url(creds, key);
 
   const now = new Date();
   const { dateStamp, amzDate } = formatDate(now);
   const service = 's3';
   const algorithm = 'AWS4-HMAC-SHA256';
-  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const credentialScope = `${dateStamp}/${creds.region}/${service}/aws4_request`;
 
-  const canonicalHeaders = `host:${host}\nx-amz-content-sha256:UNSIGNED-PAYLOAD\nx-amz-date:${amzDate}\n`;
-  const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
+  // Build signed headers
+  const headersToSign: Record<string, string> = {
+    'host': host,
+    'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+    'x-amz-date': amzDate,
+  };
+  
+  if (creds.sessionToken) {
+    headersToSign['x-amz-security-token'] = creds.sessionToken;
+  }
+
+  const signedHeaders = Object.keys(headersToSign).sort().join(';');
+  const canonicalHeaders = Object.keys(headersToSign)
+    .sort()
+    .map(k => `${k}:${headersToSign[k]}\n`)
+    .join('');
+
   const payloadHash = 'UNSIGNED-PAYLOAD';
 
   const canonicalRequest = [
@@ -374,20 +523,26 @@ export async function deleteObject(
     canonicalRequestHash,
   ].join('\n');
 
-  const signingKey = await getSigningKey(secretAccessKey, dateStamp, region, service);
+  const signingKey = await getSigningKey(creds.secretAccessKey, dateStamp, creds.region, service);
   const signature = toHex(await hmacSha256(signingKey, stringToSign));
 
-  const authorization = `${algorithm} Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  const authorization = `${algorithm} Credential=${creds.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
-  const baseUrl = endpoint || `https://${host}`;
+  // Build request headers
+  const requestHeaders: Record<string, string> = {
+    'Host': host,
+    'x-amz-date': amzDate,
+    'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+    'Authorization': authorization,
+  };
+  
+  if (creds.sessionToken) {
+    requestHeaders['x-amz-security-token'] = creds.sessionToken;
+  }
+
   const response = await fetch(`${baseUrl}${canonicalUri}`, {
     method: 'DELETE',
-    headers: {
-      'Host': host,
-      'x-amz-date': amzDate,
-      'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
-      'Authorization': authorization,
-    },
+    headers: requestHeaders,
   });
 
   if (!response.ok && response.status !== 204) {
@@ -423,16 +578,46 @@ export function getMimeType(key: string): string {
     js: 'application/javascript',
     json: 'application/json',
     xml: 'application/xml',
+    yaml: 'text/yaml',
+    yml: 'text/yaml',
+    md: 'text/markdown',
     pdf: 'application/pdf',
     zip: 'application/zip',
+    gz: 'application/gzip',
+    tar: 'application/x-tar',
     png: 'image/png',
     jpg: 'image/jpeg',
     jpeg: 'image/jpeg',
     gif: 'image/gif',
+    webp: 'image/webp',
     svg: 'image/svg+xml',
+    ico: 'image/x-icon',
     mp4: 'video/mp4',
+    webm: 'video/webm',
     mp3: 'audio/mpeg',
     wav: 'audio/wav',
+    ogg: 'audio/ogg',
+    woff: 'font/woff',
+    woff2: 'font/woff2',
+    ttf: 'font/ttf',
+    eot: 'application/vnd.ms-fontobject',
   };
   return mimeTypes[ext] || 'application/octet-stream';
+}
+
+// =============================================================================
+// Validation Helpers
+// =============================================================================
+
+export function isValidS3Key(key: string): boolean {
+  // S3 key constraints
+  if (!key || key.length > 1024) return false;
+  // No null bytes or certain control characters
+  if (/[\x00-\x1f]/.test(key)) return false;
+  return true;
+}
+
+export function sanitizeS3Key(key: string): string {
+  // Remove leading slashes and normalize
+  return key.replace(/^\/+/, '').replace(/\/+/g, '/');
 }

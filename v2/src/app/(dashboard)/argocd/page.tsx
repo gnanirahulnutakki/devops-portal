@@ -70,9 +70,9 @@ export default function ArgoCDPage() {
 
   const stats = useMemo(() => ({
     total: applications?.length ?? 0,
-    healthy: applications?.filter(a => a.healthStatus === 'Healthy').length ?? 0,
-    synced: applications?.filter(a => a.syncStatus === 'Synced').length ?? 0,
-    outOfSync: applications?.filter(a => a.syncStatus === 'OutOfSync').length ?? 0,
+    healthy: applications?.filter(a => a.healthStatus?.status === 'Healthy').length ?? 0,
+    synced: applications?.filter(a => a.syncStatus?.status === 'Synced').length ?? 0,
+    outOfSync: applications?.filter(a => a.syncStatus?.status === 'OutOfSync').length ?? 0,
   }), [applications]);
 
   return (
@@ -188,7 +188,7 @@ export default function ArgoCDPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary" className="text-xs">{app.project}</Badge>
-                      <div className={`w-2 h-2 rounded-full ${statusColors[app.syncStatus] || statusColors.Unknown}`} />
+                      <div className={`w-2 h-2 rounded-full ${statusColors[app.syncStatus?.status] || statusColors.Unknown}`} />
                     </div>
                   </div>
                 </CardHeader>
@@ -197,13 +197,13 @@ export default function ArgoCDPage() {
                   <div className="flex flex-wrap gap-2">
                     <Badge
                       variant="outline"
-                      className={healthColors[app.healthStatus] || healthColors.Unknown}
+                      className={healthColors[app.healthStatus?.status] || healthColors.Unknown}
                     >
-                      {healthIcons[app.healthStatus] || healthIcons.Unknown}
-                      <span className="ml-1">{app.healthStatus}</span>
+                      {healthIcons[app.healthStatus?.status] || healthIcons.Unknown}
+                      <span className="ml-1">{app.healthStatus?.status}</span>
                     </Badge>
                     <Badge variant="outline">
-                      {app.syncStatus}
+                      {app.syncStatus?.status}
                     </Badge>
                   </div>
 

@@ -399,10 +399,10 @@ export default function ArgoCDApplicationPage() {
           <CardContent>
             <Badge
               variant="outline"
-              className={`${healthColors[app.healthStatus] || healthColors.Unknown} text-base px-3 py-1`}
+              className={`${healthColors[app.healthStatus?.status ?? 'Unknown'] || healthColors.Unknown} text-base px-3 py-1`}
             >
-              {healthIcons[app.healthStatus] || healthIcons.Unknown}
-              <span className="ml-2">{app.healthStatus}</span>
+              {healthIcons[app.healthStatus?.status ?? 'Unknown'] || healthIcons.Unknown}
+              <span className="ml-2">{app.healthStatus?.status ?? 'Unknown'}</span>
             </Badge>
           </CardContent>
         </Card>
@@ -413,9 +413,9 @@ export default function ArgoCDApplicationPage() {
           <CardContent>
             <Badge
               variant="outline"
-              className={`${syncStatusColors[app.syncStatus] || syncStatusColors.Unknown} text-base px-3 py-1`}
+              className={`${syncStatusColors[app.syncStatus?.status ?? 'Unknown'] || syncStatusColors.Unknown} text-base px-3 py-1`}
             >
-              {app.syncStatus}
+              {app.syncStatus?.status ?? 'Unknown'}
             </Badge>
           </CardContent>
         </Card>
@@ -425,7 +425,7 @@ export default function ArgoCDApplicationPage() {
           </CardHeader>
           <CardContent>
             <p className="text-lg font-medium">
-              {app.syncedAt ? new Date(app.syncedAt).toLocaleString() : 'Never'}
+              {app.reconciledAt ? new Date(app.reconciledAt).toLocaleString() : 'Never'}
             </p>
           </CardContent>
         </Card>

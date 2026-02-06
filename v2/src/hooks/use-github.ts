@@ -73,10 +73,9 @@ export function useRepositories(page = 1, pageSize = 20, search?: string) {
       if (search) params.set('search', search);
       
       const response = await api.get(`github/repositories?${params}`).json<{
-        success: boolean;
         data: Repository[];
       }>();
-      return response.data;
+      return response.data ?? [];
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -87,10 +86,9 @@ export function useBranches(owner: string, repo: string) {
     queryKey: ['github', 'branches', owner, repo],
     queryFn: async () => {
       const response = await api.get(`github/branches?owner=${owner}&repo=${repo}`).json<{
-        success: boolean;
         data: Branch[];
       }>();
-      return response.data;
+      return response.data ?? [];
     },
     enabled: !!owner && !!repo,
     staleTime: 2 * 60 * 1000, // 2 minutes
@@ -110,10 +108,9 @@ export function usePullRequests(
       if (repo) params.set('repo', repo);
       
       const response = await api.get(`github/pull-requests?${params}`).json<{
-        success: boolean;
         data: PullRequest[];
       }>();
-      return response.data;
+      return response.data ?? [];
     },
     staleTime: 1 * 60 * 1000, // 1 minute
   });
@@ -127,7 +124,6 @@ export function useCreatePullRequest() {
       const response = await api.post('github/pull-requests', {
         json: params,
       }).json<{
-        success: boolean;
         data: PullRequest;
       }>();
       return response.data;

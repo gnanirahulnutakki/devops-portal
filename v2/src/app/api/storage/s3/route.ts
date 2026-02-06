@@ -9,13 +9,16 @@ import {
   deleteObject, 
   isS3Configured,
   getMimeType,
+  isValidS3Key,
+  sanitizeS3Key,
 } from '@/lib/services/s3';
 
 // List objects in S3 bucket
 export const GET = withTenantApiHandler(
   async (request, ctx) => {
     try {
-      if (!isS3Configured(ctx.tenant.organizationId)) {
+      const configured = await isS3Configured(ctx.tenant.organizationId);
+      if (!configured) {
         return errorResponse('S3_NOT_CONFIGURED', 'S3 is not configured for this organization', 400);
       }
 
@@ -38,15 +41,17 @@ export const GET = withTenantApiHandler(
   },
   {
     rateLimit: 'general',
-    requiredRole: 'USER',
+    requiredRole: 'USER', // Read-only users can list
   }
 );
 
 // Generate signed URL for upload or download
+// Downloads allowed for USER, uploads require READWRITE
 export const POST = withTenantApiHandler(
   async (request, ctx) => {
     try {
-      if (!isS3Configured(ctx.tenant.organizationId)) {
+      const configured = await isS3Configured(ctx.tenant.organizationId);
+      if (!configured) {
         return errorResponse('S3_NOT_CONFIGURED', 'S3 is not configured for this organization', 400);
       }
 
@@ -61,12 +66,26 @@ export const POST = withTenantApiHandler(
         return errorResponse('INVALID_REQUEST', 'key is required', 400);
       }
 
+      // Validate and sanitize key
+      const sanitizedKey = sanitizeS3Key(body.key);
+      if (!isValidS3Key(sanitizedKey)) {
+        return errorResponse('INVALID_REQUEST', 'Invalid S3 key', 400);
+      }
+
+      // Check role for upload operations
+      if (body.operation === 'upload') {
+        // Uploads require READWRITE or higher
+        if (ctx.tenant.userRole === 'USER') {
+          return errorResponse('FORBIDDEN', 'Upload requires READWRITE role or higher', 403);
+        }
+      }
+
       const method = body.operation === 'upload' ? 'PUT' : 'GET';
-      const contentType = body.contentType || getMimeType(body.key);
+      const contentType = body.contentType || getMimeType(sanitizedKey);
 
       const url = await generateSignedUrl(
         ctx.tenant.organizationId,
-        body.key,
+        sanitizedKey,
         method,
         {
           expiresIn: body.expiresIn || 3600,
@@ -86,15 +105,16 @@ export const POST = withTenantApiHandler(
   },
   {
     rateLimit: 'general',
-    requiredRole: 'READWRITE', // Uploads require READWRITE
+    requiredRole: 'USER', // Base role is USER, upload check is inside handler
   }
 );
 
-// Delete object
+// Delete object - requires ADMIN
 export const DELETE = withTenantApiHandler(
   async (request, ctx) => {
     try {
-      if (!isS3Configured(ctx.tenant.organizationId)) {
+      const configured = await isS3Configured(ctx.tenant.organizationId);
+      if (!configured) {
         return errorResponse('S3_NOT_CONFIGURED', 'S3 is not configured for this organization', 400);
       }
 
@@ -105,8 +125,14 @@ export const DELETE = withTenantApiHandler(
         return errorResponse('INVALID_REQUEST', 'key query parameter is required', 400);
       }
 
-      await deleteObject(ctx.tenant.organizationId, key);
-      return successResponse({ deleted: key });
+      // Validate and sanitize key
+      const sanitizedKey = sanitizeS3Key(key);
+      if (!isValidS3Key(sanitizedKey)) {
+        return errorResponse('INVALID_REQUEST', 'Invalid S3 key', 400);
+      }
+
+      await deleteObject(ctx.tenant.organizationId, sanitizedKey);
+      return successResponse({ deleted: sanitizedKey });
     } catch (error) {
       return errorResponse('S3_DELETE_FAILED', (error as Error).message, 500);
     }

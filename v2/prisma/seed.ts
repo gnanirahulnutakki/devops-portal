@@ -12,13 +12,15 @@
  */
 
 import { PrismaClient, Role } from '@prisma/client';
-import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
-// Simple password hashing (matches auth.ts)
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
+// bcrypt password hashing (matches auth.ts)
+const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
+
+async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
 
 async function main() {
@@ -55,7 +57,7 @@ async function main() {
 
   // Create or update admin user
   console.log('👤 Creating admin user...');
-  const passwordHash = hashPassword(adminPassword);
+  const passwordHash = await hashPassword(adminPassword);
   
   const adminUser = await prisma.user.upsert({
     where: { email: adminEmail },
@@ -114,13 +116,14 @@ async function main() {
 
   // Create a guest user (optional)
   console.log('👥 Creating guest user...');
+  const guestPasswordHash = await hashPassword('guest123');
   const guestUser = await prisma.user.upsert({
     where: { email: 'guest@example.com' },
     update: {},
     create: {
       email: 'guest@example.com',
       name: 'Guest User',
-      passwordHash: hashPassword('guest123'),
+      passwordHash: guestPasswordHash,
       emailVerified: new Date(),
     },
   });
