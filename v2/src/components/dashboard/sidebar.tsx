@@ -9,14 +9,13 @@ import {
   Rocket,
   Activity,
   Settings,
-  FolderGit2,
-  GitPullRequest,
   Server,
-  Bell,
-  FileCode,
-  Users,
   ChevronLeft,
   ChevronRight,
+  FolderGit2,
+  GitPullRequest,
+  Bell,
+  Users,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';

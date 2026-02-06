@@ -1,5 +1,4 @@
 import { Queue, Worker, Job, QueueEvents } from 'bullmq';
-import { redis } from './redis';
 import { logger } from './logger';
 import { prisma } from './prisma';
 import { BulkOperationStatus } from '@prisma/client';
@@ -156,11 +155,11 @@ async function processBulkFileUpdate(job: Job<BulkFileUpdateJob>, data: BulkFile
   let completed = 0;
   
   for (const branch of data.branches) {
-    for (const update of data.updates) {
+    for (const _update of data.updates) {
       try {
-        // TODO: Implement actual GitHub file update
+        // TODO: Implement actual GitHub file update using _update
         // const github = await getGitHubServiceForUser(data.userId);
-        // await github.updateFile({ branch, ...update });
+        // await github.updateFile({ branch, ..._update });
         
         results.push({ branch, success: true });
         completed++;

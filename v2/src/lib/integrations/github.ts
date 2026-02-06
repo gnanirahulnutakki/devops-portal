@@ -1,5 +1,5 @@
 import { Octokit } from '@octokit/rest';
-import { createGitHubClient } from '../http-client';
+// GitHub client created via Octokit
 import { logger } from '../logger';
 import { getGitHubToken } from '../redis';
 

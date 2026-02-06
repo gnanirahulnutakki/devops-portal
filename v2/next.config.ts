@@ -3,9 +3,10 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   output: 'standalone',
   
-  experimental: {
-    ppr: true, // Partial Prerendering
-  },
+  // PPR requires Next.js canary - enable when ready
+  // experimental: {
+  //   ppr: true,
+  // },
 
   // Security headers
   async headers() {

@@ -136,8 +136,8 @@ export class ArgoCDService {
   }
 
   async getApplicationHistory(name: string): Promise<ArgoCDHistory[]> {
-    const app = await this.getApplication(name);
-    // History is part of the app response in ArgoCD
+    // Fetch application to verify access, then get history
+    await this.getApplication(name);
     const response = await this.client.get(`api/v1/applications/${name}`);
     const data = await response.json<{ status?: { history?: any[] } }>();
 

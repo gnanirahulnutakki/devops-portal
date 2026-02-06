@@ -50,7 +50,7 @@ export const authConfig: NextAuthConfig = {
   },
 
   callbacks: {
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account }) {
       logger.info({ userId: user.id, provider: account?.provider }, 'User sign-in attempt');
       return true;
     },

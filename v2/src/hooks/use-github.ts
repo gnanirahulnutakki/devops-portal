@@ -132,7 +132,7 @@ export function useCreatePullRequest() {
       }>();
       return response.data;
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (data, _variables) => {
       toast.success('Pull request created', {
         description: `#${data.number}: ${data.title}`,
       });
