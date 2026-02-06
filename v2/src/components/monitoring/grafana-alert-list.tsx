@@ -171,10 +171,10 @@ export function GrafanaAlertList() {
   const alertingNotEnabled = data?.warning?.includes('not be enabled');
 
   const alerts = useMemo(() => {
-    const rawAlerts = data?.data ?? [];
+    const rawAlerts: GrafanaAlert[] = data?.data ?? [];
     if (!filter) return rawAlerts;
     return rawAlerts.filter(
-      (alert) =>
+      (alert: GrafanaAlert) =>
         alert.title.toLowerCase().includes(filter.toLowerCase()) ||
         alert.ruleGroup?.toLowerCase().includes(filter.toLowerCase()) ||
         alert.folderTitle?.toLowerCase().includes(filter.toLowerCase())
@@ -182,12 +182,12 @@ export function GrafanaAlertList() {
   }, [data?.data, filter]);
 
   const stats = useMemo(() => {
-    const all = data?.data ?? [];
+    const all: GrafanaAlert[] = data?.data ?? [];
     return {
       total: all.length,
-      alerting: all.filter((a) => a.state === 'alerting').length,
-      normal: all.filter((a) => a.state === 'normal').length,
-      pending: all.filter((a) => a.state === 'pending').length,
+      alerting: all.filter((a: GrafanaAlert) => a.state === 'alerting').length,
+      normal: all.filter((a: GrafanaAlert) => a.state === 'normal').length,
+      pending: all.filter((a: GrafanaAlert) => a.state === 'pending').length,
     };
   }, [data?.data]);
 
@@ -267,7 +267,7 @@ export function GrafanaAlertList() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {alerts.map((alert) => (
+              {alerts.map((alert: GrafanaAlert) => (
                 <TableRow key={alert.uid}>
                   <TableCell>
                     <div className="min-w-0">

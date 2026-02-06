@@ -121,7 +121,7 @@ export function GrafanaFolderList() {
     return <NotConfiguredState />;
   }
 
-  const folders = data?.data ?? [];
+  const folders: GrafanaFolder[] = data?.data ?? [];
 
   if (folders.length === 0) {
     return <EmptyState />;

@@ -127,7 +127,7 @@ export function S3Browser() {
     const result: Array<{ type: 'directory' | 'file'; key: string; size?: number; lastModified?: string }> = [];
 
     // Add directories (prefixes)
-    data.data.prefixes.forEach((prefix) => {
+    data.data.prefixes.forEach((prefix: string) => {
       result.push({
         type: 'directory',
         key: prefix,
@@ -135,7 +135,7 @@ export function S3Browser() {
     });
 
     // Add files
-    data.data.objects.forEach((obj) => {
+    data.data.objects.forEach((obj: S3Object) => {
       if (obj.key !== currentPrefix) {
         result.push({
           type: 'file',
