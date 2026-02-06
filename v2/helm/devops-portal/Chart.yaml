@@ -1,0 +1,27 @@
+apiVersion: v2
+name: devops-portal
+description: Enterprise DevOps Management Portal
+type: application
+version: 2.0.0
+appVersion: "2.0.0"
+keywords:
+  - devops
+  - portal
+  - kubernetes
+  - gitops
+  - argocd
+maintainers:
+  - name: RadiantLogic DevOps
+    email: devops@radiantlogic.com
+home: https://github.com/gnanirahulnutakki/devops-portal
+sources:
+  - https://github.com/gnanirahulnutakki/devops-portal
+dependencies:
+  - name: postgresql
+    version: "15.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: "19.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
