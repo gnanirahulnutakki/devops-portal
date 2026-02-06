@@ -4,6 +4,12 @@ import { auth } from './auth';
 import { logger } from './logger';
 import { Ratelimit } from '@upstash/ratelimit';
 import { redis } from './redis';
+import { 
+  withApiContext, 
+  ApiContext, 
+  requireRole, 
+  logAuditEvent 
+} from './api-context';
 
 // =============================================================================
 // API Response Helpers
