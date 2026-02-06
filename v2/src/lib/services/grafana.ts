@@ -1,6 +1,15 @@
 import prisma from '@/lib/prisma';
 import { createGrafanaClient, fetchJson } from '@/lib/http-client';
 
+/**
+ * Check if Grafana is configured (either via env or org settings)
+ * This is a quick check that doesn't require DB access for basic env config
+ */
+export function isGrafanaConfigured(_organizationId: string): boolean {
+  // For now, just check env vars - org-specific config would need DB lookup
+  return !!(process.env.GRAFANA_URL && process.env.GRAFANA_API_KEY);
+}
+
 export interface GrafanaDashboard {
   id: number;
   uid: string;
