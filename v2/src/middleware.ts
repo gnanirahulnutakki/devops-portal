@@ -1,5 +1,5 @@
 // =============================================================================
-// Next.js Middleware - Organization Enforcement
+// Next.js Middleware - Organization Enforcement with Membership Validation
 // =============================================================================
 
 import { NextResponse } from 'next/server';
@@ -15,20 +15,39 @@ const PUBLIC_PATHS = [
   '/favicon.ico',
 ];
 
-// Paths that require organization but don't need the header
-// (organization is determined from session membership)
+// Paths that require auth but not organization context
 const ORG_OPTIONAL_PATHS = [
   '/api/organizations',
   '/select-organization',
 ];
 
+// JWT token type with memberships
+interface TokenWithMemberships {
+  userId: string;
+  memberships?: Record<string, string>; // { orgId: role }
+  membershipsUpdatedAt?: number;
+}
+
+/**
+ * Validate organization membership from JWT token
+ * Returns the user's role if valid, null if not a member
+ */
+function validateMembership(
+  token: TokenWithMemberships,
+  organizationId: string
+): string | null {
+  if (!token.memberships) return null;
+  return token.memberships[organizationId] || null;
+}
+
 /**
  * Organization enforcement middleware
  * 
- * This middleware:
- * 1. Extracts x-organization-id header from requests
- * 2. Validates the organization exists and user has membership
- * 3. Adds organization context to request headers for downstream use
+ * SECURITY: This middleware:
+ * 1. Validates authentication via JWT
+ * 2. Validates organization membership from JWT claims (no DB call needed)
+ * 3. Rejects requests to organizations user doesn't belong to
+ * 4. Adds validated context to request headers
  */
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -38,14 +57,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Get session token
+  // Get session token with memberships
   const token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
-  });
+  }) as TokenWithMemberships | null;
 
   // Redirect to login if not authenticated
-  if (!token) {
+  if (!token || !token.userId) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(loginUrl);
@@ -53,7 +72,11 @@ export async function middleware(request: NextRequest) {
 
   // Skip organization validation for org-optional paths
   if (ORG_OPTIONAL_PATHS.some((path) => pathname.startsWith(path))) {
-    return NextResponse.next();
+    // Still add user context
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-user-id', token.userId);
+    requestHeaders.set('x-request-id', crypto.randomUUID());
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   // Get organization ID from header or cookie
@@ -61,7 +84,7 @@ export async function middleware(request: NextRequest) {
     request.headers.get('x-organization-id') ||
     request.cookies.get('organization-id')?.value;
 
-  // For API routes, require organization ID
+  // For API routes, require and validate organization
   if (pathname.startsWith('/api/')) {
     if (!organizationId) {
       return NextResponse.json(
@@ -76,10 +99,26 @@ export async function middleware(request: NextRequest) {
       );
     }
 
-    // Clone request headers and add organization context
+    // CRITICAL: Validate membership from JWT claims
+    const userRole = validateMembership(token, organizationId);
+    if (!userRole) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'You do not have access to this organization',
+          },
+        },
+        { status: 403 }
+      );
+    }
+
+    // Clone request headers and add validated organization context
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('x-organization-id', organizationId);
-    requestHeaders.set('x-user-id', token.userId as string);
+    requestHeaders.set('x-user-id', token.userId);
+    requestHeaders.set('x-user-role', userRole);
     requestHeaders.set('x-request-id', crypto.randomUUID());
 
     return NextResponse.next({
@@ -94,6 +133,18 @@ export async function middleware(request: NextRequest) {
     const selectOrgUrl = new URL('/select-organization', request.url);
     selectOrgUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(selectOrgUrl);
+  }
+
+  // CRITICAL: Validate membership for page routes too
+  const userRole = validateMembership(token, organizationId);
+  if (!userRole) {
+    // Clear invalid org cookie and redirect to selection
+    const selectOrgUrl = new URL('/select-organization', request.url);
+    selectOrgUrl.searchParams.set('callbackUrl', pathname);
+    selectOrgUrl.searchParams.set('error', 'invalid_org');
+    const response = NextResponse.redirect(selectOrgUrl);
+    response.cookies.delete('organization-id');
+    return response;
   }
 
   // Add organization ID to response cookies for persistence
