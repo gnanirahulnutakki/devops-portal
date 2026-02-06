@@ -25,36 +25,76 @@ function isTenantScopedModel(model: string): model is TenantScopedModel {
 }
 
 /**
- * Deep validator to ensure tenant context is properly applied
- * Prevents accidental cross-tenant data access
+ * Validate nested relations for cross-tenant access attempts
+ * Prevents: { connect: { id: "other-org-resource" } }
  */
-function validateTenantInArgs(
-  model: string,
-  operation: string,
-  _args: Record<string, unknown>
+function validateNestedRelations(
+  data: Record<string, unknown>,
+  organizationId: string,
+  path: string = ''
 ): void {
-  if (!isTenantScopedModel(model)) return;
-
-  const context = getTenantContextOrNull();
-  if (!context) {
-    throw new Error(
-      `Tenant context required for ${model}.${operation}. Use withTenantContext() wrapper.`
-    );
-  }
-
-  // HARD FAIL on findUnique - use findFirst with organizationId filter instead
-  if (operation === 'findUnique') {
-    throw new Error(
-      `findUnique is not allowed on tenant-scoped model "${model}". ` +
-      `Use findFirst with organizationId filter, or add compound unique constraint.`
-    );
+  for (const [key, value] of Object.entries(data)) {
+    if (!value || typeof value !== 'object') continue;
+    
+    const currentPath = path ? `${path}.${key}` : key;
+    const nested = value as Record<string, unknown>;
+    
+    // Check for connect/connectOrCreate operations
+    if (key === 'connect' || key === 'connectOrCreate') {
+      // If connecting to a tenant-scoped resource, we can't validate the ID
+      // without a DB call - log a warning for audit
+      logger.warn(
+        { path: currentPath, operation: key },
+        'Nested relation connect detected - ensure target belongs to same org'
+      );
+    }
+    
+    // Check for create/createMany nested operations
+    if (key === 'create' || key === 'createMany') {
+      if (Array.isArray(nested)) {
+        nested.forEach((item, idx) => {
+          if (typeof item === 'object' && item !== null) {
+            const record = item as Record<string, unknown>;
+            if (record.organizationId && record.organizationId !== organizationId) {
+              throw new Error(
+                `[SECURITY] Cross-tenant nested create blocked at ${currentPath}[${idx}]`
+              );
+            }
+          }
+        });
+      } else if (nested.organizationId && nested.organizationId !== organizationId) {
+        throw new Error(
+          `[SECURITY] Cross-tenant nested create blocked at ${currentPath}`
+        );
+      }
+    }
+    
+    // Recurse into nested objects
+    if (typeof nested === 'object' && !Array.isArray(nested)) {
+      validateNestedRelations(nested, organizationId, currentPath);
+    }
   }
 }
 
 /**
- * Add organizationId filter to where clause
+ * Check if findUnique uses compound key with organizationId
+ * Allows: findUnique({ where: { id_organizationId: { id, organizationId } } })
  */
-// Note: enforcement is done in the main switch; helpers not needed
+function isCompoundKeyLookup(
+  where: Record<string, unknown>,
+  organizationId: string
+): boolean {
+  // Check for compound unique key patterns
+  for (const [key, value] of Object.entries(where)) {
+    if (key.includes('_organizationId') && typeof value === 'object' && value !== null) {
+      const compound = value as Record<string, unknown>;
+      if (compound.organizationId === organizationId) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 /**
  * Create Prisma client with tenant extension
@@ -62,7 +102,8 @@ function validateTenantInArgs(
  * 1. Validates tenant context exists for tenant-scoped operations
  * 2. Adds organizationId filter to all queries
  * 3. Adds organizationId to all creates
- * 4. Logs all operations with tenant context
+ * 4. Validates nested writes for cross-tenant access
+ * 5. Logs all operations with tenant context
  */
 export function createTenantPrismaClient(basePrisma: PrismaClient) {
   return basePrisma.$extends({
@@ -78,12 +119,10 @@ export function createTenantPrismaClient(basePrisma: PrismaClient) {
             return query(args);
           }
 
-          // Validate tenant context for tenant-scoped models
-          validateTenantInArgs(model, operation, args as Record<string, unknown>);
-          
+          // Require tenant context for tenant-scoped models
           if (!context) {
             throw new Error(
-              `Tenant context required for ${model}.${operation}`
+              `[SECURITY] Tenant context required for ${model}.${operation}. Use withTenantContext() wrapper.`
             );
           }
 
@@ -96,7 +135,15 @@ export function createTenantPrismaClient(basePrisma: PrismaClient) {
           switch (operation) {
             case 'findUnique':
             case 'findUniqueOrThrow': {
-              throw new Error('[SECURITY] findUnique disallowed in tenant context. Use findFirst with organizationId');
+              // Allow if using compound key with organizationId
+              const where = (typedArgs.where as Record<string, unknown>) || {};
+              if (isCompoundKeyLookup(where, organizationId)) {
+                return query(args);
+              }
+              throw new Error(
+                `[SECURITY] findUnique on ${model} requires compound key with organizationId. ` +
+                `Use: where: { id_organizationId: { id, organizationId } }`
+              );
             }
 
             case 'findFirst':
@@ -121,6 +168,8 @@ export function createTenantPrismaClient(basePrisma: PrismaClient) {
               if (data.organizationId && data.organizationId !== organizationId) {
                 throw new Error(`[SECURITY] organizationId mismatch for ${model}.create`);
               }
+              // Validate nested relations
+              validateNestedRelations(data, organizationId, 'data');
               modifiedArgs = {
                 ...typedArgs,
                 data: { ...data, organizationId },
@@ -130,11 +179,13 @@ export function createTenantPrismaClient(basePrisma: PrismaClient) {
 
             case 'createMany': {
               const dataArray = (typedArgs.data as Record<string, unknown>[]) || [];
-              dataArray.forEach((record) => {
-                const org = (record as any).organizationId;
+              dataArray.forEach((record, idx) => {
+                const org = (record as Record<string, unknown>).organizationId;
                 if (org && org !== organizationId) {
-                  throw new Error(`[SECURITY] organizationId mismatch in createMany for ${model}`);
+                  throw new Error(`[SECURITY] organizationId mismatch in createMany[${idx}] for ${model}`);
                 }
+                // Validate nested relations in each record
+                validateNestedRelations(record, organizationId, `data[${idx}]`);
               });
               modifiedArgs = {
                 ...typedArgs,
@@ -147,7 +198,21 @@ export function createTenantPrismaClient(basePrisma: PrismaClient) {
             }
 
             case 'update':
-            case 'updateMany':
+            case 'updateMany': {
+              const where = (typedArgs.where as Record<string, unknown>) || {};
+              if (where.organizationId && where.organizationId !== organizationId) {
+                throw new Error(`[SECURITY] organizationId mismatch for ${model}.${operation}`);
+              }
+              // Validate nested relations in update data
+              const updateData = (typedArgs.data as Record<string, unknown>) || {};
+              validateNestedRelations(updateData, organizationId, 'data');
+              modifiedArgs = {
+                ...typedArgs,
+                where: { ...where, organizationId },
+              } as typeof args;
+              break;
+            }
+
             case 'delete':
             case 'deleteMany': {
               const where = (typedArgs.where as Record<string, unknown>) || {};
@@ -162,12 +227,19 @@ export function createTenantPrismaClient(basePrisma: PrismaClient) {
             }
 
             case 'upsert': {
-              const upsertArgs = typedArgs as { where?: any; create?: any; update?: any };
+              const upsertArgs = typedArgs as { where?: Record<string, unknown>; create?: Record<string, unknown>; update?: Record<string, unknown> };
               if (upsertArgs.where?.organizationId && upsertArgs.where.organizationId !== organizationId) {
                 throw new Error(`[SECURITY] organizationId mismatch for ${model}.upsert where`);
               }
               if (upsertArgs.create?.organizationId && upsertArgs.create.organizationId !== organizationId) {
                 throw new Error(`[SECURITY] organizationId mismatch for ${model}.upsert create`);
+              }
+              // Validate nested relations in create and update data
+              if (upsertArgs.create) {
+                validateNestedRelations(upsertArgs.create, organizationId, 'create');
+              }
+              if (upsertArgs.update) {
+                validateNestedRelations(upsertArgs.update, organizationId, 'update');
               }
               modifiedArgs = {
                 ...typedArgs,

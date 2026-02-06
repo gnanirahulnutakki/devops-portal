@@ -4,18 +4,15 @@ import { getRenderUrl, proxyRender, isGrafanaConfigured } from '@/lib/services/g
 import { withApiContext, requireRole } from '@/lib/api-context';
 import { logger } from '@/lib/logger';
 
-// Render rate limit: 20 requests per minute per org (image generation is expensive)
-const RENDER_RATE_LIMIT = 20;
-
 // Note: Not using withTenantApiHandler because proxyRender returns a raw Response for binary data
 export async function GET(request: Request) {
   try {
     return await withApiContext(async (ctx) => {
       requireRole(ctx, 'USER');
 
-      // Org-scoped rate limiting for render (expensive operation)
+      // Org-scoped rate limiting using dedicated 'render' limiter (20/min default)
       const rateLimitId = `grafana:render:${ctx.tenant.organizationId}`;
-      const rateLimit = await checkRateLimit('general', rateLimitId);
+      const rateLimit = await checkRateLimit('render', rateLimitId);
       if (!rateLimit.success) {
         return NextResponse.json(
           { 
@@ -29,7 +26,7 @@ export async function GET(request: Request) {
             status: 429,
             headers: {
               'Retry-After': Math.ceil((rateLimit.reset - Date.now()) / 1000).toString(),
-              'X-RateLimit-Limit': RENDER_RATE_LIMIT.toString(),
+              'X-RateLimit-Limit': rateLimit.limit.toString(),
               'X-RateLimit-Remaining': rateLimit.remaining.toString(),
             },
           }

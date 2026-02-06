@@ -165,7 +165,10 @@ model Cluster {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
+  // Compound unique for safe tenant-scoped lookups
+  @@unique([id, organizationId])
   @@unique([organizationId, slug])
+  @@index([organizationId])
   @@map("clusters")
 }
 
@@ -206,7 +209,10 @@ model Deployment {
   updatedAt   DateTime @updatedAt
   lastSyncAt  DateTime?
   
+  // Compound unique for safe tenant-scoped lookups
+  @@unique([id, organizationId])
   @@unique([clusterId, namespace, name])
+  @@index([organizationId])
   @@map("deployments")
 }
 
@@ -261,6 +267,10 @@ model BulkOperation {
   startedAt   DateTime?
   completedAt DateTime?
   
+  // Compound unique for safe tenant-scoped lookups
+  @@unique([id, organizationId])
+  @@index([organizationId])
+  @@index([organizationId, status])
   @@map("bulk_operations")
 }
 
@@ -351,6 +361,9 @@ model AlertRule {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
+  // Compound unique for safe tenant-scoped lookups
+  @@unique([id, organizationId])
+  @@index([organizationId])
   @@map("alert_rules")
 }
 

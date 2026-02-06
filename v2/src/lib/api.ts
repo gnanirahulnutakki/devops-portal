@@ -175,6 +175,16 @@ const rateLimiters = {
     analytics: true,
     prefix: 'ratelimit:auth',
   }),
+  // Grafana render rate limit: image generation is expensive
+  render: new Ratelimit({
+    redis: redis as any,
+    limiter: Ratelimit.slidingWindow(
+      parseInt(process.env.RATE_LIMIT_RENDER || '20'),
+      '1 m'
+    ),
+    analytics: true,
+    prefix: 'ratelimit:render',
+  }),
 };
 
 export type RateLimitType = keyof typeof rateLimiters;
