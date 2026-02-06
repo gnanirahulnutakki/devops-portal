@@ -135,7 +135,11 @@ function GrafanaPreviewDialog({
             src={renderSrc}
             className="absolute inset-0 h-full w-full rounded-md border"
             loading="lazy"
-            allow="fullscreen"
+            // Security: sandbox iframe to prevent script execution
+            sandbox="allow-same-origin"
+            // Security: don't leak referrer to embedded content
+            referrerPolicy="no-referrer"
+            title={`Preview: ${dashboard.title}`}
           />
         </div>
       </DialogContent>

@@ -1,0 +1,258 @@
+name: V2 CI Pipeline
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-ci.yml'
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-ci.yml'
+
+defaults:
+  run:
+    working-directory: v2
+
+env:
+  NODE_VERSION: '22'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # ==========================================================================
+  # Quality Gates (Required)
+  # ==========================================================================
+  quality:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: v2/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run TypeScript check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test -- --passWithNoTests
+
+      - name: Build
+        run: npm run build
+        env:
+          # Minimal env for build
+          NEXTAUTH_SECRET: ci-build-secret
+          NEXTAUTH_URL: http://localhost:3000
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+          TOKEN_ENCRYPTION_KEY: ci-test-encryption-key-32chars!!
+
+  # ==========================================================================
+  # Security Scanning
+  # ==========================================================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: v2/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Dependency vulnerability scan
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      # Static analysis with CodeQL
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          config-file: ./.github/codeql-config.yml
+
+      - name: Build for CodeQL
+        run: npm run build
+        env:
+          NEXTAUTH_SECRET: ci-build-secret
+          NEXTAUTH_URL: http://localhost:3000
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+          TOKEN_ENCRYPTION_KEY: ci-test-encryption-key-32chars!!
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"
+
+  # ==========================================================================
+  # Docker Build & Trivy Scan
+  # ==========================================================================
+  docker:
+    name: Docker Build & Scan
+    runs-on: ubuntu-latest
+    needs: quality
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./v2
+          file: ./v2/Dockerfile
+          push: false
+          load: true
+          tags: devops-portal-v2:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'devops-portal-v2:scan'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy-container'
+
+  # ==========================================================================
+  # Accessibility & Performance (on PR only)
+  # ==========================================================================
+  a11y-perf:
+    name: Accessibility & Performance
+    runs-on: ubuntu-latest
+    needs: quality
+    if: github.event_name == 'pull_request'
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: devops_portal_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: v2/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET || 'test-secret-for-ci-only' }}
+          NEXTAUTH_URL: http://localhost:3000
+          DATABASE_URL: postgresql://test:test@localhost:5432/devops_portal_test
+          REDIS_URL: redis://localhost:6379
+          TOKEN_ENCRYPTION_KEY: ci-test-encryption-key-32chars!!
+
+      - name: Run Prisma migrations
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/devops_portal_test
+
+      - name: Start server
+        run: |
+          npm start &
+          sleep 10
+        env:
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET || 'test-secret-for-ci-only' }}
+          NEXTAUTH_URL: http://localhost:3000
+          DATABASE_URL: postgresql://test:test@localhost:5432/devops_portal_test
+          REDIS_URL: redis://localhost:6379
+          TOKEN_ENCRYPTION_KEY: ci-test-encryption-key-32chars!!
+
+      # Lighthouse CI
+      - name: Run Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v11
+        with:
+          urls: |
+            http://localhost:3000/login
+          configPath: ./v2/lighthouserc.json
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+        continue-on-error: true
+
+      # axe-core accessibility
+      - name: Run axe accessibility tests
+        uses: dequelabs/axe-api-team/axe-linter-action@v1
+        with:
+          directory: v2
+        continue-on-error: true
+
+  # ==========================================================================
+  # Summary
+  # ==========================================================================
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [quality, security, docker]
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## V2 CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Quality Gates | ${{ needs.quality.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security.result == 'success' && '✅' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Build | ${{ needs.docker.result == 'success' && '✅' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY

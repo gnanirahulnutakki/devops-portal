@@ -1,55 +1,43 @@
-import { NextResponse } from 'next/server';
 import { 
-  withApiHandler, 
-  requireApiAuth, 
+  withTenantApiHandler, 
   successResponse, 
   errorResponse,
   validateRequest,
 } from '@/lib/api';
-import { getArgoCDService } from '@/lib/integrations/argocd';
+import { getArgoService } from '@/lib/services/argocd';
 import { syncApplicationSchema } from '@/lib/validations/schemas';
-import { logAudit } from '@/lib/logger';
+import { headers } from 'next/headers';
 
-export const POST = withApiHandler(
-  async (request: Request, { params }: { params: { name: string } }) => {
-    const authResult = await requireApiAuth();
-    if (authResult instanceof NextResponse) return authResult;
+export const POST = withTenantApiHandler(
+  async (request, ctx) => {
+    // Get app name from URL path
+    const headersList = await headers();
+    const url = headersList.get('x-url') || request.url;
+    const appName = new URL(url).pathname.split('/').slice(-2)[0];
 
     const bodyResult = await validateRequest(request, syncApplicationSchema.partial());
     if ('error' in bodyResult) return bodyResult.error;
 
     const { revision, prune, dryRun } = bodyResult.data;
-    const appName = params.name;
 
     try {
-      const argocd = getArgoCDService();
-      const result = await argocd.syncApplication(appName, {
+      const argoService = await getArgoService(ctx.tenant.organizationId);
+      if (!argoService) {
+        return errorResponse(
+          'ARGOCD_NOT_CONFIGURED',
+          'ArgoCD is not configured for this organization',
+          400
+        );
+      }
+
+      const result = await argoService.syncApplication(appName, {
         revision,
         prune,
         dryRun,
       });
 
-      // Audit log
-      logAudit({
-        action: 'argocd.sync',
-        resource: 'application',
-        resourceId: appName,
-        userId: authResult.userId,
-        success: true,
-        details: { revision, prune, dryRun },
-      });
-
       return successResponse(result);
     } catch (error) {
-      logAudit({
-        action: 'argocd.sync',
-        resource: 'application',
-        resourceId: appName,
-        userId: authResult.userId,
-        success: false,
-        details: { error: (error as Error).message },
-      });
-
       return errorResponse(
         'SYNC_FAILED',
         `Failed to sync application ${appName}`,
@@ -58,5 +46,13 @@ export const POST = withApiHandler(
       );
     }
   },
-  { rateLimit: 'sync', requireAuth: true }
+  { 
+    rateLimit: 'sync', 
+    requiredRole: 'READWRITE',
+    audit: {
+      action: 'argocd.sync',
+      resource: 'application',
+      getResourceId: (req) => new URL(req.url).pathname.split('/').slice(-2)[0],
+    },
+  }
 );
