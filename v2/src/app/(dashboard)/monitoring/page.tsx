@@ -1,11 +1,13 @@
+'use client';
+
 import { Suspense } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GrafanaDashboardList } from '@/components/monitoring/grafana-dashboard-list';
-
-export const metadata = {
-  title: 'Monitoring',
-};
+import { GrafanaFolderList } from '@/components/monitoring/grafana-folder-list';
+import { GrafanaAlertList } from '@/components/monitoring/grafana-alert-list';
+import { LayoutDashboard, FolderOpen, Bell } from 'lucide-react';
 
 export default function MonitoringPage() {
   return (
@@ -13,25 +15,70 @@ export default function MonitoringPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Monitoring</h1>
         <p className="text-muted-foreground">
-          Explore Grafana dashboards and system metrics for your organization.
+          Explore Grafana dashboards, folders, and alerts for your organization.
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Grafana Dashboards</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Suspense fallback={<DashboardsSkeleton />}> 
-            <GrafanaDashboardList />
-          </Suspense>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="dashboards">
+        <TabsList>
+          <TabsTrigger value="dashboards" className="gap-2">
+            <LayoutDashboard className="h-4 w-4" />
+            Dashboards
+          </TabsTrigger>
+          <TabsTrigger value="folders" className="gap-2">
+            <FolderOpen className="h-4 w-4" />
+            Folders
+          </TabsTrigger>
+          <TabsTrigger value="alerts" className="gap-2">
+            <Bell className="h-4 w-4" />
+            Alerts
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="dashboards" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Grafana Dashboards</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Suspense fallback={<ContentSkeleton />}> 
+                <GrafanaDashboardList />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="folders" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Dashboard Folders</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Suspense fallback={<ContentSkeleton />}>
+                <GrafanaFolderList />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="alerts" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Alert Rules</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Suspense fallback={<ContentSkeleton />}>
+                <GrafanaAlertList />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
 
-function DashboardsSkeleton() {
+function ContentSkeleton() {
   return (
     <div className="space-y-3">
       {[...Array(6)].map((_, idx) => (
