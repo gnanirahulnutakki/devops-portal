@@ -37,6 +37,7 @@ model Organization {
   bulkOperations BulkOperation[]
   auditLogs      AuditLog[]
   alertRules     AlertRule[]
+  integrationCredentials IntegrationCredential[]
   
   @@map("organizations")
 }
@@ -86,6 +87,7 @@ model User {
   // Activity
   auditLogs     AuditLog[]
   bulkOperations BulkOperation[]
+  integrationCredentials IntegrationCredential[]
   
   // Timestamps
   createdAt     DateTime  @default(now())
@@ -389,4 +391,56 @@ model UserPreference {
   updatedAt   DateTime @updatedAt
   
   @@map("user_preferences")
+}
+
+// =============================================================================
+// Integration Credentials (Per-Org Secrets)
+// =============================================================================
+
+model IntegrationCredential {
+  id          String   @id @default(cuid())
+  
+  // Integration type
+  provider    IntegrationProvider
+  name        String   // User-friendly name
+  
+  // Encrypted credentials (AES-256-GCM)
+  // Store as JSON: { apiKey, url, token, etc. }
+  credentials String   @db.Text // Encrypted JSON blob
+  
+  // Status
+  enabled     Boolean  @default(true)
+  lastUsedAt  DateTime?
+  lastErrorAt DateTime?
+  lastError   String?
+  
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Audit
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Compound unique for safe tenant-scoped lookups
+  @@unique([id, organizationId])
+  // Only one credential per provider per org
+  @@unique([organizationId, provider])
+  @@index([organizationId])
+  @@map("integration_credentials")
+}
+
+enum IntegrationProvider {
+  ARGOCD
+  GRAFANA
+  PROMETHEUS
+  GITHUB
+  GITLAB
+  S3
+  SLACK
+  PAGERDUTY
 }

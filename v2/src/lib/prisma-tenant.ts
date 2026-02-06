@@ -13,6 +13,7 @@ const TENANT_SCOPED_MODELS = [
   'BulkOperation',
   'AuditLog',
   'AlertRule',
+  'IntegrationCredential',
 ] as const;
 
 type TenantScopedModel = (typeof TENANT_SCOPED_MODELS)[number];
