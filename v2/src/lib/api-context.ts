@@ -38,13 +38,19 @@ export async function getOrganizationIdFromHeaders(): Promise<string> {
 
 /**
  * Get organization context from request headers
- * Headers are set by middleware after validation
+ * Headers are set and VALIDATED by middleware (membership checked via JWT)
+ * 
+ * SECURITY: Middleware has already validated:
+ * - User is authenticated
+ * - User has membership in the requested organization
+ * - Role is set in x-user-role header
  */
 export async function getApiContext(): Promise<ApiContext> {
   const headersList = await headers();
   
   const organizationId = headersList.get('x-organization-id');
   const userId = headersList.get('x-user-id');
+  const userRole = headersList.get('x-user-role');
   const requestId = headersList.get('x-request-id') ?? crypto.randomUUID();
   
   if (!organizationId) {
@@ -55,30 +61,48 @@ export async function getApiContext(): Promise<ApiContext> {
     throw new Error('x-user-id header is required');
   }
   
-  // Fetch organization and membership details
-  const membership = await prisma.membership.findFirst({
-    where: {
-      userId,
+  if (!userRole) {
+    // Fallback: if middleware didn't set role, do DB lookup
+    // This shouldn't happen in normal flow but provides defense-in-depth
+    logger.warn({ userId, organizationId }, 'x-user-role header missing, falling back to DB lookup');
+    
+    const membership = await prisma.membership.findFirst({
+      where: { userId, organizationId },
+      include: { organization: true },
+    });
+    
+    if (!membership) {
+      throw new Error('User does not have access to this organization');
+    }
+    
+    const tenant = createTenantContext({
       organizationId,
-    },
-    include: {
-      organization: true,
-    },
+      organizationSlug: membership.organization.slug,
+      userId,
+      userRole: membership.role,
+      requestId,
+    });
+    
+    const db = createTenantPrismaClient(prisma);
+    return { tenant, db, requestId };
+  }
+  
+  // Fast path: Use pre-validated role from middleware
+  // Only fetch org slug (minimal DB call, could be cached)
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { slug: true },
   });
   
-  if (!membership) {
-    logger.warn(
-      { userId, organizationId },
-      'User does not have membership in organization'
-    );
-    throw new Error('User does not have access to this organization');
+  if (!org) {
+    throw new Error('Organization not found');
   }
   
   const tenant = createTenantContext({
     organizationId,
-    organizationSlug: membership.organization.slug,
+    organizationSlug: org.slug,
     userId,
-    userRole: membership.role,
+    userRole: userRole as 'USER' | 'READWRITE' | 'ADMIN',
     requestId,
   });
   

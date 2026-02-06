@@ -55,8 +55,8 @@ export const authConfig: NextAuthConfig = {
       return true;
     },
 
-    async jwt({ token, user, account }) {
-      // Initial sign-in
+    async jwt({ token, user, account, trigger }) {
+      // Initial sign-in or token refresh
       if (account && user) {
         token.userId = user.id;
         token.provider = account.provider;
@@ -73,6 +73,42 @@ export const authConfig: NextAuthConfig = {
           });
           logger.info({ userId: user.id }, 'GitHub token stored with encryption');
         }
+      }
+      
+      // Fetch memberships on sign-in or update trigger
+      // This enables middleware to validate org membership without DB calls
+      if ((account && user) || trigger === 'update') {
+        const userId = token.userId as string;
+        if (userId) {
+          const memberships = await prisma.membership.findMany({
+            where: { userId },
+            select: {
+              organizationId: true,
+              role: true,
+            },
+          });
+          // Store as map: { orgId: role } for O(1) lookup in middleware
+          token.memberships = Object.fromEntries(
+            memberships.map(m => [m.organizationId, m.role])
+          );
+          token.membershipsUpdatedAt = Date.now();
+        }
+      }
+      
+      // Refresh memberships every 5 minutes to catch permission changes
+      const membershipsAge = Date.now() - (token.membershipsUpdatedAt as number || 0);
+      if (membershipsAge > 5 * 60 * 1000 && token.userId) {
+        const memberships = await prisma.membership.findMany({
+          where: { userId: token.userId as string },
+          select: {
+            organizationId: true,
+            role: true,
+          },
+        });
+        token.memberships = Object.fromEntries(
+          memberships.map(m => [m.organizationId, m.role])
+        );
+        token.membershipsUpdatedAt = Date.now();
       }
       
       return token;
