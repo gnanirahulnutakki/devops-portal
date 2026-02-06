@@ -4,7 +4,7 @@ import KeycloakProvider from 'next-auth/providers/keycloak';
 import GitHubProvider from 'next-auth/providers/github';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from './prisma';
-import { storeGitHubToken, hasGitHubToken } from './redis';
+import { githubTokens } from './token-store';
 import { logger } from './logger';
 
 // =============================================================================
@@ -61,16 +61,17 @@ export const authConfig: NextAuthConfig = {
         token.userId = user.id;
         token.provider = account.provider;
         
-        // Store GitHub token securely in Redis (NEVER expose to client)
+        // Store GitHub token securely with AES-256-GCM key-ring encryption
         if (account.provider === 'github' && account.access_token) {
-          await storeGitHubToken(user.id!, {
+          await githubTokens.store(user.id!, {
             accessToken: account.access_token,
             refreshToken: account.refresh_token,
             expiresAt: account.expires_at 
               ? account.expires_at * 1000 
               : Date.now() + 8 * 60 * 60 * 1000,
+            scopes: account.scope?.split(' '),
           });
-          logger.info({ userId: user.id }, 'GitHub token stored in Redis');
+          logger.info({ userId: user.id }, 'GitHub token stored with encryption');
         }
       }
       
@@ -82,7 +83,7 @@ export const authConfig: NextAuthConfig = {
         session.user.id = token.userId as string;
         
         // Only expose boolean flag - NEVER expose actual token
-        const hasGitHub = await hasGitHubToken(token.userId as string);
+        const hasGitHub = await githubTokens.has(token.userId as string);
         session.user.hasGitHubConnection = hasGitHub;
       }
       
@@ -95,9 +96,12 @@ export const authConfig: NextAuthConfig = {
       logger.info({ userId: user.id, provider: account?.provider }, 'User signed in');
     },
     async signOut(message) {
-      // Session may be JWT token or adapter session
-      const sessionData = 'session' in message ? message.session : message.token;
-      logger.info({ sessionData }, 'User signed out');
+      // Revoke tokens on logout (back-channel cleanup)
+      const token = 'token' in message ? message.token : null;
+      if (token?.userId) {
+        await githubTokens.delete(token.userId as string);
+        logger.info({ userId: token.userId }, 'User tokens revoked on sign-out');
+      }
     },
   },
 

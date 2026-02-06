@@ -1,7 +1,13 @@
 import { Queue, Worker, Job, QueueEvents } from 'bullmq';
 import { logger } from './logger';
-import { prisma } from './prisma';
 import { BulkOperationStatus } from '@prisma/client';
+import { 
+  withWorkerContext, 
+  WorkerContext,
+  completeBulkOperation,
+  updateBulkOperationProgress,
+  TenantJobPayload,
+} from './worker-context';
 
 // =============================================================================
 // Queue Configuration
@@ -16,11 +22,10 @@ const connection = {
 // Job Types
 // =============================================================================
 
-export interface BulkFileUpdateJob {
+export interface BulkFileUpdateJob extends TenantJobPayload {
   type: 'BULK_FILE_UPDATE';
+  action: 'bulk_file_update';
   operationId: string;
-  organizationId: string;
-  userId: string;
   branches: string[];
   updates: Array<{
     path: string;
@@ -29,20 +34,18 @@ export interface BulkFileUpdateJob {
   }>;
 }
 
-export interface BulkSyncJob {
+export interface BulkSyncJob extends TenantJobPayload {
   type: 'BULK_SYNC';
+  action: 'bulk_sync';
   operationId: string;
-  organizationId: string;
-  userId: string;
   appNames: string[];
   prune: boolean;
 }
 
-export interface BulkRestartJob {
+export interface BulkRestartJob extends TenantJobPayload {
   type: 'BULK_RESTART';
+  action: 'bulk_restart';
   operationId: string;
-  organizationId: string;
-  userId: string;
   deploymentIds: string[];
 }
 
@@ -93,66 +96,62 @@ queueEvents.on('progress', async ({ jobId, data }) => {
 // =============================================================================
 
 async function processJob(job: Job<JobData>) {
-  const { data } = job;
-  
-  logger.info({ jobId: job.id, type: data.type }, 'Processing job');
-  
-  // Update operation status to RUNNING
-  await prisma.bulkOperation.update({
-    where: { id: data.operationId },
-    data: {
-      status: BulkOperationStatus.RUNNING,
-      startedAt: new Date(),
-    },
-  });
-  
-  try {
-    let result: unknown;
+  // Use withWorkerContext for tenant isolation and membership validation
+  return withWorkerContext(job as Job<TenantJobPayload>, async (ctx) => {
+    const { data } = job;
     
-    switch (data.type) {
-      case 'BULK_FILE_UPDATE':
-        result = await processBulkFileUpdate(job as Job<BulkFileUpdateJob>, data as BulkFileUpdateJob);
-        break;
-      case 'BULK_SYNC':
-        result = await processBulkSync(job as Job<BulkSyncJob>, data as BulkSyncJob);
-        break;
-      case 'BULK_RESTART':
-        result = await processBulkRestart(job as Job<BulkRestartJob>, data as BulkRestartJob);
-        break;
-      default:
-        throw new Error(`Unknown job type: ${(data as JobData).type}`);
+    logger.info({ jobId: job.id, type: data.type }, 'Processing job');
+    
+    // Update operation status to RUNNING (using tenant-scoped db)
+    await ctx.db.bulkOperation.update({
+      where: { id: data.operationId },
+      data: {
+        status: BulkOperationStatus.RUNNING,
+        startedAt: new Date(),
+      },
+    });
+    
+    try {
+      let result: unknown;
+      
+      switch (data.type) {
+        case 'BULK_FILE_UPDATE':
+          result = await processBulkFileUpdate(job as Job<BulkFileUpdateJob>, data as BulkFileUpdateJob, ctx);
+          break;
+        case 'BULK_SYNC':
+          result = await processBulkSync(job as Job<BulkSyncJob>, data as BulkSyncJob, ctx);
+          break;
+        case 'BULK_RESTART':
+          result = await processBulkRestart(job as Job<BulkRestartJob>, data as BulkRestartJob, ctx);
+          break;
+        default:
+          throw new Error(`Unknown job type: ${(data as JobData).type}`);
+      }
+      
+      // Update operation status to COMPLETED
+      await completeBulkOperation(ctx, data.operationId, 'COMPLETED', { result });
+      
+      return result;
+    } catch (error) {
+      // Update operation status to FAILED
+      await completeBulkOperation(ctx, data.operationId, 'FAILED', undefined, {
+        message: (error as Error).message,
+      });
+      
+      throw error;
     }
-    
-    // Update operation status to COMPLETED
-    await prisma.bulkOperation.update({
-      where: { id: data.operationId },
-      data: {
-        status: BulkOperationStatus.COMPLETED,
-        completedAt: new Date(),
-        output: result as any,
-      },
-    });
-    
-    return result;
-  } catch (error) {
-    // Update operation status to FAILED
-    await prisma.bulkOperation.update({
-      where: { id: data.operationId },
-      data: {
-        status: BulkOperationStatus.FAILED,
-        completedAt: new Date(),
-        errors: { message: (error as Error).message },
-      },
-    });
-    
-    throw error;
-  }
+  });
 }
 
-async function processBulkFileUpdate(job: Job<BulkFileUpdateJob>, data: BulkFileUpdateJob) {
+async function processBulkFileUpdate(
+  job: Job<BulkFileUpdateJob>,
+  data: BulkFileUpdateJob,
+  ctx: WorkerContext
+) {
   const results: Array<{ branch: string; success: boolean; error?: string }> = [];
   const total = data.branches.length * data.updates.length;
   let completed = 0;
+  let failed = 0;
   
   for (const branch of data.branches) {
     for (const _update of data.updates) {
@@ -166,15 +165,11 @@ async function processBulkFileUpdate(job: Job<BulkFileUpdateJob>, data: BulkFile
         
         await job.updateProgress(Math.round((completed / total) * 100));
         
-        // Update progress in database
-        await prisma.bulkOperation.update({
-          where: { id: data.operationId },
-          data: {
-            completedItems: completed,
-          },
-        });
+        // Update progress using tenant-scoped client
+        await updateBulkOperationProgress(ctx, data.operationId, completed, failed);
       } catch (error) {
         results.push({ branch, success: false, error: (error as Error).message });
+        failed++;
       }
     }
   }
@@ -182,9 +177,14 @@ async function processBulkFileUpdate(job: Job<BulkFileUpdateJob>, data: BulkFile
   return results;
 }
 
-async function processBulkSync(job: Job<BulkSyncJob>, data: BulkSyncJob) {
+async function processBulkSync(
+  job: Job<BulkSyncJob>,
+  data: BulkSyncJob,
+  ctx: WorkerContext
+) {
   const results: Array<{ appName: string; success: boolean; error?: string }> = [];
   let completed = 0;
+  let failed = 0;
   
   for (const appName of data.appNames) {
     try {
@@ -196,24 +196,24 @@ async function processBulkSync(job: Job<BulkSyncJob>, data: BulkSyncJob) {
       completed++;
       
       await job.updateProgress(Math.round((completed / data.appNames.length) * 100));
-      
-      await prisma.bulkOperation.update({
-        where: { id: data.operationId },
-        data: {
-          completedItems: completed,
-        },
-      });
+      await updateBulkOperationProgress(ctx, data.operationId, completed, failed);
     } catch (error) {
       results.push({ appName, success: false, error: (error as Error).message });
+      failed++;
     }
   }
   
   return results;
 }
 
-async function processBulkRestart(job: Job<BulkRestartJob>, data: BulkRestartJob) {
+async function processBulkRestart(
+  job: Job<BulkRestartJob>,
+  data: BulkRestartJob,
+  ctx: WorkerContext
+) {
   const results: Array<{ deploymentId: string; success: boolean; error?: string }> = [];
   let completed = 0;
+  let failed = 0;
   
   for (const deploymentId of data.deploymentIds) {
     try {
@@ -223,15 +223,10 @@ async function processBulkRestart(job: Job<BulkRestartJob>, data: BulkRestartJob
       completed++;
       
       await job.updateProgress(Math.round((completed / data.deploymentIds.length) * 100));
-      
-      await prisma.bulkOperation.update({
-        where: { id: data.operationId },
-        data: {
-          completedItems: completed,
-        },
-      });
+      await updateBulkOperationProgress(ctx, data.operationId, completed, failed);
     } catch (error) {
       results.push({ deploymentId, success: false, error: (error as Error).message });
+      failed++;
     }
   }
   
@@ -289,6 +284,7 @@ export async function enqueueBulkFileUpdate(
 ) {
   return bulkOperationsQueue.add('bulk-file-update', {
     type: 'BULK_FILE_UPDATE',
+    action: 'bulk_file_update',
     operationId,
     organizationId,
     userId,
@@ -306,11 +302,28 @@ export async function enqueueBulkSync(
 ) {
   return bulkOperationsQueue.add('bulk-sync', {
     type: 'BULK_SYNC',
+    action: 'bulk_sync',
     operationId,
     organizationId,
     userId,
     appNames,
     prune,
+  });
+}
+
+export async function enqueueBulkRestart(
+  operationId: string,
+  organizationId: string,
+  userId: string,
+  deploymentIds: string[]
+) {
+  return bulkOperationsQueue.add('bulk-restart', {
+    type: 'BULK_RESTART',
+    action: 'bulk_restart',
+    operationId,
+    organizationId,
+    userId,
+    deploymentIds,
   });
 }
 

@@ -4,6 +4,12 @@ import { auth } from './auth';
 import { logger } from './logger';
 import { Ratelimit } from '@upstash/ratelimit';
 import { redis } from './redis';
+import { 
+  withApiContext, 
+  ApiContext, 
+  requireRole, 
+  logAuditEvent 
+} from './api-context';
 
 // =============================================================================
 // API Response Helpers
@@ -216,9 +222,22 @@ export async function withRateLimit(
 // API Route Handler Wrapper
 // =============================================================================
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ApiHandler = (request: Request, context?: any) => Promise<NextResponse>;
+/**
+ * Route handler context - supports dynamic route params
+ */
+interface RouteContext {
+  params?: Record<string, string>;
+}
 
+type ApiHandler<T extends RouteContext = RouteContext> = (
+  request: Request,
+  context?: T
+) => Promise<NextResponse>;
+
+/**
+ * Basic API handler wrapper (auth + rate limiting, NO tenant context)
+ * Use this for routes that don't need organization scoping
+ */
 export function withApiHandler(
   handler: ApiHandler,
   options: {
@@ -255,3 +274,97 @@ export function withApiHandler(
     }
   };
 }
+
+// =============================================================================
+// Tenant-Aware API Handler - For all organization-scoped routes
+// =============================================================================
+
+/**
+ * Handler function signature for tenant-aware routes
+ */
+type TenantApiHandler = (
+  request: Request,
+  ctx: ApiContext
+) => Promise<NextResponse>;
+
+export interface TenantApiOptions {
+  rateLimit?: RateLimitType;
+  requiredRole?: 'USER' | 'READWRITE' | 'ADMIN';
+  audit?: {
+    action: string;
+    resource: string;
+    getResourceId?: (request: Request) => string;
+  };
+}
+
+/**
+ * Tenant-aware API handler wrapper
+ * 
+ * This wrapper:
+ * 1. Validates authentication
+ * 2. Validates organization membership
+ * 3. Sets up AsyncLocalStorage context for tenant isolation
+ * 4. Applies rate limiting per organization
+ * 5. Optionally validates required role
+ * 6. Optionally logs audit events
+ * 
+ * ALWAYS use this for routes that access tenant-scoped data
+ */
+export function withTenantApiHandler(
+  handler: TenantApiHandler,
+  options: TenantApiOptions = {}
+): ApiHandler {
+  return async (request: Request) => {
+    try {
+      // This throws if auth fails or membership invalid
+      return await withApiContext(async (ctx) => {
+        // Role check
+        if (options.requiredRole) {
+          requireRole(ctx, options.requiredRole);
+        }
+        
+        // Organization-scoped rate limiting
+        if (options.rateLimit) {
+          const identifier = `${ctx.tenant.organizationId}:${ctx.tenant.userId}`;
+          const rateLimitResponse = await withRateLimit(options.rateLimit, identifier);
+          if (rateLimitResponse) {
+            return rateLimitResponse;
+          }
+        }
+        
+        // Execute handler
+        const response = await handler(request, ctx);
+        
+        // Audit logging
+        if (options.audit && response.status < 400) {
+          const resourceId = options.audit.getResourceId?.(request) ?? 'unknown';
+          await logAuditEvent(
+            ctx,
+            options.audit.action,
+            options.audit.resource,
+            resourceId
+          );
+        }
+        
+        return response;
+      });
+    } catch (error) {
+      // Handle specific errors gracefully
+      if (error instanceof Error) {
+        if (error.message.includes('does not have access')) {
+          return forbiddenError('You do not have access to this organization');
+        }
+        if (error.message.includes('requires') && error.message.includes('role')) {
+          return forbiddenError(error.message);
+        }
+        if (error.message.includes('x-organization-id')) {
+          return errorResponse('ORGANIZATION_REQUIRED', error.message, 400);
+        }
+      }
+      return serverError(error);
+    }
+  };
+}
+
+// Re-export context utilities for route handlers
+export { requireRole, logAuditEvent, type ApiContext };

@@ -42,19 +42,20 @@ function validateTenantInArgs(
     );
   }
 
-  // For findUnique, ensure compound unique includes organizationId
+  // HARD FAIL on findUnique - use findFirst with organizationId filter instead
   if (operation === 'findUnique') {
-    logger.warn(
-      { model, operation },
-      'findUnique on tenant-scoped model. Consider using findFirst with organizationId filter.'
+    throw new Error(
+      `findUnique is not allowed on tenant-scoped model "${model}". ` +
+      `Use findFirst with organizationId filter, or add compound unique constraint.`
     );
   }
 }
 
 /**
  * Add organizationId filter to where clause
+ * @internal Reserved for future refactoring
  */
-function addTenantFilter<T extends { where?: unknown }>(
+function _addTenantFilter<T extends { where?: unknown }>(
   args: T,
   organizationId: string
 ): T {
@@ -70,8 +71,9 @@ function addTenantFilter<T extends { where?: unknown }>(
 
 /**
  * Add organizationId to create data
+ * @internal Reserved for future refactoring
  */
-function addTenantToData<T extends { data?: unknown }>(
+function _addTenantToData<T extends { data?: unknown }>(
   args: T,
   organizationId: string
 ): T {
@@ -84,6 +86,10 @@ function addTenantToData<T extends { data?: unknown }>(
     },
   } as T;
 }
+
+// Keep references to suppress unused warnings
+void _addTenantFilter;
+void _addTenantToData;
 
 /**
  * Create Prisma client with tenant extension
