@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireApiAuth } from '@/lib/api';
 import { getRenderUrl, proxyRender } from '@/lib/services/grafana';
-import { getOrganizationIdFromHeaders } from '@/lib/api-context';
+import { withApiContext, requireRole } from '@/lib/api-context';
 
 // Note: Not using withApiHandler because proxyRender returns a raw Response for binary data
 export async function GET(request: Request) {
@@ -22,7 +22,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: false, error: { code: 'UID_REQUIRED', message: 'uid is required' } }, { status: 400 });
   }
 
-  const orgId = await getOrganizationIdFromHeaders();
-  const url = await getRenderUrl(orgId, { uid, panelId, width, height, theme, from, to });
-  return proxyRender(orgId, url);
+  return withApiContext(async (ctx) => {
+    requireRole(ctx, 'READWRITE');
+    const url = await getRenderUrl(ctx.tenant.organizationId, {
+      uid,
+      panelId,
+      width,
+      height,
+      theme,
+      from,
+      to,
+    });
+    return proxyRender(ctx.tenant.organizationId, url);
+  });
 }
