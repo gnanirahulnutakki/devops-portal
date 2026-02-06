@@ -11,7 +11,8 @@ export const GET = withApiHandler(async (request: Request) => {
   const panelId = searchParams.get('panelId') ?? '1';
   const width = searchParams.get('width') ?? '1000';
   const height = searchParams.get('height') ?? '500';
-  const theme = searchParams.get('theme') ?? 'light';
+  const themeParam = searchParams.get('theme');
+  const theme: 'light' | 'dark' = themeParam === 'dark' ? 'dark' : 'light';
 
   if (!uid) {
     return NextResponse.json({ success: false, error: { code: 'UID_REQUIRED', message: 'uid is required' } }, { status: 400 });
