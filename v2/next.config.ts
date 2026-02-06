@@ -28,7 +28,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https: blob:",
               "font-src 'self' data:",
-              "connect-src 'self' https://api.github.com https://*.githubusercontent.com",
+              `connect-src 'self' https://api.github.com https://*.githubusercontent.com ${process.env.GRAFANA_URL ?? ''}`.trim(),
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
@@ -69,6 +69,11 @@ const nextConfig: NextConfig = {
     fetches: {
       fullUrl: true,
     },
+  },
+
+  env: {
+    GRAFANA_URL: process.env.GRAFANA_URL,
+    GRAFANA_API_KEY: process.env.GRAFANA_API_KEY,
   },
 };
 

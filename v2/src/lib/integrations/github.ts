@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 // GitHub client created via Octokit
 import { logger } from '../logger';
-import { getGitHubToken } from '../redis';
+import { githubTokens } from '../token-store';
 
 // =============================================================================
 // Types
@@ -514,7 +514,7 @@ export class GitHubService {
 // =============================================================================
 
 export async function createGitHubServiceForUser(userId: string): Promise<GitHubService | null> {
-  const token = await getGitHubToken(userId);
+  const token = await githubTokens.get(userId);
   if (!token) {
     logger.warn({ userId }, 'No GitHub token found for user');
     return null;
