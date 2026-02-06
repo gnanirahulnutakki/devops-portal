@@ -42,11 +42,11 @@ function validateTenantInArgs(
     );
   }
 
-  // For findUnique, ensure compound unique includes organizationId
+  // HARD FAIL on findUnique - use findFirst with organizationId filter instead
   if (operation === 'findUnique') {
-    logger.warn(
-      { model, operation },
-      'findUnique on tenant-scoped model. Consider using findFirst with organizationId filter.'
+    throw new Error(
+      `findUnique is not allowed on tenant-scoped model "${model}". ` +
+      `Use findFirst with organizationId filter, or add compound unique constraint.`
     );
   }
 }
