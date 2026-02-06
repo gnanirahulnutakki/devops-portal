@@ -222,6 +222,7 @@ export async function withRateLimit(
 // API Route Handler Wrapper
 // =============================================================================
 
+ 
 type ApiHandler = (request: Request, context?: any) => Promise<NextResponse>;
 
 /**

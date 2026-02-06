@@ -61,7 +61,7 @@ export const authConfig: NextAuthConfig = {
         token.userId = user.id;
         token.provider = account.provider;
         
-        // Store GitHub token securely with AES-256-GCM key-ring encryption
+        // Store GitHub token with AES-256-GCM key-ring encryption
         if (account.provider === 'github' && account.access_token) {
           await githubTokens.store(user.id!, {
             accessToken: account.access_token,

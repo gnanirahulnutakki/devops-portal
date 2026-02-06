@@ -53,43 +53,8 @@ function validateTenantInArgs(
 
 /**
  * Add organizationId filter to where clause
- * @internal Reserved for future refactoring
  */
-function _addTenantFilter<T extends { where?: unknown }>(
-  args: T,
-  organizationId: string
-): T {
-  const where = (args.where ?? {}) as Record<string, unknown>;
-  return {
-    ...args,
-    where: {
-      ...where,
-      organizationId,
-    },
-  } as T;
-}
-
-/**
- * Add organizationId to create data
- * @internal Reserved for future refactoring
- */
-function _addTenantToData<T extends { data?: unknown }>(
-  args: T,
-  organizationId: string
-): T {
-  const data = (args.data ?? {}) as Record<string, unknown>;
-  return {
-    ...args,
-    data: {
-      ...data,
-      organizationId,
-    },
-  } as T;
-}
-
-// Keep references to suppress unused warnings
-void _addTenantFilter;
-void _addTenantToData;
+// Note: enforcement is done in the main switch; helpers not needed
 
 /**
  * Create Prisma client with tenant extension
@@ -108,7 +73,7 @@ export function createTenantPrismaClient(basePrisma: PrismaClient) {
           const startTime = Date.now();
           const context = getTenantContextOrNull();
           
-          // Skip tenant scoping for non-tenant models or when no context
+          // Skip tenant scoping for non-tenant models
           if (!isTenantScopedModel(model)) {
             return query(args);
           }
@@ -125,58 +90,99 @@ export function createTenantPrismaClient(basePrisma: PrismaClient) {
           const { organizationId } = context;
           let modifiedArgs = args;
 
-          // Add tenant filtering/scoping based on operation
-          // Using type assertions to handle Prisma's complex types
           const typedArgs = args as Record<string, unknown>;
-          
-          // Only add organizationId for tenant-scoped models
-          // Skip models that don't have organizationId field (like UserPreference)
-          if (['findFirst', 'findMany', 'findUnique', 'findUniqueOrThrow', 
-               'findFirstOrThrow', 'count', 'aggregate', 'groupBy',
-               'update', 'updateMany', 'delete', 'deleteMany'].includes(operation)) {
-            // Add organizationId to where clause
-            const existingWhere = typedArgs.where as Record<string, unknown> || {};
-            modifiedArgs = {
-              ...typedArgs,
-              where: {
-                ...existingWhere,
-                organizationId,
-              },
-            } as typeof args;
-          } else if (operation === 'create') {
-            // Add organizationId to data
-            const existingData = typedArgs.data as Record<string, unknown> || {};
-            modifiedArgs = {
-              ...typedArgs,
-              data: {
-                ...existingData,
-                organizationId,
-              },
-            } as typeof args;
-          } else if (operation === 'createMany') {
-            // Add organizationId to each record
-            const dataArray = typedArgs.data as Record<string, unknown>[];
-            modifiedArgs = {
-              ...typedArgs,
-              data: dataArray.map((record) => ({
-                ...record,
-                organizationId,
-              })),
-            } as typeof args;
-          } else if (operation === 'upsert') {
-            const existingWhere = typedArgs.where as Record<string, unknown> || {};
-            const existingCreate = typedArgs.create as Record<string, unknown> || {};
-            modifiedArgs = {
-              ...typedArgs,
-              where: {
-                ...existingWhere,
-                organizationId,
-              },
-              create: {
-                ...existingCreate,
-                organizationId,
-              },
-            } as typeof args;
+
+          // Enforce tenant scoping based on operation (hard-fail on mismatch)
+          switch (operation) {
+            case 'findUnique':
+            case 'findUniqueOrThrow': {
+              throw new Error('[SECURITY] findUnique disallowed in tenant context. Use findFirst with organizationId');
+            }
+
+            case 'findFirst':
+            case 'findFirstOrThrow':
+            case 'findMany':
+            case 'count':
+            case 'aggregate':
+            case 'groupBy': {
+              const where = (typedArgs.where as Record<string, unknown>) || {};
+              if (where.organizationId && where.organizationId !== organizationId) {
+                throw new Error(`[SECURITY] organizationId mismatch for ${model}.${operation}`);
+              }
+              modifiedArgs = {
+                ...typedArgs,
+                where: { ...where, organizationId },
+              } as typeof args;
+              break;
+            }
+
+            case 'create': {
+              const data = (typedArgs.data as Record<string, unknown>) || {};
+              if (data.organizationId && data.organizationId !== organizationId) {
+                throw new Error(`[SECURITY] organizationId mismatch for ${model}.create`);
+              }
+              modifiedArgs = {
+                ...typedArgs,
+                data: { ...data, organizationId },
+              } as typeof args;
+              break;
+            }
+
+            case 'createMany': {
+              const dataArray = (typedArgs.data as Record<string, unknown>[]) || [];
+              dataArray.forEach((record) => {
+                const org = (record as any).organizationId;
+                if (org && org !== organizationId) {
+                  throw new Error(`[SECURITY] organizationId mismatch in createMany for ${model}`);
+                }
+              });
+              modifiedArgs = {
+                ...typedArgs,
+                data: dataArray.map((record) => ({
+                  ...record,
+                  organizationId,
+                })),
+              } as typeof args;
+              break;
+            }
+
+            case 'update':
+            case 'updateMany':
+            case 'delete':
+            case 'deleteMany': {
+              const where = (typedArgs.where as Record<string, unknown>) || {};
+              if (where.organizationId && where.organizationId !== organizationId) {
+                throw new Error(`[SECURITY] organizationId mismatch for ${model}.${operation}`);
+              }
+              modifiedArgs = {
+                ...typedArgs,
+                where: { ...where, organizationId },
+              } as typeof args;
+              break;
+            }
+
+            case 'upsert': {
+              const upsertArgs = typedArgs as { where?: any; create?: any; update?: any };
+              if (upsertArgs.where?.organizationId && upsertArgs.where.organizationId !== organizationId) {
+                throw new Error(`[SECURITY] organizationId mismatch for ${model}.upsert where`);
+              }
+              if (upsertArgs.create?.organizationId && upsertArgs.create.organizationId !== organizationId) {
+                throw new Error(`[SECURITY] organizationId mismatch for ${model}.upsert create`);
+              }
+              modifiedArgs = {
+                ...typedArgs,
+                where: { ...(upsertArgs.where || {}), organizationId },
+                create: { ...(upsertArgs.create || {}), organizationId },
+                update: upsertArgs.update,
+              } as typeof args;
+              break;
+            }
+
+            default: {
+              if (!context.organizationId) {
+                throw new Error(`[SECURITY] organizationId required for ${model}.${operation}`);
+              }
+            }
           }
 
           try {

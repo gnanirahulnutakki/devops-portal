@@ -164,8 +164,6 @@ async function processBulkFileUpdate(
         completed++;
         
         await job.updateProgress(Math.round((completed / total) * 100));
-        
-        // Update progress using tenant-scoped client
         await updateBulkOperationProgress(ctx, data.operationId, completed, failed);
       } catch (error) {
         results.push({ branch, success: false, error: (error as Error).message });

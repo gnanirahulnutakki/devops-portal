@@ -28,6 +28,7 @@ export async function getArgoService(orgId: string): Promise<ArgoCDService> {
   return new ArgoCDService(baseUrl, token);
 }
 
+// Convenience wrappers
 export async function listApplications(orgId: string, project?: string): Promise<ArgoCDApplication[]> {
   const svc = await getArgoService(orgId);
   return svc.listApplications(project);
@@ -51,4 +52,3 @@ export async function getApplicationHistory(orgId: string, name: string): Promis
   const svc = await getArgoService(orgId);
   return svc.getApplicationHistory(name);
 }
-
