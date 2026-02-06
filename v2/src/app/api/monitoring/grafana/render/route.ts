@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { requireApiAuth, withApiHandler } from '@/lib/api';
+import { requireApiAuth } from '@/lib/api';
 import { getRenderUrl, proxyRender } from '@/lib/services/grafana';
 import { getOrganizationIdFromHeaders } from '@/lib/api-context';
 
-export const GET = withApiHandler(async (request: Request) => {
+// Note: Not using withApiHandler because proxyRender returns a raw Response for binary data
+export async function GET(request: Request) {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
@@ -21,7 +22,7 @@ export const GET = withApiHandler(async (request: Request) => {
     return NextResponse.json({ success: false, error: { code: 'UID_REQUIRED', message: 'uid is required' } }, { status: 400 });
   }
 
-  const orgId = getOrganizationIdFromHeaders();
+  const orgId = await getOrganizationIdFromHeaders();
   const url = await getRenderUrl(orgId, { uid, panelId, width, height, theme, from, to });
   return proxyRender(orgId, url);
-});
+}

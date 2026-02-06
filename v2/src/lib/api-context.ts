@@ -22,6 +22,21 @@ export interface ApiContext {
 }
 
 /**
+ * Get organization ID from request headers (lightweight, no DB lookup)
+ * Use for routes that just need the org ID without full context
+ */
+export async function getOrganizationIdFromHeaders(): Promise<string> {
+  const headersList = await headers();
+  const organizationId = headersList.get('x-organization-id');
+  
+  if (!organizationId) {
+    throw new Error('x-organization-id header is required');
+  }
+  
+  return organizationId;
+}
+
+/**
  * Get organization context from request headers
  * Headers are set by middleware after validation
  */

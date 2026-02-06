@@ -9,7 +9,7 @@ export const GET = withApiHandler(async () => {
   if (authResult instanceof NextResponse) return authResult;
 
   try {
-    const orgId = getOrganizationIdFromHeaders();
+    const orgId = await getOrganizationIdFromHeaders();
     const dashboards = await listDashboards(orgId);
     return successResponse(dashboards);
   } catch (error) {
