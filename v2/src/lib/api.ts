@@ -222,17 +222,7 @@ export async function withRateLimit(
 // API Route Handler Wrapper
 // =============================================================================
 
-/**
- * Route handler context - supports dynamic route params
- */
-interface RouteContext {
-  params?: Record<string, string>;
-}
-
-type ApiHandler<T extends RouteContext = RouteContext> = (
-  request: Request,
-  context?: T
-) => Promise<NextResponse>;
+type ApiHandler = (request: Request, context?: any) => Promise<NextResponse>;
 
 /**
  * Basic API handler wrapper (auth + rate limiting, NO tenant context)
