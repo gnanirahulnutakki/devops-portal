@@ -1,4 +1,5 @@
 # DevOps Portal v2
+# README.md
 
 Enterprise-grade DevOps Management Portal built with Next.js 15, React 19, and a modern security-first stack.
 
