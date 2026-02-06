@@ -135,3 +135,92 @@ export function useRefreshApplication() {
     },
   });
 }
+
+// =============================================================================
+// Resources Hook
+// =============================================================================
+
+export interface ArgoCDResource {
+  group: string;
+  kind: string;
+  namespace: string;
+  name: string;
+  status: string;
+  health?: {
+    status: string;
+    message?: string;
+  };
+  syncWave?: number;
+  version: string;
+  createdAt?: string;
+}
+
+export function useApplicationResources(name: string) {
+  return useQuery({
+    queryKey: ['argocd', 'application', name, 'resources'],
+    queryFn: async () => {
+      const response = await api.get(`argocd/applications/${name}/resources`).json<{
+        success: boolean;
+        data: ArgoCDResource[];
+      }>();
+      return response.data;
+    },
+    enabled: !!name,
+    staleTime: 30 * 1000,
+  });
+}
+
+// =============================================================================
+// History Hook
+// =============================================================================
+
+export interface ArgoCDHistoryEntry {
+  id: number;
+  revision: string;
+  deployedAt: string;
+  deployStartedAt?: string;
+  source: {
+    repoURL: string;
+    path: string;
+    targetRevision: string;
+  };
+  initiatedBy?: {
+    username?: string;
+    automated?: boolean;
+  };
+}
+
+export function useApplicationHistory(name: string) {
+  return useQuery({
+    queryKey: ['argocd', 'application', name, 'history'],
+    queryFn: async () => {
+      const response = await api.get(`argocd/applications/${name}/history`).json<{
+        success: boolean;
+        data: ArgoCDHistoryEntry[];
+      }>();
+      return response.data;
+    },
+    enabled: !!name,
+    staleTime: 60 * 1000, // History changes less frequently
+  });
+}
+
+// =============================================================================
+// Projects Hook (for filtering)
+// =============================================================================
+
+export function useArgoCDProjects() {
+  return useQuery({
+    queryKey: ['argocd', 'projects'],
+    queryFn: async () => {
+      // Extract unique projects from applications
+      const response = await api.get('argocd/applications').json<{
+        success: boolean;
+        data: ArgoCDApplication[];
+      }>();
+      const projects = [...new Set(response.data.map(app => app.project))];
+      return projects.sort();
+    },
+    staleTime: 5 * 60 * 1000, // Projects change rarely
+  });
+}
