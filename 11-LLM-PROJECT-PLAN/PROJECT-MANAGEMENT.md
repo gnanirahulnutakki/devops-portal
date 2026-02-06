@@ -822,7 +822,7 @@ If an agent session ends mid-task:
 
 **Impact:** REST + Zod confirmed as canonical API pattern. Technology stack documentation finalized. AUTH and SECURITY tracks can now proceed with clear stack decisions.
 
-**PR:** [To be added after PR creation]
+**PR:** https://github.com/gnanirahulnutakki/devops-portal/pull/13
 **Branch:** `feature/stack-finalization`
 
 ---
