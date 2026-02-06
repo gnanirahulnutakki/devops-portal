@@ -5,7 +5,8 @@ import {
   successResponse, 
   errorResponse,
 } from '@/lib/api';
-import { getArgoCDService } from '@/lib/integrations/argocd';
+import { listApplications } from '@/lib/services/argocd';
+import { withApiContext, requireRole } from '@/lib/api-context';
 
 export const GET = withApiHandler(
   async (request: Request) => {
@@ -15,19 +16,20 @@ export const GET = withApiHandler(
     const url = new URL(request.url);
     const project = url.searchParams.get('project') || undefined;
 
-    try {
-      const argocd = getArgoCDService();
-      const applications = await argocd.listApplications(project);
-
-      return successResponse(applications);
-    } catch (error) {
-      return errorResponse(
-        'ARGOCD_ERROR',
-        'Failed to fetch ArgoCD applications',
-        500,
-        { message: (error as Error).message }
-      );
-    }
+    return withApiContext(async (ctx) => {
+      try {
+        requireRole(ctx, 'READWRITE');
+        const applications = await listApplications(ctx.tenant.organizationId, project);
+        return successResponse(applications);
+      } catch (error) {
+        return errorResponse(
+          'ARGOCD_ERROR',
+          'Failed to fetch ArgoCD applications',
+          500,
+          { message: (error as Error).message }
+        );
+      }
+    });
   },
   { rateLimit: 'general', requireAuth: true }
 );
