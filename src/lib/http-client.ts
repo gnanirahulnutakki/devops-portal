@@ -102,10 +102,16 @@ export function createArgoCDClient(baseUrl: string, token: string): KyInstance {
 // Grafana API client
 export function createGrafanaClient(baseUrl: string, apiKey: string): KyInstance {
   const url = baseUrl.replace(/\/$/, '');
+  // Support both Bearer token and Basic auth (username:password format)
+  const isBasicAuth = apiKey.includes(':');
+  const authHeader = isBasicAuth 
+    ? `Basic ${Buffer.from(apiKey).toString('base64')}`
+    : `Bearer ${apiKey}`;
+  
   return createHttpClient({
     baseUrl: url,
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: authHeader,
     },
   });
 }

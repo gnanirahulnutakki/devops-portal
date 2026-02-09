@@ -31,6 +31,7 @@ interface ArgoCDApplication {
   };
   createdAt: string;
   reconciledAt?: string;
+  externalUrl?: string;
 }
 
 interface SyncParams {

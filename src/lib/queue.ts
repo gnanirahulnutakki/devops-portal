@@ -9,15 +9,22 @@ import {
   TenantJobPayload,
 } from './worker-context';
 import { initQueueMetrics, trackWorkerActivity } from './queue-metrics';
+import { getRedis } from './redis';
 
 // =============================================================================
 // Queue Configuration
 // =============================================================================
 
-const connection = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-};
+function getConnection() {
+  // Check if Redis is configured
+  const redis = getRedis();
+  if (!redis) return null;
+  
+  return {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379'),
+  };
+}
 
 // =============================================================================
 // Job Types
@@ -53,44 +60,95 @@ export interface BulkRestartJob extends TenantJobPayload {
 export type JobData = BulkFileUpdateJob | BulkSyncJob | BulkRestartJob;
 
 // =============================================================================
-// Queues
+// Queues (Lazy Initialized)
 // =============================================================================
 
-export const bulkOperationsQueue = new Queue<JobData>('bulk-operations', {
-  connection,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 1000,
+let _bulkOperationsQueue: Queue<JobData> | null = null;
+let _queueEvents: QueueEvents | null = null;
+
+function getBulkOperationsQueue(): Queue<JobData> | null {
+  if (_bulkOperationsQueue) return _bulkOperationsQueue;
+  
+  const connection = getConnection();
+  if (!connection) {
+    logger.info('Redis not available, queue disabled');
+    return null;
+  }
+  
+  _bulkOperationsQueue = new Queue<JobData>('bulk-operations', {
+    connection,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 1000,
+      },
+      removeOnComplete: {
+        age: 24 * 60 * 60, // Keep completed jobs for 24 hours
+        count: 1000,
+      },
+      removeOnFail: {
+        age: 7 * 24 * 60 * 60, // Keep failed jobs for 7 days
+      },
     },
-    removeOnComplete: {
-      age: 24 * 60 * 60, // Keep completed jobs for 24 hours
-      count: 1000,
-    },
-    removeOnFail: {
-      age: 7 * 24 * 60 * 60, // Keep failed jobs for 7 days
-    },
+  });
+  
+  return _bulkOperationsQueue;
+}
+
+// Export a getter for backwards compatibility
+export const bulkOperationsQueue = {
+  get instance() {
+    return getBulkOperationsQueue();
   },
-});
+  async getJobCounts(...args: Parameters<Queue['getJobCounts']>) {
+    const queue = getBulkOperationsQueue();
+    if (!queue) return { waiting: 0, active: 0, failed: 0 };
+    return queue.getJobCounts(...args);
+  },
+  async getWorkers() {
+    const queue = getBulkOperationsQueue();
+    if (!queue) return [];
+    return queue.getWorkers();
+  },
+  async add(...args: Parameters<Queue<JobData>['add']>) {
+    const queue = getBulkOperationsQueue();
+    if (!queue) throw new Error('Queue not available - Redis not configured');
+    return queue.add(...args);
+  },
+  async getJob(jobId: string) {
+    const queue = getBulkOperationsQueue();
+    if (!queue) return null;
+    return queue.getJob(jobId);
+  },
+};
 
 // =============================================================================
-// Queue Events
+// Queue Events (Lazy Initialized)
 // =============================================================================
 
-const queueEvents = new QueueEvents('bulk-operations', { connection });
+function getQueueEvents(): QueueEvents | null {
+  if (_queueEvents) return _queueEvents;
+  
+  const connection = getConnection();
+  if (!connection) return null;
+  
+  _queueEvents = new QueueEvents('bulk-operations', { connection });
+  
+  _queueEvents.on('completed', async ({ jobId, returnvalue }) => {
+    logger.info({ jobId, returnvalue }, 'Job completed');
+  });
 
-queueEvents.on('completed', async ({ jobId, returnvalue }) => {
-  logger.info({ jobId, returnvalue }, 'Job completed');
-});
+  _queueEvents.on('failed', async ({ jobId, failedReason }) => {
+    logger.error({ jobId, failedReason }, 'Job failed');
+  });
 
-queueEvents.on('failed', async ({ jobId, failedReason }) => {
-  logger.error({ jobId, failedReason }, 'Job failed');
-});
-
-queueEvents.on('progress', async ({ jobId, data }) => {
-  logger.debug({ jobId, data }, 'Job progress');
-});
+  _queueEvents.on('progress', async ({ jobId, data }) => {
+    logger.debug({ jobId, data }, 'Job progress');
+  });
+  
+  return _queueEvents;
+}
 
 // =============================================================================
 // Worker
@@ -239,8 +297,17 @@ let cleanupMetrics: (() => Promise<void>) | null = null;
 export function startWorker() {
   if (worker) return;
   
+  const connection = getConnection();
+  if (!connection) {
+    logger.info('Redis not available, worker not started');
+    return;
+  }
+  
+  const queue = getBulkOperationsQueue();
+  if (!queue) return;
+  
   // Initialize queue metrics collection
-  cleanupMetrics = initQueueMetrics(bulkOperationsQueue, 'bulk-operations', connection);
+  cleanupMetrics = initQueueMetrics(queue, 'bulk-operations', connection);
   
   worker = new Worker<JobData>('bulk-operations', processJob, {
     connection,

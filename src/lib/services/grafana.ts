@@ -6,8 +6,11 @@ import { getGrafanaCredentials } from './integration-credentials';
  * Check if Grafana is configured (either via env or org settings)
  * Async check that verifies org-scoped credentials or env fallback
  */
-export async function isGrafanaConfigured(organizationId: string): Promise<boolean> {
-  const creds = await getGrafanaCredentials(organizationId);
+export async function isGrafanaConfigured(
+  organizationId: string,
+  credentialId?: string
+): Promise<boolean> {
+  const creds = await getGrafanaCredentials(organizationId, { credentialId });
   return creds !== null;
 }
 
@@ -30,6 +33,12 @@ export interface GrafanaFolder {
   url: string;
 }
 
+export interface GrafanaPanel {
+  id: number;
+  title: string;
+  type: string;
+}
+
 export interface GrafanaAlert {
   uid: string;
   title: string;
@@ -40,6 +49,10 @@ export interface GrafanaAlert {
   ruleGroup?: string;
   folderUid?: string;
   folderTitle?: string;
+  state?: string;
+  health?: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 }
 
 interface GrafanaCreds {
@@ -47,9 +60,12 @@ interface GrafanaCreds {
   apiKey: string;
 }
 
-async function getGrafanaCreds(organizationId: string): Promise<GrafanaCreds> {
+async function getGrafanaCreds(
+  organizationId: string,
+  credentialId?: string
+): Promise<GrafanaCreds> {
   // First try integration credentials (org-scoped)
-  const integrationCreds = await getGrafanaCredentials(organizationId);
+  const integrationCreds = await getGrafanaCredentials(organizationId, { credentialId });
   if (integrationCreds) {
     return {
       baseUrl: integrationCreds.url.replace(/\/$/, ''),
@@ -84,10 +100,13 @@ async function getGrafanaCreds(organizationId: string): Promise<GrafanaCreds> {
   return { baseUrl: envBase.replace(/\/$/, ''), apiKey: envKey };
 }
 
-export async function listDashboards(orgId: string): Promise<GrafanaDashboard[]> {
-  const { baseUrl, apiKey } = await getGrafanaCreds(orgId);
+export async function listDashboards(
+  orgId: string,
+  credentialId?: string
+): Promise<GrafanaDashboard[]> {
+  const { baseUrl, apiKey } = await getGrafanaCreds(orgId, credentialId);
   const client = createGrafanaClient(baseUrl, apiKey);
-  const dashboards = await fetchJson<GrafanaDashboard[]>(client, '/api/search?type=dash-db');
+  const dashboards = await fetchJson<GrafanaDashboard[]>(client, 'api/search?type=dash-db');
   // Resolve relative dashboard URLs to absolute URLs so the UI doesn't need the Grafana base URL
   return dashboards.map((d) => ({
     ...d,
@@ -95,10 +114,13 @@ export async function listDashboards(orgId: string): Promise<GrafanaDashboard[]>
   }));
 }
 
-export async function listFolders(orgId: string): Promise<GrafanaFolder[]> {
-  const { baseUrl, apiKey } = await getGrafanaCreds(orgId);
+export async function listFolders(
+  orgId: string,
+  credentialId?: string
+): Promise<GrafanaFolder[]> {
+  const { baseUrl, apiKey } = await getGrafanaCreds(orgId, credentialId);
   const client = createGrafanaClient(baseUrl, apiKey);
-  const folders = await fetchJson<GrafanaFolder[]>(client, '/api/folders');
+  const folders = await fetchJson<GrafanaFolder[]>(client, 'api/folders');
   // Resolve relative folder URLs to absolute URLs so the UI doesn't need to know the Grafana base URL
   return folders.map((f) => ({
     ...f,
@@ -106,14 +128,71 @@ export async function listFolders(orgId: string): Promise<GrafanaFolder[]> {
   }));
 }
 
-export async function listAlerts(orgId: string): Promise<GrafanaAlert[]> {
-  const { baseUrl, apiKey } = await getGrafanaCreds(orgId);
+export async function listAlerts(
+  orgId: string,
+  credentialId?: string
+): Promise<GrafanaAlert[]> {
+  const { baseUrl, apiKey } = await getGrafanaCreds(orgId, credentialId);
   const client = createGrafanaClient(baseUrl, apiKey);
-  // Grafana Alerting (Unified) API
-  return fetchJson<GrafanaAlert[]>(client, '/api/ruler/grafana/api/v1/rules');
+  // Grafana Alerting (Unified) API can return nested groups
+  const payload = await fetchJson<any>(client, 'api/ruler/grafana/api/v1/rules');
+  if (Array.isArray(payload)) return payload as GrafanaAlert[];
+
+  const groups: any[] = [];
+  if (Array.isArray(payload?.groups)) {
+    groups.push(...payload.groups);
+  } else if (payload && typeof payload === 'object') {
+    Object.values(payload).forEach((ns: any) => {
+      if (Array.isArray(ns?.groups)) groups.push(...ns.groups);
+    });
+  }
+
+  const rules: GrafanaAlert[] = [];
+  groups.forEach((group) => {
+    (group.rules || []).forEach((rule: any) => {
+      rules.push({
+        uid: rule.uid || rule.alertUID || rule.name,
+        title: rule.title || rule.name || 'Untitled Alert',
+        condition: rule.condition || rule.expression || '',
+        data: rule.data,
+        orgId: rule.orgId,
+        updated: rule.updated || rule.updatedAt,
+        ruleGroup: group.name || rule.ruleGroup,
+        folderUid: rule.folderUid,
+        folderTitle: rule.folderTitle,
+        state: rule.state,
+        health: rule.health,
+        labels: rule.labels,
+        annotations: rule.annotations,
+      });
+    });
+  });
+
+  return rules;
 }
 
-export async function getRenderUrl(orgId: string, params: {
+export async function listDashboardPanels(
+  orgId: string,
+  uid: string,
+  credentialId?: string
+): Promise<GrafanaPanel[]> {
+  const { baseUrl, apiKey } = await getGrafanaCreds(orgId, credentialId);
+  const client = createGrafanaClient(baseUrl, apiKey);
+  const payload = await fetchJson<any>(client, `api/dashboards/uid/${uid}`);
+  const panels = payload?.dashboard?.panels;
+  if (!Array.isArray(panels)) return [];
+  return panels
+    .filter((panel: any) => typeof panel?.id === 'number')
+    .map((panel: any) => ({
+      id: panel.id,
+      title: panel.title || `Panel ${panel.id}`,
+      type: panel.type || 'panel',
+    }));
+}
+
+export async function getRenderUrl(
+  orgId: string,
+  params: {
   uid: string;
   panelId?: string;
   width?: string;
@@ -122,8 +201,9 @@ export async function getRenderUrl(orgId: string, params: {
   from?: string;
   to?: string;
   vars?: Record<string, string>;
+  credentialId?: string;
 }): Promise<string> {
-  const { baseUrl } = await getGrafanaCreds(orgId);
+  const { baseUrl } = await getGrafanaCreds(orgId, params.credentialId);
   const {
     uid,
     panelId = '1',
@@ -150,8 +230,12 @@ export async function getRenderUrl(orgId: string, params: {
   return url.toString();
 }
 
-export async function proxyRender(orgId: string, renderUrl: string) {
-  const { apiKey } = await getGrafanaCreds(orgId);
+export async function proxyRender(
+  orgId: string,
+  renderUrl: string,
+  credentialId?: string
+) {
+  const { apiKey } = await getGrafanaCreds(orgId, credentialId);
   const client = createGrafanaClient(renderUrl, apiKey);
   const res = await client.get('', { cache: 'no-store' });
   const arrayBuffer = await res.arrayBuffer();

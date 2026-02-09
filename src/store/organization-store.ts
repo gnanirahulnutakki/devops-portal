@@ -1,10 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+export type UserRole = 'ADMIN' | 'READWRITE' | 'USER';
+
 interface Organization {
   id: string;
   name: string;
   slug: string;
+  role?: UserRole;
 }
 
 interface OrganizationState {
@@ -25,3 +28,10 @@ export const useOrganizationStore = create<OrganizationState>()(
     }
   )
 );
+
+/**
+ * Helper to check if user has admin role
+ */
+export function isAdmin(role?: UserRole): boolean {
+  return role === 'ADMIN';
+}

@@ -154,21 +154,22 @@ model Cluster {
   // Connection
   kubeconfig  String?  @db.Text // Encrypted
   argocdUrl   String?
+  config      Json?    @map("config")
   
   // Status
   status      ClusterStatus @default(UNKNOWN)
-  lastHealthCheck DateTime?
+  lastHealthCheck DateTime? @map("last_health_check")
   
   // Organization scope
-  organizationId String
+  organizationId String @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   
   // Relations
   deployments Deployment[]
   
   // Timestamps
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
   
   // Compound unique for safe tenant-scoped lookups
   @@unique([id, organizationId])
@@ -378,7 +379,7 @@ model AlertRule {
 
 model UserPreference {
   id          String   @id @default(cuid())
-  userId      String   @unique
+  userId      String   @unique @map("user_id")
   
   // UI preferences
   theme       String   @default("system") // light, dark, system
@@ -390,8 +391,8 @@ model UserPreference {
   slackNotifications Boolean @default(false)
   
   // Timestamps
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
   
   @@map("user_preferences")
 }
@@ -431,8 +432,8 @@ model IntegrationCredential {
   
   // Compound unique for safe tenant-scoped lookups
   @@unique([id, organizationId])
-  // Only one credential per provider per org
-  @@unique([organizationId, provider])
+  // Allow multiple credentials per provider per org (distinct by name)
+  @@unique([organizationId, provider, name])
   @@index([organizationId])
   @@map("integration_credentials")
 }
@@ -446,4 +447,7 @@ enum IntegrationProvider {
   S3
   SLACK
   PAGERDUTY
+  LLM
+  UPTIME_KUMA
+  SUPABASE
 }

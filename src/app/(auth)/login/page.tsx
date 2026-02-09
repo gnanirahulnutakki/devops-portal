@@ -34,7 +34,8 @@ function LoginContent() {
       const errorMessages: Record<string, string> = {
         'OAuthCallback': 'OAuth callback error. Check your provider configuration.',
         'OAuthSignin': 'Error starting OAuth sign in. Try again.',
-        'OAuthAccountNotLinked': 'This email is already registered with another provider.',
+        'OAuthAccountNotLinked': 'This email is already registered with another provider. Ensure your GitHub primary email matches your portal email.',
+        'AccessDenied': 'Access denied. You may not be a member of the required organization.',
         'Callback': 'Callback error during sign in.',
         'CredentialsSignin': 'Invalid email or password.',
         'SessionRequired': 'Please sign in to continue.',
@@ -62,19 +63,16 @@ function LoginContent() {
     setError(null);
 
     try {
-      const result = await signIn('credentials', {
+      // Use redirect: true to let NextAuth handle the redirect properly
+      // This avoids client-side redirect issues
+      await signIn('credentials', {
         email,
         password,
-        redirect: false,
         callbackUrl,
+        redirect: true,
       });
-
-      if (result?.error) {
-        setError('Invalid email or password');
-        setIsLoading(null);
-      } else if (result?.url) {
-        window.location.href = result.url;
-      }
+      // If we reach here with redirect: true, something went wrong
+      // signIn with redirect: true should never return
     } catch (err) {
       console.error('Credentials sign in error:', err);
       setError('An error occurred during sign in');
@@ -156,10 +154,12 @@ function LoginContent() {
                 </Button>
               </form>
 
-              {/* Demo credentials hint */}
-              <div className="text-center text-xs text-muted-foreground bg-muted/50 p-2 rounded">
-                <strong>Demo:</strong> admin@example.com / admin123
-              </div>
+              {/* Demo credentials hint - development only */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="text-center text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                  <strong>Demo:</strong> admin@example.com / admin123
+                </div>
+              )}
 
               {hasOAuthProviders && (
                 <div className="relative">

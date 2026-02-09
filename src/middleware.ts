@@ -60,9 +60,16 @@ export async function middleware(request: NextRequest) {
   }
 
   // Get session token with memberships
+  // NextAuth v5 uses AUTH_SECRET, fallback to NEXTAUTH_SECRET for compatibility
+  const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+  
   const token = await getToken({
     req: request,
-    secret: process.env.NEXTAUTH_SECRET,
+    secret,
+    // NextAuth v5 uses authjs cookie name with __Secure- prefix in production
+    cookieName: process.env.NODE_ENV === 'production' 
+      ? '__Secure-authjs.session-token' 
+      : 'authjs.session-token',
   }) as TokenWithMemberships | null;
 
   // Redirect to login if not authenticated

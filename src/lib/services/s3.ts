@@ -46,15 +46,6 @@ export async function isS3Configured(organizationId: string): Promise<boolean> {
   return creds !== null;
 }
 
-// Synchronous check for env-only (quick check, use sparingly)
-export function isS3ConfiguredSync(): boolean {
-  return !!(
-    process.env.S3_BUCKET &&
-    (process.env.AWS_REGION || process.env.S3_REGION) &&
-    process.env.AWS_ACCESS_KEY_ID &&
-    process.env.AWS_SECRET_ACCESS_KEY
-  );
-}
 
 // =============================================================================
 // Extended Credentials (with STS and path-style support)
@@ -196,7 +187,7 @@ function buildS3ListUrl(creds: ExtendedS3Credentials): { baseUrl: string; host: 
       return {
         baseUrl: `${endpointUrl.protocol}//${host}/${creds.bucket}`,
         host,
-        canonicalUri: '/' + creds.bucket + '/',
+        canonicalUri: '/' + creds.bucket,
       };
     } else {
       return {
@@ -348,9 +339,10 @@ export async function listObjects(
   const credentialScope = `${dateStamp}/${creds.region}/${service}/aws4_request`;
 
   // Build signed headers
+  const payloadHash = await sha256('');
   const headersToSign: Record<string, string> = {
     'host': host,
-    'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+    'x-amz-content-sha256': payloadHash,
     'x-amz-date': amzDate,
   };
   
@@ -363,8 +355,6 @@ export async function listObjects(
     .sort()
     .map(k => `${k}:${headersToSign[k]}\n`)
     .join('');
-
-  const payloadHash = 'UNSIGNED-PAYLOAD';
 
   const canonicalRequest = [
     'GET',
@@ -392,7 +382,7 @@ export async function listObjects(
   const requestHeaders: Record<string, string> = {
     'Host': host,
     'x-amz-date': amzDate,
-    'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+    'x-amz-content-sha256': payloadHash,
     'Authorization': authorization,
   };
   
@@ -488,9 +478,10 @@ export async function deleteObject(
   const credentialScope = `${dateStamp}/${creds.region}/${service}/aws4_request`;
 
   // Build signed headers
+  const payloadHash = await sha256('');
   const headersToSign: Record<string, string> = {
     'host': host,
-    'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+    'x-amz-content-sha256': payloadHash,
     'x-amz-date': amzDate,
   };
   
@@ -503,8 +494,6 @@ export async function deleteObject(
     .sort()
     .map(k => `${k}:${headersToSign[k]}\n`)
     .join('');
-
-  const payloadHash = 'UNSIGNED-PAYLOAD';
 
   const canonicalRequest = [
     'DELETE',
@@ -532,7 +521,7 @@ export async function deleteObject(
   const requestHeaders: Record<string, string> = {
     'Host': host,
     'x-amz-date': amzDate,
-    'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+    'x-amz-content-sha256': payloadHash,
     'Authorization': authorization,
   };
   
@@ -594,6 +583,12 @@ export function getMimeType(key: string): string {
     ico: 'image/x-icon',
     mp4: 'video/mp4',
     webm: 'video/webm',
+    log: 'text/plain',
+    csv: 'text/csv',
+    conf: 'text/plain',
+    cfg: 'text/plain',
+    ini: 'text/plain',
+    properties: 'text/plain',
     mp3: 'audio/mpeg',
     wav: 'audio/wav',
     ogg: 'audio/ogg',
@@ -618,6 +613,7 @@ export function isValidS3Key(key: string): boolean {
 }
 
 export function sanitizeS3Key(key: string): string {
-  // Remove leading slashes and normalize
-  return key.replace(/^\/+/, '').replace(/\/+/g, '/');
+  // Remove only leading slashes; preserve internal path structure including
+  // consecutive slashes which are valid in S3 keys (e.g., "fid//" is a real prefix)
+  return key.replace(/^\/+/, '');
 }

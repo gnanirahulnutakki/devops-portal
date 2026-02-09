@@ -3,15 +3,32 @@ import { logger } from './logger';
 
 const globalForRedis = globalThis as unknown as {
   redis: Redis | undefined;
+  redisEnabled: boolean | undefined;
 };
 
-function createRedisClient(): Redis {
-  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+// Check if Redis is configured
+const REDIS_ENABLED = process.env.REDIS_URL && 
+  process.env.REDIS_URL !== '' && 
+  !process.env.REDIS_URL.includes('localhost');
+
+function createRedisClient(): Redis | null {
+  if (!REDIS_ENABLED) {
+    logger.info('Redis disabled - no valid REDIS_URL configured');
+    return null;
+  }
+
+  const redisUrl = process.env.REDIS_URL!;
   
   const client = new Redis(redisUrl, {
     maxRetriesPerRequest: 3,
+    lazyConnect: true, // Don't connect immediately
+    connectTimeout: 5000, // 5 second timeout
     retryStrategy(times) {
-      const delay = Math.min(times * 50, 2000);
+      if (times > 3) {
+        logger.warn('Redis connection failed after 3 retries, giving up');
+        return null; // Stop retrying
+      }
+      const delay = Math.min(times * 500, 2000);
       return delay;
     },
     reconnectOnError(err) {
@@ -38,9 +55,21 @@ function createRedisClient(): Redis {
   return client;
 }
 
-export const redis = globalForRedis.redis ?? createRedisClient();
+// Lazy initialization
+let _redis: Redis | null = null;
 
-if (process.env.NODE_ENV !== 'production') globalForRedis.redis = redis;
+export function getRedis(): Redis | null {
+  if (_redis === undefined) {
+    _redis = globalForRedis.redis ?? createRedisClient();
+    if (process.env.NODE_ENV !== 'production' && _redis) {
+      globalForRedis.redis = _redis;
+    }
+  }
+  return _redis;
+}
+
+// For backwards compatibility - but may be null if Redis is disabled
+export const redis = getRedis();
 
 // =============================================================================
 // Token Storage (Encrypted)
@@ -90,14 +119,22 @@ const TOKEN_PREFIX = 'token:github:';
 const TOKEN_TTL = 8 * 60 * 60; // 8 hours
 
 export async function storeGitHubToken(userId: string, token: StoredToken): Promise<void> {
+  const client = getRedis();
+  if (!client) {
+    logger.debug('Redis not available, skipping token storage');
+    return;
+  }
   const key = `${TOKEN_PREFIX}${userId}`;
   const encrypted = encrypt(JSON.stringify(token));
-  await redis.setex(key, TOKEN_TTL, encrypted);
+  await client.setex(key, TOKEN_TTL, encrypted);
 }
 
 export async function getGitHubToken(userId: string): Promise<StoredToken | null> {
+  const client = getRedis();
+  if (!client) return null;
+  
   const key = `${TOKEN_PREFIX}${userId}`;
-  const encrypted = await redis.get(key);
+  const encrypted = await client.get(key);
   
   if (!encrypted) return null;
   
@@ -107,26 +144,30 @@ export async function getGitHubToken(userId: string): Promise<StoredToken | null
     
     // Check if expired
     if (token.expiresAt < Date.now()) {
-      await redis.del(key);
+      await client.del(key);
       return null;
     }
     
     return token;
   } catch (error) {
     logger.error({ error }, 'Failed to decrypt GitHub token');
-    await redis.del(key);
+    await client.del(key);
     return null;
   }
 }
 
 export async function deleteGitHubToken(userId: string): Promise<void> {
+  const client = getRedis();
+  if (!client) return;
   const key = `${TOKEN_PREFIX}${userId}`;
-  await redis.del(key);
+  await client.del(key);
 }
 
 export async function hasGitHubToken(userId: string): Promise<boolean> {
+  const client = getRedis();
+  if (!client) return false;
   const key = `${TOKEN_PREFIX}${userId}`;
-  const exists = await redis.exists(key);
+  const exists = await client.exists(key);
   return exists === 1;
 }
 

@@ -236,7 +236,7 @@ export default function ArgoCDPage() {
                   </Button>
                   <Button variant="outline" size="sm" asChild>
                     <a
-                      href={`${process.env.NEXT_PUBLIC_ARGOCD_URL}/applications/${app.name}`}
+                      href={app.externalUrl || '#'}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}

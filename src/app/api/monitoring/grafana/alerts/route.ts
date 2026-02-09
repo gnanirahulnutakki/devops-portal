@@ -9,16 +9,19 @@ import { trackIntegrationCall } from '@/lib/services/with-integration-metrics';
 import { logger } from '@/lib/logger';
 
 export const GET = withTenantApiHandler(
-  async (_request, ctx) => {
+  async (request, ctx) => {
     try {
-      const configured = await isGrafanaConfigured(ctx.tenant.organizationId);
+      const url = new URL(request.url);
+      const credentialId = url.searchParams.get('credentialId') || undefined;
+
+      const configured = await isGrafanaConfigured(ctx.tenant.organizationId, credentialId);
       if (!configured) {
         return errorResponse('GRAFANA_NOT_CONFIGURED', 'Grafana is not configured for this organization', 400);
       }
 
       try {
         const alerts = await trackIntegrationCall('grafana', 'listAlerts', () =>
-          listAlerts(ctx.tenant.organizationId)
+          listAlerts(ctx.tenant.organizationId, credentialId)
         );
         return successResponse(alerts);
       } catch (alertError) {

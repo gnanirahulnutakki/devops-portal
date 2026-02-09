@@ -148,33 +148,22 @@ Environment variables for the application
 - name: BCRYPT_ROUNDS
   value: {{ .Values.config.bcryptRounds | default 12 | quote }}
 
-# Database
-- name: DATABASE_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      {{- if .Values.postgresql.enabled }}
-      name: {{ .Values.postgresql.auth.existingSecret }}
-      key: {{ .Values.postgresql.auth.secretKeys.userPasswordKey }}
-      {{- else }}
-      name: {{ .Values.externalDatabase.existingSecret }}
-      key: {{ .Values.externalDatabase.existingSecretPasswordKey }}
-      {{- end }}
+# Database - use DATABASE_URL from secret directly
 - name: DATABASE_URL
-  value: {{ include "devops-portal.databaseUrl" . | quote }}
-
-# Redis
-- name: REDIS_PASSWORD
   valueFrom:
     secretKeyRef:
-      {{- if .Values.redis.enabled }}
-      name: {{ .Values.redis.auth.existingSecret }}
-      key: {{ .Values.redis.auth.existingSecretPasswordKey }}
-      {{- else }}
-      name: {{ .Values.externalRedis.existingSecret }}
-      key: {{ .Values.externalRedis.existingSecretPasswordKey }}
-      {{- end }}
+      name: {{ .Values.secrets.existingSecret | default "devops-portal-secrets" }}
+      key: DATABASE_URL
+
+# Redis - use REDIS_URL from secret if configured
+{{- if or .Values.redis.enabled (and .Values.externalRedis .Values.externalRedis.existingSecret) }}
 - name: REDIS_URL
-  value: {{ include "devops-portal.redisUrl" . | quote }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.secrets.existingSecret | default "devops-portal-secrets" }}
+      key: REDIS_URL
+      optional: true
+{{- end }}
 
 # S3/MinIO
 {{- if or .Values.minio.enabled .Values.externalS3.enabled }}

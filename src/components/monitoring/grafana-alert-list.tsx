@@ -181,10 +181,11 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-export function GrafanaAlertList() {
+export function GrafanaAlertList({ credentialId }: { credentialId?: string }) {
   const [filter, setFilter] = useState('');
+  const query = credentialId ? `?credentialId=${encodeURIComponent(credentialId)}` : '';
   const { data, error, isLoading, mutate } = useSWR<ApiResponse>(
-    '/api/monitoring/grafana/alerts',
+    `/api/monitoring/grafana/alerts${query}`,
     fetcher,
     { revalidateOnFocus: false }
   );

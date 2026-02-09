@@ -18,5 +18,9 @@ declare module 'next-auth/jwt' {
   interface JWT extends DefaultJWT {
     userId?: string;
     provider?: string;
+    /** Map of organizationId -> role for O(1) membership checks in middleware */
+    memberships?: Record<string, string>;
+    /** Timestamp (ms) of last membership refresh */
+    membershipsUpdatedAt?: number;
   }
 }

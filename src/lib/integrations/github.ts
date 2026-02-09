@@ -2,6 +2,8 @@ import { Octokit } from '@octokit/rest';
 // GitHub client created via Octokit
 import { logger } from '../logger';
 import { githubTokens } from '../token-store';
+import { prisma } from '@/lib/prisma';
+import { getCredentials, GitHubCredentials } from '@/lib/services/integration-credentials';
 
 // =============================================================================
 // Types
@@ -88,6 +90,21 @@ export interface GitHubPullRequest {
   mergedAt?: string;
 }
 
+export interface GitHubWorkflowRun {
+  id: number;
+  name: string;
+  status: string;
+  conclusion?: string;
+  event: string;
+  branch: string;
+  commitSha: string;
+  commitMessage?: string;
+  runNumber: number;
+  htmlUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UpdateFileParams {
   repository: string;
   branch: string;
@@ -135,6 +152,17 @@ export class GitHubService {
     this.organization = organization;
   }
 
+  private resolveOwnerRepo(repository: string): { owner: string; repo: string } {
+    if (repository.includes('/')) {
+      const [owner, repo] = repository.split('/');
+      return { owner, repo };
+    }
+    if (!this.organization) {
+      throw new Error('GITHUB_ORGANIZATION is not configured for repository lookups.');
+    }
+    return { owner: this.organization, repo: repository };
+  }
+
   // ---------------------------------------------------------------------------
   // Repositories
   // ---------------------------------------------------------------------------
@@ -177,9 +205,10 @@ export class GitHubService {
   // ---------------------------------------------------------------------------
 
   async listBranches(repository: string, filter?: string): Promise<GitHubBranch[]> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
     const { data } = await this.octokit.repos.listBranches({
-      owner: this.organization,
-      repo: repository,
+      owner,
+      repo,
       per_page: 100,
     });
 
@@ -200,20 +229,68 @@ export class GitHubService {
     }));
   }
 
+  // ---------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------
+
+  async listWorkflowRuns(repository: string, branch?: string): Promise<GitHubWorkflowRun[]> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
+    const { data } = await this.octokit.actions.listWorkflowRunsForRepo({
+      owner,
+      repo,
+      branch,
+      per_page: 50,
+    });
+
+    return (data.workflow_runs || []).map((run) => ({
+      id: run.id,
+      name: run.name || run.display_title || 'Workflow',
+      status: run.status || 'unknown',
+      conclusion: run.conclusion || undefined,
+      event: run.event,
+      branch: run.head_branch || '',
+      commitSha: run.head_sha,
+      commitMessage: run.head_commit?.message,
+      runNumber: run.run_number,
+      htmlUrl: run.html_url,
+      createdAt: run.created_at,
+      updatedAt: run.updated_at,
+    }));
+  }
+
+  async rerunWorkflowRun(repository: string, runId: number): Promise<void> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
+    await this.octokit.actions.reRunWorkflow({
+      owner,
+      repo,
+      run_id: runId,
+    });
+  }
+
+  async cancelWorkflowRun(repository: string, runId: number): Promise<void> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
+    await this.octokit.actions.cancelWorkflowRun({
+      owner,
+      repo,
+      run_id: runId,
+    });
+  }
+
   async createBranch(
     repository: string,
     newBranchName: string,
     fromBranch: string
   ): Promise<{ ref: string; sha: string }> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
     const { data: refData } = await this.octokit.git.getRef({
-      owner: this.organization,
-      repo: repository,
+      owner,
+      repo,
       ref: `heads/${fromBranch}`,
     });
 
     const { data } = await this.octokit.git.createRef({
-      owner: this.organization,
-      repo: repository,
+      owner,
+      repo,
       ref: `refs/heads/${newBranchName}`,
       sha: refData.object.sha,
     });
@@ -233,9 +310,10 @@ export class GitHubService {
     branch: string,
     path: string = ''
   ): Promise<GitHubFileTreeEntry[]> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
     const { data } = await this.octokit.repos.getContent({
-      owner: this.organization,
-      repo: repository,
+      owner,
+      repo,
       path: path,
       ref: branch,
     });
@@ -252,9 +330,10 @@ export class GitHubService {
     branch: string,
     path: string
   ): Promise<GitHubFileContent> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
     const { data } = await this.octokit.repos.getContent({
-      owner: this.organization,
-      repo: repository,
+      owner,
+      repo,
       path: path,
       ref: branch,
     });
@@ -279,9 +358,10 @@ export class GitHubService {
     commitSha: string;
     commitUrl: string;
   }> {
+    const { owner, repo } = this.resolveOwnerRepo(params.repository);
     const { data } = await this.octokit.repos.createOrUpdateFileContents({
-      owner: this.organization,
-      repo: params.repository,
+      owner,
+      repo,
       path: params.path,
       message: params.message,
       content: params.content,
@@ -305,9 +385,10 @@ export class GitHubService {
     repository: string,
     state: 'open' | 'closed' | 'all' = 'open'
   ): Promise<GitHubPullRequest[]> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
     const { data } = await this.octokit.pulls.list({
-      owner: this.organization,
-      repo: repository,
+      owner,
+      repo,
       state: state,
       sort: 'updated',
       direction: 'desc',
@@ -321,9 +402,10 @@ export class GitHubService {
     repository: string,
     pullNumber: number
   ): Promise<GitHubPullRequest> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
     const { data } = await this.octokit.pulls.get({
-      owner: this.organization,
-      repo: repository,
+      owner,
+      repo,
       pull_number: pullNumber,
     });
 
@@ -331,13 +413,30 @@ export class GitHubService {
   }
 
   async createPullRequest(params: CreatePullRequestParams): Promise<GitHubPullRequest> {
+    const { owner, repo } = this.resolveOwnerRepo(params.repository);
     const { data } = await this.octokit.pulls.create({
-      owner: this.organization,
-      repo: params.repository,
+      owner,
+      repo,
       title: params.title,
       body: params.body || '',
       head: params.head,
       base: params.base,
+    });
+
+    return this.mapPullRequest(data);
+  }
+
+  async updatePullRequest(
+    repository: string,
+    pullNumber: number,
+    updates: { draft?: boolean; state?: 'open' | 'closed' }
+  ): Promise<GitHubPullRequest> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
+    const { data } = await this.octokit.pulls.update({
+      owner,
+      repo,
+      pull_number: pullNumber,
+      ...updates,
     });
 
     return this.mapPullRequest(data);
@@ -352,9 +451,10 @@ export class GitHubService {
       mergeMethod?: 'merge' | 'squash' | 'rebase';
     } = {}
   ): Promise<{ merged: boolean; sha: string; message: string }> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
     const { data } = await this.octokit.pulls.merge({
-      owner: this.organization,
-      repo: repository,
+      owner,
+      repo,
       pull_number: pullNumber,
       commit_title: options.commitTitle,
       commit_message: options.commitMessage,
@@ -379,9 +479,10 @@ export class GitHubService {
     changes: number;
     patch?: string;
   }>> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
     const { data } = await this.octokit.pulls.listFiles({
-      owner: this.organization,
-      repo: repository,
+      owner,
+      repo,
       pull_number: pullNumber,
       per_page: 100,
     });
@@ -481,7 +582,7 @@ export class GitHubService {
     id: pr.id,
     number: pr.number,
     title: pr.title,
-    state: pr.state,
+    state: pr.merged_at ? 'merged' : pr.state,
     body: pr.body || undefined,
     htmlUrl: pr.html_url,
     user: {
@@ -513,18 +614,63 @@ export class GitHubService {
 // Factory
 // =============================================================================
 
-export async function createGitHubServiceForUser(userId: string): Promise<GitHubService | null> {
-  const token = await githubTokens.get(userId);
-  if (!token) {
-    logger.warn({ userId }, 'No GitHub token found for user');
-    return null;
+/**
+ * Create a GitHubService for a specific user.
+ * 
+ * Token resolution order:
+ * 1. User's OAuth token from Redis (stored at GitHub OAuth sign-in)
+ * 2. Shared GITHUB_TOKEN PAT from env (fallback for Keycloak/credentials users)
+ * 
+ * Returns null only if no token is available at all.
+ */
+export async function createGitHubServiceForUser(
+  userId: string,
+  organizationId?: string
+): Promise<GitHubService | null> {
+  let organization = process.env.GITHUB_ORGANIZATION || '';
+
+  if (organizationId) {
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { settings: true },
+    });
+    const settings = (org?.settings as any) || {};
+    const credentialId = settings?.github?.credentialId as string | undefined;
+    const orgCreds = await getCredentials<GitHubCredentials>(organizationId, 'GITHUB', {
+      credentialId,
+    });
+    if (orgCreds?.organization) {
+      organization = orgCreds.organization;
+    }
+    if (orgCreds?.token && organization) {
+      return new GitHubService(orgCreds.token, organization);
+    }
   }
 
-  const organization = process.env.GITHUB_ORGANIZATION || '';
-  return new GitHubService(token.accessToken, organization);
+  if (!organization) {
+    logger.error('GITHUB_ORGANIZATION environment variable is not set');
+    throw new Error('GitHub integration is not configured. GITHUB_ORGANIZATION is required.');
+  }
+
+  const userToken = await githubTokens.get(userId);
+  if (userToken) {
+    return new GitHubService(userToken.accessToken, organization);
+  }
+
+  const sharedToken = process.env.GITHUB_TOKEN;
+  if (sharedToken) {
+    logger.info({ userId }, 'Using shared GITHUB_TOKEN PAT (user has no OAuth token)');
+    return new GitHubService(sharedToken, organization);
+  }
+
+  logger.warn({ userId }, 'No GitHub token found for user and no GITHUB_TOKEN PAT configured');
+  return null;
 }
 
 export function createGitHubServiceWithToken(token: string): GitHubService {
-  const organization = process.env.GITHUB_ORGANIZATION || '';
+  const organization = process.env.GITHUB_ORGANIZATION;
+  if (!organization) {
+    throw new Error('GitHub integration is not configured. GITHUB_ORGANIZATION is required.');
+  }
   return new GitHubService(token, organization);
 }

@@ -2,7 +2,7 @@
 // Secure Token Storage - Redis with AES-256-GCM Encryption
 // =============================================================================
 
-import { redis } from './redis';
+import { getRedis } from './redis';
 import { encrypt, decrypt, isCurrentKey, reEncrypt } from './encryption';
 import { logger } from './logger';
 
@@ -36,6 +36,12 @@ export async function storeToken(
   userId: string,
   token: StoredToken
 ): Promise<void> {
+  const redis = getRedis();
+  if (!redis) {
+    logger.warn({ type, userId }, 'Redis not available, token storage skipped');
+    return;
+  }
+  
   const key = getTokenKey(type, userId);
   
   // Serialize and encrypt the token
@@ -68,6 +74,9 @@ export async function getToken(
   type: TokenType,
   userId: string
 ): Promise<StoredToken | null> {
+  const redis = getRedis();
+  if (!redis) return null;
+  
   const key = getTokenKey(type, userId);
   const encrypted = await redis.get(key);
   
@@ -114,6 +123,9 @@ export async function getToken(
  * Check if a token exists (without decrypting)
  */
 export async function hasToken(type: TokenType, userId: string): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) return false;
+  
   const key = getTokenKey(type, userId);
   const exists = await redis.exists(key);
   return exists === 1;
@@ -123,6 +135,9 @@ export async function hasToken(type: TokenType, userId: string): Promise<boolean
  * Delete a token
  */
 export async function deleteToken(type: TokenType, userId: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  
   const key = getTokenKey(type, userId);
   await redis.del(key);
   logger.info({ type, userId }, 'Token deleted');

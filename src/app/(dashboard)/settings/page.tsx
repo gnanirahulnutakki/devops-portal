@@ -1,10 +1,16 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useSession, signIn } from 'next-auth/react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { useOrganizationStore } from '@/store/organization-store';
 import {
   User,
   KeyRound,
@@ -13,10 +19,200 @@ import {
   Shield,
   Bell,
   Palette,
+  Building2,
+  Plug,
+  ShieldCheck,
+  GitBranch,
 } from 'lucide-react';
 
 export default function SettingsPage() {
   const { data: session } = useSession();
+  const currentOrganization = useOrganizationStore((state) => state.currentOrganization);
+  const setOrganization = useOrganizationStore((state) => state.setOrganization);
+  const orgId = currentOrganization?.id;
+  const [draft, setDraft] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+  const [githubAccounts, setGithubAccounts] = useState<any[]>([]);
+  const [grafanaAccounts, setGrafanaAccounts] = useState<any[]>([]);
+  const [uptimeAccounts, setUptimeAccounts] = useState<any[]>([]);
+  const [llmAccounts, setLlmAccounts] = useState<any[]>([]);
+  const [githubForm, setGithubForm] = useState({ name: 'default', token: '', organization: '' });
+  const [grafanaForm, setGrafanaForm] = useState({ name: 'default', url: '', apiKey: '' });
+  const [uptimeForm, setUptimeForm] = useState({ name: 'default', url: '', apiKey: '' });
+  const [argocdAccounts, setArgocdAccounts] = useState<any[]>([]);
+  const [argocdForm, setArgocdForm] = useState({ name: 'default', url: '', token: '', insecure: false });
+  const [llmForm, setLlmForm] = useState({
+    name: 'default',
+    provider: 'openai',
+    apiKey: '',
+    baseUrl: '',
+    model: '',
+  });
+
+  useEffect(() => {
+    if (orgId) return;
+    let cancelled = false;
+    async function loadOrg() {
+      const res = await fetch('/api/organizations');
+      const data = await res.json();
+      if (cancelled || !res.ok || !data.data?.length) return;
+      setOrganization(data.data[0]);
+    }
+    loadOrg();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, setOrganization]);
+
+  const loadSettings = async () => {
+    if (!orgId) return;
+    const res = await fetch('/api/organizations/settings', {
+      headers: { 'x-organization-id': orgId },
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setDraft(data.data || {});
+    }
+  };
+
+  const loadAccounts = async () => {
+    if (!orgId) return;
+    const [githubRes, grafanaRes, uptimeRes, llmRes, argocdRes] = await Promise.all([
+      fetch('/api/integrations/github/accounts', { headers: { 'x-organization-id': orgId } }),
+      fetch('/api/integrations/grafana/accounts', { headers: { 'x-organization-id': orgId } }),
+      fetch('/api/integrations/uptime-kuma/accounts', { headers: { 'x-organization-id': orgId } }),
+      fetch('/api/integrations/llm/accounts', { headers: { 'x-organization-id': orgId } }),
+      fetch('/api/integrations/argocd/accounts', { headers: { 'x-organization-id': orgId } }),
+    ]);
+    const [githubData, grafanaData, uptimeData, llmData, argocdData] = await Promise.all([
+      githubRes.json(),
+      grafanaRes.json(),
+      uptimeRes.json(),
+      llmRes.json(),
+      argocdRes.json(),
+    ]);
+    if (githubRes.ok) setGithubAccounts(githubData.data || []);
+    if (grafanaRes.ok) setGrafanaAccounts(grafanaData.data || []);
+    if (uptimeRes.ok) setUptimeAccounts(uptimeData.data || []);
+    if (llmRes.ok) setLlmAccounts(llmData.data || []);
+    if (argocdRes.ok) setArgocdAccounts(argocdData.data || []);
+  };
+
+  useEffect(() => {
+    loadSettings();
+    loadAccounts();
+  }, [orgId]);
+
+  const updateSettings = async (payload: any) => {
+    if (!orgId) return;
+    setSaving(true);
+    const res = await fetch('/api/organizations/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setDraft(data.data || {});
+    }
+    setSaving(false);
+  };
+
+  const saveGithubAccount = async () => {
+    if (!orgId || !githubForm.name || !githubForm.token) return;
+    const res = await fetch('/api/integrations/github/accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
+      body: JSON.stringify({
+        name: githubForm.name,
+        token: githubForm.token,
+        organization: githubForm.organization || undefined,
+      }),
+    });
+    if (res.ok) {
+      setGithubForm((prev) => ({ ...prev, token: '' }));
+      await loadAccounts();
+    }
+  };
+
+  const saveGrafanaAccount = async () => {
+    if (!orgId || !grafanaForm.name || !grafanaForm.url || !grafanaForm.apiKey) return;
+    const res = await fetch('/api/integrations/grafana/accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
+      body: JSON.stringify(grafanaForm),
+    });
+    if (res.ok) {
+      setGrafanaForm((prev) => ({ ...prev, apiKey: '' }));
+      await loadAccounts();
+    }
+  };
+
+  const saveUptimeAccount = async () => {
+    if (!orgId || !uptimeForm.name || !uptimeForm.url || !uptimeForm.apiKey) return;
+    const res = await fetch('/api/integrations/uptime-kuma/accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
+      body: JSON.stringify(uptimeForm),
+    });
+    if (res.ok) {
+      setUptimeForm((prev) => ({ ...prev, apiKey: '' }));
+      await loadAccounts();
+    }
+  };
+
+  const saveLlmAccount = async () => {
+    if (!orgId || !llmForm.name || !llmForm.provider || !llmForm.apiKey) return;
+    const res = await fetch('/api/integrations/llm/accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
+      body: JSON.stringify({
+        name: llmForm.name,
+        provider: llmForm.provider,
+        apiKey: llmForm.apiKey,
+        baseUrl: llmForm.baseUrl || undefined,
+        model: llmForm.model || undefined,
+      }),
+    });
+    if (res.ok) {
+      setLlmForm((prev) => ({ ...prev, apiKey: '' }));
+      await loadAccounts();
+    }
+  };
+
+  const saveArgocdAccount = async () => {
+    if (!orgId || !argocdForm.name || !argocdForm.url || !argocdForm.token) return;
+    const res = await fetch('/api/integrations/argocd/accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
+      body: JSON.stringify(argocdForm),
+    });
+    if (res.ok) {
+      setArgocdForm((prev) => ({ ...prev, token: '' }));
+      await loadAccounts();
+    }
+  };
+
+  const githubOptions = useMemo(
+    () => githubAccounts.map((cred) => ({ value: cred.id, label: cred.name || 'default' })),
+    [githubAccounts]
+  );
+  const uptimeOptions = useMemo(
+    () => uptimeAccounts.map((cred) => ({ value: cred.id, label: cred.name || 'default' })),
+    [uptimeAccounts]
+  );
+  const grafanaOptions = useMemo(
+    () => grafanaAccounts.map((cred) => ({ value: cred.id, label: cred.name || 'default' })),
+    [grafanaAccounts]
+  );
+  const argocdOptions = useMemo(
+    () => argocdAccounts.map((cred) => ({ value: cred.id, label: cred.name || 'default' })),
+    [argocdAccounts]
+  );
+  const llmOptions = useMemo(
+    () => llmAccounts.map((cred) => ({ value: cred.id, label: cred.name || 'default' })),
+    [llmAccounts]
+  );
 
   return (
     <div className="space-y-6">
@@ -95,7 +291,13 @@ export default function SettingsPage() {
               {session?.user?.hasGitHubConnection ? (
                 <Badge variant="default">Connected</Badge>
               ) : (
-                <Button size="sm" variant="outline">Connect</Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => signIn('github', { callbackUrl: '/settings' })}
+                >
+                  Connect
+                </Button>
               )}
             </div>
           </CardContent>
@@ -120,8 +322,28 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm">Session timeout</span>
-                <span className="text-sm text-gray-500">24 hours</span>
+                <span className="text-sm text-gray-500">8 hours</span>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              Organization
+            </CardTitle>
+            <CardDescription>Switch or create organizations</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <Button className="w-full" variant="outline" onClick={() => (window.location.href = '/select-organization?manage=1')}>
+                Switch Organization
+              </Button>
+              <Button className="w-full" onClick={() => (window.location.href = '/select-organization?manage=1')}>
+                Create Organization
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -170,6 +392,382 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Github className="h-5 w-5" />
+              GitHub Accounts
+            </CardTitle>
+            <CardDescription>Store personal access tokens securely for API access</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1">
+              <Label>Default GitHub Account</Label>
+              <Select
+                value={draft?.github?.credentialId || ''}
+                onValueChange={(value) => setDraft((prev: any) => ({ ...prev, github: { credentialId: value } }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {githubOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={() => updateSettings(draft)} disabled={saving}>
+              Save GitHub Settings
+            </Button>
+            <div className="border-t pt-4 space-y-3">
+              <p className="text-sm font-medium">Add GitHub Account</p>
+              <div className="grid gap-3">
+                <Input
+                  placeholder="Account name"
+                  value={githubForm.name}
+                  onChange={(e) => setGithubForm((prev) => ({ ...prev, name: e.target.value }))}
+                />
+                <Input
+                  placeholder="Personal access token"
+                  type="password"
+                  value={githubForm.token}
+                  onChange={(e) => setGithubForm((prev) => ({ ...prev, token: e.target.value }))}
+                />
+                <Input
+                  placeholder="Organization (optional)"
+                  value={githubForm.organization}
+                  onChange={(e) => setGithubForm((prev) => ({ ...prev, organization: e.target.value }))}
+                />
+                <Button onClick={saveGithubAccount} disabled={saving}>
+                  Save GitHub Account
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5" />
+              Uptime Kuma
+            </CardTitle>
+            <CardDescription>Configure Uptime Kuma monitors</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1">
+              <Label>Default Uptime Kuma Account</Label>
+              <Select
+                value={draft?.uptimeKuma?.credentialId || ''}
+                onValueChange={(value) =>
+                  setDraft((prev: any) => ({ ...prev, uptimeKuma: { credentialId: value } }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {uptimeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={() => updateSettings(draft)} disabled={saving}>
+              Save Uptime Kuma Settings
+            </Button>
+            <div className="border-t pt-4 space-y-3">
+              <p className="text-sm font-medium">Add Uptime Kuma Account</p>
+              <div className="grid gap-3">
+                <Input
+                  placeholder="Account name"
+                  value={uptimeForm.name}
+                  onChange={(e) => setUptimeForm((prev) => ({ ...prev, name: e.target.value }))}
+                />
+                <Input
+                  placeholder="https://kuma.example.com"
+                  value={uptimeForm.url}
+                  onChange={(e) => setUptimeForm((prev) => ({ ...prev, url: e.target.value }))}
+                />
+                <Input
+                  placeholder="API key"
+                  type="password"
+                  value={uptimeForm.apiKey}
+                  onChange={(e) => setUptimeForm((prev) => ({ ...prev, apiKey: e.target.value }))}
+                />
+                <Button onClick={saveUptimeAccount} disabled={saving}>
+                  Save Uptime Kuma Account
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Plug className="h-5 w-5" />
+              MCP Configuration
+            </CardTitle>
+            <CardDescription>Routing and MCP server defaults</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="font-medium">Enable Fastworkflow</p>
+                <p className="text-sm text-muted-foreground">Route prompts through deterministic workflows</p>
+              </div>
+              <Switch
+                checked={draft?.mcp?.fastworkflowEnabled ?? true}
+                onCheckedChange={(checked) =>
+                  setDraft((prev: any) => ({ ...prev, mcp: { ...prev?.mcp, fastworkflowEnabled: checked } }))
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Fastworkflow URL</Label>
+              <Input
+                placeholder="https://fastworkflow.internal"
+                value={draft?.mcp?.fastworkflowUrl || ''}
+                onChange={(e) =>
+                  setDraft((prev: any) => ({ ...prev, mcp: { ...prev?.mcp, fastworkflowUrl: e.target.value } }))
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Fastworkflow Tool Name</Label>
+              <Input
+                placeholder="command"
+                value={draft?.mcp?.fastworkflowToolName || ''}
+                onChange={(e) =>
+                  setDraft((prev: any) => ({ ...prev, mcp: { ...prev?.mcp, fastworkflowToolName: e.target.value } }))
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>MCP Server URL</Label>
+              <Input
+                placeholder="https://mcp.example.com"
+                value={draft?.mcp?.mcpServerUrl || ''}
+                onChange={(e) =>
+                  setDraft((prev: any) => ({ ...prev, mcp: { ...prev?.mcp, mcpServerUrl: e.target.value } }))
+                }
+              />
+            </div>
+            <Button onClick={() => updateSettings(draft)} disabled={saving}>
+              Save MCP Settings
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Grafana Accounts
+            </CardTitle>
+            <CardDescription>Configure Grafana endpoints and API keys</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1">
+              <Label>Default Grafana Account</Label>
+              <Select
+                value={draft?.grafana?.credentialId || ''}
+                onValueChange={(value) =>
+                  setDraft((prev: any) => ({ ...prev, grafana: { credentialId: value } }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {grafanaOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={() => updateSettings(draft)} disabled={saving}>
+              Save Grafana Settings
+            </Button>
+            <div className="border-t pt-4 space-y-3">
+              <p className="text-sm font-medium">Add Grafana Account</p>
+              <div className="grid gap-3">
+                <Input
+                  placeholder="Account name"
+                  value={grafanaForm.name}
+                  onChange={(e) => setGrafanaForm((prev) => ({ ...prev, name: e.target.value }))}
+                />
+                <Input
+                  placeholder="https://grafana.example.com"
+                  value={grafanaForm.url}
+                  onChange={(e) => setGrafanaForm((prev) => ({ ...prev, url: e.target.value }))}
+                />
+                <Input
+                  placeholder="API key"
+                  type="password"
+                  value={grafanaForm.apiKey}
+                  onChange={(e) => setGrafanaForm((prev) => ({ ...prev, apiKey: e.target.value }))}
+                />
+                <Button onClick={saveGrafanaAccount} disabled={saving}>
+                  Save Grafana Account
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <GitBranch className="h-5 w-5" />
+              ArgoCD Accounts
+            </CardTitle>
+            <CardDescription>Configure ArgoCD server endpoints and tokens</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1">
+              <Label>Default ArgoCD Account</Label>
+              <Select
+                value={draft?.argocd?.credentialId || ''}
+                onValueChange={(value) =>
+                  setDraft((prev: any) => ({ ...prev, argocd: { credentialId: value } }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {argocdOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={() => updateSettings(draft)} disabled={saving}>
+              Save ArgoCD Settings
+            </Button>
+            <div className="border-t pt-4 space-y-3">
+              <p className="text-sm font-medium">Add ArgoCD Account</p>
+              <div className="grid gap-3">
+                <Input
+                  placeholder="Account name"
+                  value={argocdForm.name}
+                  onChange={(e) => setArgocdForm((prev) => ({ ...prev, name: e.target.value }))}
+                />
+                <Input
+                  placeholder="https://argocd.example.com"
+                  value={argocdForm.url}
+                  onChange={(e) => setArgocdForm((prev) => ({ ...prev, url: e.target.value }))}
+                />
+                <Input
+                  placeholder="Auth token"
+                  type="password"
+                  value={argocdForm.token}
+                  onChange={(e) => setArgocdForm((prev) => ({ ...prev, token: e.target.value }))}
+                />
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="text-sm font-medium">Skip TLS verification</p>
+                    <p className="text-xs text-muted-foreground">For self-signed certificates</p>
+                  </div>
+                  <Switch
+                    checked={argocdForm.insecure}
+                    onCheckedChange={(checked) =>
+                      setArgocdForm((prev) => ({ ...prev, insecure: checked }))
+                    }
+                  />
+                </div>
+                <Button onClick={saveArgocdAccount} disabled={saving}>
+                  Save ArgoCD Account
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Plug className="h-5 w-5" />
+            LLM Accounts
+          </CardTitle>
+          <CardDescription>Configure hosted or self-hosted LLM providers</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1">
+            <Label>Default LLM Account</Label>
+            <Select
+              value={draft?.llm?.credentialId || ''}
+              onValueChange={(value) => setDraft((prev: any) => ({ ...prev, llm: { credentialId: value } }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select account" />
+              </SelectTrigger>
+              <SelectContent>
+                {llmOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={() => updateSettings(draft)} disabled={saving}>
+            Save LLM Settings
+          </Button>
+          <div className="border-t pt-4 space-y-3">
+            <p className="text-sm font-medium">Add LLM Account</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input
+                placeholder="Account name"
+                value={llmForm.name}
+                onChange={(e) => setLlmForm((prev) => ({ ...prev, name: e.target.value }))}
+              />
+              <Input
+                placeholder="Provider (openai, anthropic, gemini)"
+                value={llmForm.provider}
+                onChange={(e) => setLlmForm((prev) => ({ ...prev, provider: e.target.value }))}
+              />
+              <Input
+                placeholder="API key"
+                type="password"
+                value={llmForm.apiKey}
+                onChange={(e) => setLlmForm((prev) => ({ ...prev, apiKey: e.target.value }))}
+              />
+              <Input
+                placeholder="Base URL (optional)"
+                value={llmForm.baseUrl}
+                onChange={(e) => setLlmForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
+              />
+              <Input
+                placeholder="Model (optional)"
+                value={llmForm.model}
+                onChange={(e) => setLlmForm((prev) => ({ ...prev, model: e.target.value }))}
+              />
+              <Button onClick={saveLlmAccount} disabled={saving}>
+                Save LLM Account
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

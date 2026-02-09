@@ -3,7 +3,7 @@ import {
   successResponse, 
   errorResponse,
 } from '@/lib/api';
-import { listApplications } from '@/lib/services/argocd';
+import { getArgoBaseUrl, listApplications } from '@/lib/services/argocd';
 
 export const GET = withTenantApiHandler(
   async (request, ctx) => {
@@ -11,8 +11,15 @@ export const GET = withTenantApiHandler(
     const project = url.searchParams.get('project') || undefined;
 
     try {
-      const applications = await listApplications(ctx.tenant.organizationId, project);
-      return successResponse(applications);
+      const [applications, baseUrl] = await Promise.all([
+        listApplications(ctx.tenant.organizationId, project),
+        getArgoBaseUrl(ctx.tenant.organizationId),
+      ]);
+      const enriched = applications.map((app) => ({
+        ...app,
+        externalUrl: `${baseUrl}/applications/${app.name}`,
+      }));
+      return successResponse(enriched);
     } catch (error) {
       return errorResponse(
         'ARGOCD_ERROR',

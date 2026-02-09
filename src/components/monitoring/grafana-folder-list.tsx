@@ -93,9 +93,10 @@ function NotConfiguredState() {
   );
 }
 
-export function GrafanaFolderList() {
+export function GrafanaFolderList({ credentialId }: { credentialId?: string }) {
+  const query = credentialId ? `?credentialId=${encodeURIComponent(credentialId)}` : '';
   const { data, error, isLoading, mutate } = useSWR<ApiResponse>(
-    '/api/monitoring/grafana/folders',
+    `/api/monitoring/grafana/folders${query}`,
     fetcher,
     { revalidateOnFocus: false }
   );

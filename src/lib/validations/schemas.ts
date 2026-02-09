@@ -37,9 +37,11 @@ export const createClusterSchema = z.object({
   name: z.string().min(2).max(100),
   slug: z.string().min(2).max(50).regex(/^[a-z0-9-]+$/),
   provider: z.enum(['aws', 'gcp', 'azure', 'on-prem']),
-  region: z.string().min(2).max(50),
+  region: z.string().max(50).optional().or(z.literal('')),
   environment: z.enum(['production', 'staging', 'development']),
   argocdUrl: z.string().url().optional(),
+  kubeconfig: z.string().min(10).optional(),
+  jitUrl: z.string().url().optional(),
 });
 
 export const updateClusterSchema = createClusterSchema.partial();
@@ -99,8 +101,25 @@ export const createPullRequestSchema = z.object({
 });
 
 export const listPullRequestsSchema = z.object({
-  repository: z.string().min(1),
+  repository: z.string().min(1).optional(),
   state: z.enum(['open', 'closed', 'all']).default('open'),
+});
+
+export const listPullRequestFilesSchema = z.object({
+  repository: z.string().min(1),
+  number: z.coerce.number().int().min(1),
+});
+
+export const updatePullRequestSchema = z.object({
+  repository: z.string().min(1),
+  number: z.coerce.number().int().min(1),
+  action: z.enum(['draft', 'ready', 'close', 'reopen']),
+});
+
+export const mergePullRequestSchema = z.object({
+  repository: z.string().min(1),
+  number: z.coerce.number().int().min(1),
+  method: z.enum(['merge', 'squash', 'rebase']).optional(),
 });
 
 // =============================================================================
@@ -186,6 +205,9 @@ export type GetFileContent = z.infer<typeof getFileContentSchema>;
 export type UpdateFile = z.infer<typeof updateFileSchema>;
 export type CreatePullRequest = z.infer<typeof createPullRequestSchema>;
 export type ListPullRequests = z.infer<typeof listPullRequestsSchema>;
+export type ListPullRequestFiles = z.infer<typeof listPullRequestFilesSchema>;
+export type UpdatePullRequest = z.infer<typeof updatePullRequestSchema>;
+export type MergePullRequest = z.infer<typeof mergePullRequestSchema>;
 export type SyncApplication = z.infer<typeof syncApplicationSchema>;
 export type RollbackApplication = z.infer<typeof rollbackApplicationSchema>;
 export type BulkFileUpdate = z.infer<typeof bulkFileUpdateSchema>;

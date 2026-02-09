@@ -99,6 +99,7 @@ export const authConfig: NextAuthConfig = {
         clientId: process.env.KEYCLOAK_ID,
         clientSecret: process.env.KEYCLOAK_SECRET,
         issuer: process.env.KEYCLOAK_ISSUER,
+        allowDangerousEmailAccountLinking: true,
         authorization: {
           params: {
             scope: 'openid email profile',
@@ -112,6 +113,42 @@ export const authConfig: NextAuthConfig = {
       GitHubProvider({
         clientId: process.env.GITHUB_CLIENT_ID,
         clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        // Allow linking GitHub to an existing account with the same email
+        // (e.g., user signed up with credentials first, then connects GitHub)
+        // Safe because GitHub verifies email ownership.
+        allowDangerousEmailAccountLinking: true,
+        async profile(profile, tokens) {
+          let email = profile.email as string | null | undefined;
+          // GitHub may not return email if it's private - fetch from /user/emails
+          if (!email && tokens.access_token) {
+            try {
+              const res = await fetch('https://api.github.com/user/emails', {
+                headers: {
+                  Authorization: `Bearer ${tokens.access_token}`,
+                  Accept: 'application/vnd.github+json',
+                },
+              });
+              if (res.ok) {
+                const emails = await res.json() as Array<{
+                  email: string;
+                  primary: boolean;
+                  verified: boolean;
+                }>;
+                const primary = emails.find((e) => e.primary && e.verified) || emails.find((e) => e.verified);
+                email = primary?.email;
+              }
+            } catch {
+              // Ignore and fall back to whatever GitHub sent
+            }
+          }
+
+          return {
+            id: String(profile.id),
+            name: profile.name || profile.login,
+            email: email || undefined,
+            image: profile.avatar_url,
+          };
+        },
         authorization: {
           params: {
             scope: 'read:user user:email repo read:org',
@@ -132,8 +169,89 @@ export const authConfig: NextAuthConfig = {
   },
 
   callbacks: {
-    async signIn({ user, account }) {
-      logger.info({ userId: user.id, provider: account?.provider }, 'User sign-in attempt');
+    async signIn({ user, account, profile }) {
+      logger.info(
+        { userId: user.id, provider: account?.provider, email: user.email },
+        'User sign-in attempt'
+      );
+
+      // Optional: Gate GitHub OAuth to specific org members
+      // Enable by setting GITHUB_ALLOWED_ORG env var (e.g., "radiantlogic-devops")
+      if (account?.provider === 'github' && process.env.GITHUB_ALLOWED_ORG) {
+        try {
+          const res = await fetch('https://api.github.com/user/orgs', {
+            headers: {
+              Authorization: `Bearer ${account.access_token}`,
+              Accept: 'application/vnd.github+json',
+            },
+          });
+          if (res.ok) {
+            const orgs = await res.json() as Array<{ login: string }>;
+            const allowedOrg = process.env.GITHUB_ALLOWED_ORG;
+            const isMember = orgs.some(
+              (org) => org.login.toLowerCase() === allowedOrg!.toLowerCase()
+            );
+            if (!isMember) {
+              logger.warn(
+                { userId: user.id, email: user.email, allowedOrg },
+                'GitHub sign-in rejected: user not a member of required organization'
+              );
+              return false;
+            }
+          }
+        } catch (error) {
+          // Don't block sign-in if org check fails (degraded but available)
+          logger.error({ error: (error as Error).message }, 'GitHub org membership check failed');
+        }
+      }
+
+      // Auto-provision: add new OAuth users to the default organization
+      // This prevents users from getting stuck at the "no org" screen after OAuth sign-in.
+      // Controlled by DEFAULT_ORG_SLUG env var (defaults to "default" from seed).
+      if (account?.provider && account.provider !== 'credentials' && user.id) {
+        try {
+          const defaultOrgSlug = process.env.DEFAULT_ORG_SLUG || 'default';
+          const defaultOrg = await prisma.organization.findUnique({
+            where: { slug: defaultOrgSlug },
+          });
+          if (defaultOrg) {
+            const existingMembership = await prisma.membership.findUnique({
+              where: {
+                userId_organizationId: {
+                  userId: user.id,
+                  organizationId: defaultOrg.id,
+                },
+              },
+            });
+            if (!existingMembership) {
+              const defaultRole = (process.env.DEFAULT_ORG_ROLE || 'USER') as 'USER' | 'READWRITE' | 'ADMIN';
+              await prisma.membership.create({
+                data: {
+                  userId: user.id,
+                  organizationId: defaultOrg.id,
+                  role: defaultRole,
+                },
+              });
+              logger.info(
+                { userId: user.id, orgSlug: defaultOrgSlug, role: defaultRole },
+                'Auto-provisioned OAuth user into default organization'
+              );
+            }
+          } else {
+            logger.warn(
+              { slug: defaultOrgSlug },
+              'Default organization not found for auto-provisioning'
+            );
+          }
+        } catch (error) {
+          // Don't block sign-in if auto-provisioning fails
+          logger.error(
+            { error: (error as Error).message, userId: user.id },
+            'Failed to auto-provision org membership for OAuth user'
+          );
+        }
+      }
+
       return true;
     },
 
@@ -178,10 +296,10 @@ export const authConfig: NextAuthConfig = {
       }
       
       // Refresh memberships every 5 minutes to catch permission changes
-      const membershipsAge = Date.now() - (token.membershipsUpdatedAt as number || 0);
+      const membershipsAge = Date.now() - (token.membershipsUpdatedAt ?? 0);
       if (membershipsAge > 5 * 60 * 1000 && token.userId) {
         const memberships = await prisma.membership.findMany({
-          where: { userId: token.userId as string },
+          where: { userId: token.userId },
           select: {
             organizationId: true,
             role: true,
@@ -215,10 +333,17 @@ export const authConfig: NextAuthConfig = {
     },
     async signOut(message) {
       // Revoke tokens on logout (back-channel cleanup)
-      const token = 'token' in message ? message.token : null;
-      if (token?.userId) {
-        await githubTokens.delete(token.userId as string);
-        logger.info({ userId: token.userId }, 'User tokens revoked on sign-out');
+      // NextAuth v5 signOut message can be { token } or { session } depending on strategy
+      try {
+        const token = 'token' in message ? message.token : null;
+        const userId = token?.userId as string | undefined;
+        if (userId) {
+          await githubTokens.delete(userId);
+          logger.info({ userId }, 'User tokens revoked on sign-out');
+        }
+      } catch (error) {
+        // Don't block sign-out if token cleanup fails
+        logger.error({ error: (error as Error).message }, 'Failed to clean up tokens on sign-out');
       }
     },
   },

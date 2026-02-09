@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { redis } from '@/lib/redis';
-import { bulkOperationsQueue } from '@/lib/queue';
+import { getRedis } from '@/lib/redis';
 
 // =============================================================================
 // Health Check Types
@@ -66,61 +65,72 @@ export async function GET(request: Request) {
     checks.database = { status: 'unhealthy', error: (error as Error).message };
   }
 
-  // 2. Redis check
-  const redisStart = Date.now();
-  try {
-    await redis.ping();
-    const latency = Date.now() - redisStart;
-    checks.redis = { 
-      status: latency > 500 ? 'degraded' : 'healthy', 
-      latency,
-    };
-    
-    if (verbose) {
-      const info = await redis.info('memory').catch(() => '');
-      const usedMemory = info.match(/used_memory:(\d+)/)?.[1];
-      checks.redis.details = {
-        usedMemoryBytes: usedMemory ? parseInt(usedMemory) : undefined,
+  // 2. Redis check (optional)
+  const redis = getRedis();
+  if (redis) {
+    const redisStart = Date.now();
+    try {
+      await redis.ping();
+      const latency = Date.now() - redisStart;
+      checks.redis = { 
+        status: latency > 500 ? 'degraded' : 'healthy', 
+        latency,
       };
+      
+      if (verbose) {
+        const info = await redis.info('memory').catch(() => '');
+        const usedMemory = info.match(/used_memory:(\d+)/)?.[1];
+        checks.redis.details = {
+          usedMemoryBytes: usedMemory ? parseInt(usedMemory) : undefined,
+        };
+      }
+    } catch (error) {
+      checks.redis = { status: 'degraded', error: (error as Error).message };
     }
-  } catch (error) {
-    checks.redis = { status: 'unhealthy', error: (error as Error).message };
+  } else {
+    checks.redis = { status: 'healthy', details: { enabled: false } };
   }
 
-  // 3. Queue check
-  try {
-    const queueStart = Date.now();
-    const counts = await bulkOperationsQueue.getJobCounts(
-      'waiting',
-      'active',
-      'failed'
-    );
-    const workers = await bulkOperationsQueue.getWorkers();
-    const latency = Date.now() - queueStart;
-    
-    let queueStatus: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
-    
-    // Unhealthy if jobs waiting but no workers
-    if (counts.waiting > 0 && workers.length === 0) {
-      queueStatus = 'unhealthy';
+  // 3. Queue check (skipped if Redis not available)
+  if (redis) {
+    try {
+      // Dynamically import queue only if Redis is available
+      const { bulkOperationsQueue } = await import('@/lib/queue');
+      const queueStart = Date.now();
+      const counts = await bulkOperationsQueue.getJobCounts(
+        'waiting',
+        'active',
+        'failed'
+      );
+      const workers = await bulkOperationsQueue.getWorkers();
+      const latency = Date.now() - queueStart;
+      
+      let queueStatus: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
+      
+      // Unhealthy if jobs waiting but no workers
+      if (counts.waiting > 0 && workers.length === 0) {
+        queueStatus = 'unhealthy';
+      }
+      // Degraded if many failed jobs or high queue depth
+      else if (counts.failed > 10 || counts.waiting > 50) {
+        queueStatus = 'degraded';
+      }
+      
+      checks.queue = {
+        status: queueStatus,
+        latency,
+        details: {
+          waiting: counts.waiting,
+          active: counts.active,
+          failed: counts.failed,
+          workers: workers.length,
+        },
+      };
+    } catch (error) {
+      checks.queue = { status: 'degraded', error: (error as Error).message };
     }
-    // Degraded if many failed jobs or high queue depth
-    else if (counts.failed > 10 || counts.waiting > 50) {
-      queueStatus = 'degraded';
-    }
-    
-    checks.queue = {
-      status: queueStatus,
-      latency,
-      details: {
-        waiting: counts.waiting,
-        active: counts.active,
-        failed: counts.failed,
-        workers: workers.length,
-      },
-    };
-  } catch (error) {
-    checks.queue = { status: 'unhealthy', error: (error as Error).message };
+  } else {
+    checks.queue = { status: 'healthy', details: { enabled: false } };
   }
 
   // 4. Optional: External integrations check (only in verbose mode)

@@ -208,11 +208,21 @@ export default function AlertsPage() {
             Monitor and respond to system alerts
           </p>
         </div>
-        <Button variant="outline" size="sm">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setAlerts([...mockAlerts])}
+        >
           <RefreshCw className="h-4 w-4 mr-2" />
           Refresh
         </Button>
       </div>
+
+      <Card className="border-yellow-200 dark:border-yellow-800 bg-yellow-50/50 dark:bg-yellow-900/10">
+        <CardContent className="p-4 text-sm text-yellow-800 dark:text-yellow-200">
+          Alerts are currently using sample data. Configure Prometheus/Grafana integrations to enable live alerts.
+        </CardContent>
+      </Card>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

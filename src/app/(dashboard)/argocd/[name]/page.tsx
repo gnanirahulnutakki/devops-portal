@@ -377,9 +377,9 @@ export default function ArgoCDApplicationPage() {
             )}
             Sync
           </Button>
-          <Button variant="outline" size="sm" asChild>
+          <Button variant="outline" size="sm" asChild disabled={!app.externalUrl}>
             <a
-              href={`${process.env.NEXT_PUBLIC_ARGOCD_URL}/applications/${app.name}`}
+              href={app.externalUrl || '#'}
               target="_blank"
               rel="noopener noreferrer"
             >

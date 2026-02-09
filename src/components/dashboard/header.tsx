@@ -2,6 +2,7 @@
 
 import { signOut } from 'next-auth/react';
 import { User } from 'next-auth';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -23,6 +24,8 @@ import {
   Settings,
   HelpCircle,
   Github,
+  Building2,
+  MessageSquare,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Badge } from '@/components/ui/badge';
@@ -43,6 +46,7 @@ interface HeaderProps {
 export function Header({ user }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const [commandOpen, setCommandOpen] = useState(false);
+  const router = useRouter();
 
   // Command palette keyboard shortcut
   useEffect(() => {
@@ -115,6 +119,22 @@ export function Header({ user }: HeaderProps) {
           <span className="sr-only">Notifications</span>
         </Button>
 
+        {/* Assistant Popout */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() =>
+            window.open(
+              '/assistant',
+              'devops-portal-assistant',
+              'width=420,height=640,resizable=yes,scrollbars=yes'
+            )
+          }
+        >
+          <MessageSquare className="h-5 w-5" />
+          <span className="sr-only">Open assistant</span>
+        </Button>
+
         {/* User Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -137,22 +157,26 @@ export function Header({ user }: HeaderProps) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push('/settings')}>
               <UserIcon className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push('/settings')}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push('/select-organization?manage=1')}>
+              <Building2 className="mr-2 h-4 w-4" />
+              Switch Organization
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => window.open('https://docs.radiantlogic.com', '_blank')}>
               <HelpCircle className="mr-2 h-4 w-4" />
               Help
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-red-600 focus:text-red-600"
-              onClick={() => signOut()}
+              onClick={() => signOut({ callbackUrl: '/login' })}
             >
               <LogOut className="mr-2 h-4 w-4" />
               Sign out

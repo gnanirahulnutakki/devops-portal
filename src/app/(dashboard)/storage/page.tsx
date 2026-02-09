@@ -8,9 +8,9 @@ export default function StoragePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Storage</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Log Browser</h1>
         <p className="text-muted-foreground">
-          Browse and manage files in your organization&apos;s S3 bucket.
+          Browse and download logs from your organization&apos;s S3 bucket.
         </p>
       </div>
 

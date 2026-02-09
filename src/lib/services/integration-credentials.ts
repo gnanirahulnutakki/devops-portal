@@ -42,12 +42,33 @@ export interface S3Credentials {
   endpoint?: string; // For S3-compatible storage
 }
 
+export interface LlmCredentials {
+  provider: string;
+  apiKey: string;
+  baseUrl?: string;
+  model?: string;
+}
+
+export interface UptimeKumaCredentials {
+  url: string;
+  apiKey: string;
+}
+
+export interface SupabaseCredentials {
+  url: string;
+  anonKey?: string;
+  serviceRoleKey?: string;
+}
+
 export type CredentialPayload =
   | { provider: 'ARGOCD'; credentials: ArgoCDCredentials }
   | { provider: 'GRAFANA'; credentials: GrafanaCredentials }
   | { provider: 'PROMETHEUS'; credentials: PrometheusCredentials }
   | { provider: 'GITHUB'; credentials: GitHubCredentials }
-  | { provider: 'S3'; credentials: S3Credentials };
+  | { provider: 'S3'; credentials: S3Credentials }
+  | { provider: 'LLM'; credentials: LlmCredentials }
+  | { provider: 'UPTIME_KUMA'; credentials: UptimeKumaCredentials }
+  | { provider: 'SUPABASE'; credentials: SupabaseCredentials };
 
 // =============================================================================
 // Service Functions
@@ -58,12 +79,19 @@ export type CredentialPayload =
  */
 export async function getCredentials<T>(
   organizationId: string,
-  provider: IntegrationProvider
+  provider: IntegrationProvider,
+  options: { credentialId?: string; name?: string } = {}
 ): Promise<T | null> {
-  const credential = await prisma.integrationCredential.findUnique({
+  const { credentialId, name } = options;
+  const credential = await prisma.integrationCredential.findFirst({
     where: {
-      organizationId_provider: { organizationId, provider },
+      organizationId,
+      provider,
+      enabled: true,
+      ...(credentialId ? { id: credentialId } : {}),
+      ...(name ? { name } : {}),
     },
+    orderBy: { updatedAt: 'desc' },
   });
 
   if (!credential || !credential.enabled) {
@@ -121,28 +149,34 @@ export async function saveCredentials(
     // Encrypt credentials
     const encrypted = await encrypt(JSON.stringify(credentials));
 
-    // Upsert credential
-    await prisma.integrationCredential.upsert({
-      where: {
-        organizationId_provider: { organizationId, provider },
-      },
-      create: {
-        organizationId,
-        provider,
-        name,
-        credentials: encrypted,
-        createdById,
-        enabled: true,
-      },
-      update: {
-        name,
-        credentials: encrypted,
-        enabled: true,
-        lastError: null,
-        lastErrorAt: null,
-        updatedAt: new Date(),
-      },
+    const existing = await prisma.integrationCredential.findFirst({
+      where: { organizationId, provider, name },
     });
+
+    if (existing) {
+      await prisma.integrationCredential.update({
+        where: { id: existing.id },
+        data: {
+          name,
+          credentials: encrypted,
+          enabled: true,
+          lastError: null,
+          lastErrorAt: null,
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.integrationCredential.create({
+        data: {
+          organizationId,
+          provider,
+          name,
+          credentials: encrypted,
+          createdById,
+          enabled: true,
+        },
+      });
+    }
 
     logger.info({ organizationId, provider }, 'Integration credentials saved');
     return { success: true };
@@ -157,14 +191,19 @@ export async function saveCredentials(
  */
 export async function deleteCredentials(
   organizationId: string,
-  provider: IntegrationProvider
+  provider: IntegrationProvider,
+  credentialId?: string
 ): Promise<boolean> {
   try {
-    await prisma.integrationCredential.delete({
-      where: {
-        organizationId_provider: { organizationId, provider },
-      },
-    });
+    if (credentialId) {
+      await prisma.integrationCredential.delete({
+        where: { id: credentialId },
+      });
+    } else {
+      await prisma.integrationCredential.deleteMany({
+        where: { organizationId, provider },
+      });
+    }
     logger.info({ organizationId, provider }, 'Integration credentials deleted');
     return true;
   } catch {
@@ -175,9 +214,15 @@ export async function deleteCredentials(
 /**
  * List all credentials for an organization (without decrypted values)
  */
-export async function listCredentials(organizationId: string) {
+export async function listCredentials(
+  organizationId: string,
+  provider?: IntegrationProvider
+) {
   const credentials = await prisma.integrationCredential.findMany({
-    where: { organizationId },
+    where: {
+      organizationId,
+      ...(provider ? { provider } : {}),
+    },
     select: {
       id: true,
       provider: true,
@@ -201,10 +246,8 @@ export async function hasCredentials(
   organizationId: string,
   provider: IntegrationProvider
 ): Promise<boolean> {
-  const credential = await prisma.integrationCredential.findUnique({
-    where: {
-      organizationId_provider: { organizationId, provider },
-    },
+  const credential = await prisma.integrationCredential.findFirst({
+    where: { organizationId, provider, enabled: true },
     select: { enabled: true },
   });
 
@@ -217,15 +260,21 @@ export async function hasCredentials(
 export async function toggleCredentials(
   organizationId: string,
   provider: IntegrationProvider,
-  enabled: boolean
+  enabled: boolean,
+  credentialId?: string
 ): Promise<boolean> {
   try {
-    await prisma.integrationCredential.update({
-      where: {
-        organizationId_provider: { organizationId, provider },
-      },
-      data: { enabled },
-    });
+    if (credentialId) {
+      await prisma.integrationCredential.update({
+        where: { id: credentialId },
+        data: { enabled },
+      });
+    } else {
+      await prisma.integrationCredential.updateMany({
+        where: { organizationId, provider },
+        data: { enabled },
+      });
+    }
     return true;
   } catch {
     return false;
@@ -266,6 +315,24 @@ function validateCredentials(
         return 'S3 requires bucket, region, accessKeyId, and secretAccessKey';
       }
       break;
+    case 'LLM':
+      if (!credentials.provider || !credentials.apiKey) {
+        return 'LLM requires provider and apiKey';
+      }
+      break;
+    case 'UPTIME_KUMA':
+      if (!credentials.url || !credentials.apiKey) {
+        return 'Uptime Kuma requires url and apiKey';
+      }
+      break;
+    case 'SUPABASE':
+      if (!credentials.url) {
+        return 'Supabase requires url';
+      }
+      if (!credentials.anonKey && !credentials.serviceRoleKey) {
+        return 'Supabase requires anonKey or serviceRoleKey';
+      }
+      break;
   }
   return null;
 }
@@ -303,10 +370,11 @@ export async function getArgoCDCredentials(
  * Get Grafana credentials with env fallback
  */
 export async function getGrafanaCredentials(
-  organizationId: string
+  organizationId: string,
+  options: { credentialId?: string; name?: string } = {}
 ): Promise<GrafanaCredentials | null> {
   // Try org-specific credentials first
-  const orgCreds = await getCredentials<GrafanaCredentials>(organizationId, 'GRAFANA');
+  const orgCreds = await getCredentials<GrafanaCredentials>(organizationId, 'GRAFANA', options);
   if (orgCreds) return orgCreds;
 
   // Fall back to environment variables

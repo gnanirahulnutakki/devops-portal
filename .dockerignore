@@ -11,6 +11,17 @@ coverage
 .next
 out
 
+# Large unused dirs for build
+packages
+plugins
+v2
+dist-types
+docs
+deployment
+grafana
+helm
+examples
+
 # Build
 dist
 build

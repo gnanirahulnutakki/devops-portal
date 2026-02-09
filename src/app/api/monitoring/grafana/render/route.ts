@@ -38,6 +38,7 @@ export async function GET(request: Request) {
       const panelId = searchParams.get('panelId') ?? '1';
       const width = searchParams.get('width') ?? '1000';
       const height = searchParams.get('height') ?? '500';
+      const credentialId = searchParams.get('credentialId') ?? undefined;
       const themeParam = searchParams.get('theme');
       const theme: 'light' | 'dark' = themeParam === 'dark' ? 'dark' : 'light';
       const from = searchParams.get('from') ?? undefined;
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
       }
 
       // Check if Grafana is configured (async - checks org creds + env fallback)
-      const configured = await isGrafanaConfigured(ctx.tenant.organizationId);
+      const configured = await isGrafanaConfigured(ctx.tenant.organizationId, credentialId);
       if (!configured) {
         return NextResponse.json(
           { success: false, error: { code: 'GRAFANA_NOT_CONFIGURED', message: 'Grafana is not configured' } },
@@ -67,9 +68,10 @@ export async function GET(request: Request) {
         theme,
         from,
         to,
+        credentialId,
       });
 
-      const response = await proxyRender(ctx.tenant.organizationId, url);
+      const response = await proxyRender(ctx.tenant.organizationId, url, credentialId);
 
       // Add security headers for rendered images
       const headers = new Headers(response.headers);

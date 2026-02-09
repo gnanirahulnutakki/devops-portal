@@ -1,0 +1,15 @@
+dependencies:
+- name: postgresql
+  repository: https://charts.bitnami.com/bitnami
+  version: 15.5.38
+- name: redis
+  repository: https://charts.bitnami.com/bitnami
+  version: 19.6.4
+- name: minio
+  repository: https://charts.bitnami.com/bitnami
+  version: 14.7.16
+- name: sealed-secrets
+  repository: https://bitnami-labs.github.io/sealed-secrets
+  version: 2.16.2
+digest: sha256:2ae63c8699df85e2dd4053d6286be106a473f6ef002b11fccee84248a982e56a
+generated: "2026-02-06T10:59:46.283697-06:00"

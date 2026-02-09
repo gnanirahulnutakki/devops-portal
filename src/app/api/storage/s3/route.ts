@@ -12,6 +12,7 @@ import {
   isValidS3Key,
   sanitizeS3Key,
 } from '@/lib/services/s3';
+import { trackIntegrationCall } from '@/lib/services/with-integration-metrics';
 
 // List objects in S3 bucket
 export const GET = withTenantApiHandler(
@@ -27,11 +28,8 @@ export const GET = withTenantApiHandler(
       const continuationToken = searchParams.get('continuationToken') || undefined;
       const maxKeys = parseInt(searchParams.get('maxKeys') || '100', 10);
 
-      const result = await listObjects(
-        ctx.tenant.organizationId,
-        prefix,
-        continuationToken,
-        maxKeys
+      const result = await trackIntegrationCall('s3', 'listObjects', () =>
+        listObjects(ctx.tenant.organizationId, prefix, continuationToken, maxKeys)
       );
 
       return successResponse(result);

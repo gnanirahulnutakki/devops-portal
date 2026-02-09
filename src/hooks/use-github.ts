@@ -31,6 +31,7 @@ interface PullRequest {
   title: string;
   body: string | null;
   state: 'open' | 'closed' | 'merged';
+  draft?: boolean;
   author: string;
   sourceBranch: string;
   targetBranch: string;
@@ -81,31 +82,32 @@ export function useRepositories(page = 1, pageSize = 20, search?: string) {
   });
 }
 
-export function useBranches(owner: string, repo: string) {
+export function useBranches(repository?: string, filter?: string) {
   return useQuery({
-    queryKey: ['github', 'branches', owner, repo],
+    queryKey: ['github', 'branches', repository, filter],
     queryFn: async () => {
-      const response = await api.get(`github/branches?owner=${owner}&repo=${repo}`).json<{
+      if (!repository) return [];
+      const params = new URLSearchParams({ repository });
+      if (filter) params.set('filter', filter);
+      const response = await api.get(`github/branches?${params}`).json<{
         data: Branch[];
       }>();
       return response.data ?? [];
     },
-    enabled: !!owner && !!repo,
+    enabled: !!repository,
     staleTime: 2 * 60 * 1000, // 2 minutes
   });
 }
 
 export function usePullRequests(
-  owner?: string, 
-  repo?: string, 
+  repository?: string,
   state: 'open' | 'closed' | 'all' = 'open'
 ) {
   return useQuery({
-    queryKey: ['github', 'pull-requests', { owner, repo, state }],
+    queryKey: ['github', 'pull-requests', { repository, state }],
     queryFn: async () => {
       const params = new URLSearchParams({ state });
-      if (owner) params.set('owner', owner);
-      if (repo) params.set('repo', repo);
+      if (repository) params.set('repository', repository);
       
       const response = await api.get(`github/pull-requests?${params}`).json<{
         data: PullRequest[];
@@ -113,6 +115,82 @@ export function usePullRequests(
       return response.data ?? [];
     },
     staleTime: 1 * 60 * 1000, // 1 minute
+  });
+}
+
+export function usePullRequestFiles(repository?: string, number?: number) {
+  return useQuery({
+    queryKey: ['github', 'pull-request-files', { repository, number }],
+    queryFn: async () => {
+      if (!repository || !number) return [];
+      const params = new URLSearchParams({
+        repository,
+        number: String(number),
+      });
+      const response = await api.get(`github/pull-requests/files?${params}`).json<{
+        data: Array<{
+          filename: string;
+          status: string;
+          additions: number;
+          deletions: number;
+          changes: number;
+          patch?: string;
+        }>;
+      }>();
+      return response.data ?? [];
+    },
+    enabled: !!repository && !!number,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useUpdatePullRequest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: {
+      repository: string;
+      number: number;
+      action: 'draft' | 'ready' | 'close' | 'reopen';
+    }) => {
+      const response = await api.patch('github/pull-requests', {
+        json: params,
+      }).json<{ data: PullRequest }>();
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['github', 'pull-requests'] });
+      toast.success('Pull request updated');
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update pull request', { description: error.message });
+    },
+  });
+}
+
+export function useMergePullRequest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: {
+      repository: string;
+      number: number;
+      method?: 'merge' | 'squash' | 'rebase';
+    }) => {
+      const response = await api.post('github/pull-requests/merge', {
+        json: params,
+      }).json<{ data: { merged: boolean; message: string } }>();
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['github', 'pull-requests'] });
+      toast.success(data.merged ? 'Pull request merged' : 'Merge failed', {
+        description: data.message,
+      });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to merge pull request', { description: error.message });
+    },
   });
 }
 

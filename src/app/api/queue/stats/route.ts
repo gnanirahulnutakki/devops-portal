@@ -5,7 +5,6 @@
 
 import { NextResponse } from 'next/server';
 import { bulkOperationsQueue } from '@/lib/queue';
-import { getQueueHealth, getBulkOperationMetrics } from '@/lib/queue-metrics';
 import { withTenantApiHandler } from '@/lib/api';
 
 /**
@@ -15,14 +14,35 @@ import { withTenantApiHandler } from '@/lib/api';
 export const GET = withTenantApiHandler(
   async () => {
     try {
-      const [health, metrics] = await Promise.all([
-        getQueueHealth(bulkOperationsQueue),
-        getBulkOperationMetrics(bulkOperationsQueue),
-      ]);
-
+      const queue = bulkOperationsQueue.instance;
+      
+      // If Redis/Queue is not available, return disabled status
+      if (!queue) {
+        return NextResponse.json({
+          health: {
+            status: 'disabled',
+            message: 'Queue system not available (Redis not configured)',
+          },
+          metrics: {
+            waiting: 0,
+            active: 0,
+            completed: 0,
+            failed: 0,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+      
+      // Get queue stats from BullMQ
+      const counts = await queue.getJobCounts('waiting', 'active', 'completed', 'failed');
+      const workers = await queue.getWorkers();
+      
       return NextResponse.json({
-        health,
-        metrics,
+        health: {
+          status: 'healthy',
+          workers: workers.length,
+        },
+        metrics: counts,
         timestamp: new Date().toISOString(),
       });
     } catch (error) {

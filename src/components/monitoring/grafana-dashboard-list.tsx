@@ -111,13 +111,18 @@ function NotConfiguredState() {
   );
 }
 
-export function GrafanaDashboardList() {
+export function GrafanaDashboardList({ credentialId }: { credentialId?: string }) {
   const [filter, setFilter] = useState('');
   const [selected, setSelected] = useState<DashboardItem | null>(null);
-  const { data, error, isLoading, mutate } = useSWR<ApiResponse>('/api/monitoring/grafana/dashboards', fetcher, {
+  const query = credentialId ? `?credentialId=${encodeURIComponent(credentialId)}` : '';
+  const { data, error, isLoading, mutate } = useSWR<ApiResponse>(
+    `/api/monitoring/grafana/dashboards${query}`,
+    fetcher,
+    {
     refreshInterval: 60_000, // refresh every minute
     revalidateOnFocus: false,
-  });
+    }
+  );
 
   const filtered = useMemo(() => {
     const dashboards: DashboardItem[] = data?.data ?? [];

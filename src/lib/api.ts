@@ -3,7 +3,7 @@ import { ZodError, ZodSchema } from 'zod';
 import { auth } from './auth';
 import { logger } from './logger';
 import { Ratelimit } from '@upstash/ratelimit';
-import { redis } from './redis';
+import { getRedis } from './redis';
 import { 
   withApiContext, 
   ApiContext, 
@@ -139,64 +139,86 @@ export async function requireApiAuth(): Promise<AuthContext | NextResponse<ApiRe
 }
 
 // =============================================================================
-// Rate Limiting (Redis-based)
+// Rate Limiting (Redis-based, optional)
 // =============================================================================
 
-const rateLimiters = {
-  general: new Ratelimit({
-    redis: redis as any,
-    limiter: Ratelimit.slidingWindow(
-      parseInt(process.env.RATE_LIMIT_GENERAL || '100'),
-      '1 m'
-    ),
-    analytics: true,
-    prefix: 'ratelimit:general',
-  }),
-  bulk: new Ratelimit({
-    redis: redis as any,
-    limiter: Ratelimit.slidingWindow(
-      parseInt(process.env.RATE_LIMIT_BULK || '10'),
-      '1 m'
-    ),
-    analytics: true,
-    prefix: 'ratelimit:bulk',
-  }),
-  sync: new Ratelimit({
-    redis: redis as any,
-    limiter: Ratelimit.slidingWindow(
-      parseInt(process.env.RATE_LIMIT_SYNC || '30'),
-      '1 m'
-    ),
-    analytics: true,
-    prefix: 'ratelimit:sync',
-  }),
-  auth: new Ratelimit({
-    redis: redis as any,
-    limiter: Ratelimit.slidingWindow(
-      parseInt(process.env.RATE_LIMIT_AUTH || '5'),
-      '1 m'
-    ),
-    analytics: true,
-    prefix: 'ratelimit:auth',
-  }),
-  // Grafana render rate limit: image generation is expensive
-  render: new Ratelimit({
-    redis: redis as any,
-    limiter: Ratelimit.slidingWindow(
-      parseInt(process.env.RATE_LIMIT_RENDER || '20'),
-      '1 m'
-    ),
-    analytics: true,
-    prefix: 'ratelimit:render',
-  }),
-};
+function createRateLimiters() {
+  const redis = getRedis();
+  if (!redis) {
+    // Return no-op rate limiters when Redis is not available
+    return null;
+  }
+  
+  return {
+    general: new Ratelimit({
+      redis: redis as any,
+      limiter: Ratelimit.slidingWindow(
+        parseInt(process.env.RATE_LIMIT_GENERAL || '100'),
+        '1 m'
+      ),
+      analytics: true,
+      prefix: 'ratelimit:general',
+    }),
+    bulk: new Ratelimit({
+      redis: redis as any,
+      limiter: Ratelimit.slidingWindow(
+        parseInt(process.env.RATE_LIMIT_BULK || '10'),
+        '1 m'
+      ),
+      analytics: true,
+      prefix: 'ratelimit:bulk',
+    }),
+    sync: new Ratelimit({
+      redis: redis as any,
+      limiter: Ratelimit.slidingWindow(
+        parseInt(process.env.RATE_LIMIT_SYNC || '30'),
+        '1 m'
+      ),
+      analytics: true,
+      prefix: 'ratelimit:sync',
+    }),
+    auth: new Ratelimit({
+      redis: redis as any,
+      limiter: Ratelimit.slidingWindow(
+        parseInt(process.env.RATE_LIMIT_AUTH || '5'),
+        '1 m'
+      ),
+      analytics: true,
+      prefix: 'ratelimit:auth',
+    }),
+    // Grafana render rate limit: image generation is expensive
+    render: new Ratelimit({
+      redis: redis as any,
+      limiter: Ratelimit.slidingWindow(
+        parseInt(process.env.RATE_LIMIT_RENDER || '20'),
+        '1 m'
+      ),
+      analytics: true,
+      prefix: 'ratelimit:render',
+    }),
+  };
+}
 
-export type RateLimitType = keyof typeof rateLimiters;
+// Lazy initialization of rate limiters
+let _rateLimiters: ReturnType<typeof createRateLimiters> | undefined;
+function getRateLimiters() {
+  if (_rateLimiters === undefined) {
+    _rateLimiters = createRateLimiters();
+  }
+  return _rateLimiters;
+}
+
+export type RateLimitType = 'general' | 'bulk' | 'sync' | 'auth' | 'render';
 
 export async function checkRateLimit(
   type: RateLimitType,
   identifier: string
 ): Promise<{ success: boolean; limit: number; remaining: number; reset: number }> {
+  const rateLimiters = getRateLimiters();
+  if (!rateLimiters) {
+    // No rate limiting when Redis is not available
+    return { success: true, limit: 999, remaining: 999, reset: Date.now() + 60000 };
+  }
   const limiter = rateLimiters[type];
   const result = await limiter.limit(identifier);
   

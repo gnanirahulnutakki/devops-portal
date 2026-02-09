@@ -1,3 +1,5 @@
+'use client';
+
 import { formatRelativeTime } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +12,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 
-interface ActivityItem {
+export interface ActivityItem {
   id: string;
   type: 'pr_opened' | 'pr_merged' | 'deployment' | 'sync' | 'alert' | 'sync_success';
   title: string;
@@ -22,55 +24,6 @@ interface ActivityItem {
   timestamp: string;
   status?: 'success' | 'failed' | 'pending';
 }
-
-// Mock data - replace with actual data fetching
-const mockActivities: ActivityItem[] = [
-  {
-    id: '1',
-    type: 'sync_success',
-    title: 'rli-use2-mp02 synced',
-    description: 'Application synced successfully',
-    user: { name: 'ArgoCD' },
-    timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    status: 'success',
-  },
-  {
-    id: '2',
-    type: 'pr_merged',
-    title: 'Update FID version to 8.1.2',
-    description: 'Merged by developer1 into master',
-    user: { name: 'developer1', avatar: 'https://github.com/identicons/dev1.png' },
-    timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    status: 'success',
-  },
-  {
-    id: '3',
-    type: 'deployment',
-    title: 'Production deployment',
-    description: 'rli-use2-jb01 deployed v1.0.1',
-    user: { name: 'Jenkins' },
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    status: 'success',
-  },
-  {
-    id: '4',
-    type: 'alert',
-    title: 'High CPU usage detected',
-    description: 'rli-use2-mp04: CPU > 80% for 5 minutes',
-    user: { name: 'Prometheus' },
-    timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-    status: 'pending',
-  },
-  {
-    id: '5',
-    type: 'pr_opened',
-    title: 'Fix nodeSelector configuration',
-    description: 'Opened by developer2',
-    user: { name: 'developer2', avatar: 'https://github.com/identicons/dev2.png' },
-    timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    status: 'pending',
-  },
-];
 
 const iconMap = {
   pr_opened: GitPullRequest,
@@ -90,9 +43,16 @@ const iconColorMap = {
   alert: 'text-rl-orange bg-rl-orange/10',
 };
 
-export async function RecentActivity() {
-  // In production, fetch from API
-  const activities = mockActivities;
+export function RecentActivity({ items }: { items: ActivityItem[] }) {
+  const activities = items;
+
+  if (activities.length === 0) {
+    return (
+      <div className="text-sm text-muted-foreground py-6 text-center">
+        No recent activity yet.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

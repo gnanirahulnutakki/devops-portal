@@ -8,6 +8,7 @@ import {
 } from '@/lib/api';
 import { createGitHubServiceForUser } from '@/lib/integrations/github';
 import { listRepositoriesSchema } from '@/lib/validations/schemas';
+import { logger } from '@/lib/logger';
 
 export const GET = withApiHandler(
   async (request: Request) => {
@@ -23,35 +24,51 @@ export const GET = withApiHandler(
     const { filter, page, perPage } = queryResult.data;
 
     // Get GitHub service for user
-    const github = await createGitHubServiceForUser(authResult.userId);
+    let github;
+    try {
+      github = await createGitHubServiceForUser(authResult.userId);
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'GitHub service initialization failed');
+      return errorResponse(
+        'GITHUB_NOT_CONFIGURED',
+        'GitHub integration is not configured. Contact your administrator.',
+        500
+      );
+    }
+
     if (!github) {
       return errorResponse(
         'GITHUB_NOT_CONNECTED',
-        'GitHub account not connected. Please sign in with GitHub.',
+        'GitHub account not connected. Please sign in with GitHub or connect your account in Settings.',
         403
       );
     }
 
-    // Fetch repositories
-    const repositories = await github.getUserRepositories({
-      sort: 'updated',
-      perPage,
-      page,
-    });
+    try {
+      // Fetch repositories
+      const repositories = await github.getUserRepositories({
+        sort: 'updated',
+        perPage,
+        page,
+      });
 
-    // Filter if provided
-    const filtered = filter
-      ? repositories.filter(repo => 
-          repo.name.toLowerCase().includes(filter.toLowerCase()) ||
-          repo.fullName.toLowerCase().includes(filter.toLowerCase())
-        )
-      : repositories;
+      // Filter if provided
+      const filtered = filter
+        ? repositories.filter(repo => 
+            repo.name.toLowerCase().includes(filter.toLowerCase()) ||
+            repo.fullName.toLowerCase().includes(filter.toLowerCase())
+          )
+        : repositories;
 
-    return successResponse(filtered, {
-      page,
-      pageSize: perPage,
-      total: filtered.length,
-    });
+      return successResponse(filtered, {
+        page,
+        pageSize: perPage,
+        total: filtered.length,
+      });
+    } catch (error) {
+      logger.error({ userId: authResult.userId, error: (error as Error).message }, 'GitHub API request failed');
+      return errorResponse('GITHUB_API_ERROR', 'Failed to fetch repositories from GitHub', 502);
+    }
   },
   { rateLimit: 'general', requireAuth: true }
 );

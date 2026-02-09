@@ -1,15 +1,58 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useOrganizationStore } from '@/store/organization-store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { GrafanaDashboardList } from '@/components/monitoring/grafana-dashboard-list';
 import { GrafanaFolderList } from '@/components/monitoring/grafana-folder-list';
 import { GrafanaAlertList } from '@/components/monitoring/grafana-alert-list';
 import { LayoutDashboard, FolderOpen, Bell } from 'lucide-react';
 
+interface GrafanaAccount {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+
 export default function MonitoringPage() {
+  const currentOrganization = useOrganizationStore((state) => state.currentOrganization);
+  const [accounts, setAccounts] = useState<GrafanaAccount[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<string | undefined>();
+
+  const orgId = currentOrganization?.id;
+
+  const enabledAccounts = useMemo(
+    () => accounts.filter((account) => account.enabled),
+    [accounts]
+  );
+
+  useEffect(() => {
+    if (!orgId) return;
+    const fetchAccounts = async () => {
+      const res = await fetch('/api/integrations/grafana/accounts', {
+        headers: { 'x-organization-id': orgId },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAccounts(data.data || []);
+        if (!selectedAccount && data.data?.[0]) {
+          setSelectedAccount(data.data[0].id);
+        }
+      }
+    };
+    fetchAccounts();
+  }, [orgId]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -17,6 +60,25 @@ export default function MonitoringPage() {
         <p className="text-muted-foreground">
           Explore Grafana dashboards, folders, and alerts for your organization.
         </p>
+      </div>
+
+      <div className="max-w-sm space-y-2">
+        <Label>Grafana Account</Label>
+        <Select
+          value={selectedAccount}
+          onValueChange={(value) => setSelectedAccount(value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select Grafana account" />
+          </SelectTrigger>
+          <SelectContent>
+            {enabledAccounts.map((account) => (
+              <SelectItem key={account.id} value={account.id}>
+                {account.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <Tabs defaultValue="dashboards">
@@ -42,7 +104,7 @@ export default function MonitoringPage() {
             </CardHeader>
             <CardContent>
               <Suspense fallback={<ContentSkeleton />}> 
-                <GrafanaDashboardList />
+                <GrafanaDashboardList credentialId={selectedAccount} />
               </Suspense>
             </CardContent>
           </Card>
@@ -55,7 +117,7 @@ export default function MonitoringPage() {
             </CardHeader>
             <CardContent>
               <Suspense fallback={<ContentSkeleton />}>
-                <GrafanaFolderList />
+                <GrafanaFolderList credentialId={selectedAccount} />
               </Suspense>
             </CardContent>
           </Card>
@@ -68,7 +130,7 @@ export default function MonitoringPage() {
             </CardHeader>
             <CardContent>
               <Suspense fallback={<ContentSkeleton />}>
-                <GrafanaAlertList />
+                <GrafanaAlertList credentialId={selectedAccount} />
               </Suspense>
             </CardContent>
           </Card>

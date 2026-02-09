@@ -1,10 +1,11 @@
 // =============================================================================
-// Organizations API - List user's organizations
+// Organizations API - List and create organizations
 // =============================================================================
 
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { successResponse, unauthorizedError, serverError } from '@/lib/api';
+import { successResponse, unauthorizedError, serverError, errorResponse } from '@/lib/api';
+import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * GET /api/organizations
@@ -53,5 +54,78 @@ export async function GET() {
   } catch (error) {
     console.error('Failed to fetch organizations:', error);
     return serverError('Failed to fetch organizations');
+  }
+}
+
+/**
+ * POST /api/organizations
+ * Create a new organization and add the current user as ADMIN
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const session = await auth();
+    
+    if (!session?.user?.id) {
+      return unauthorizedError();
+    }
+    
+    const body = await request.json();
+    const { name, slug, description } = body;
+    
+    // Validate required fields
+    if (!name || !slug) {
+      return errorResponse('VALIDATION_ERROR', 'Name and slug are required', 400);
+    }
+    
+    // Validate slug format (lowercase, alphanumeric, hyphens)
+    const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+    if (!slugRegex.test(slug)) {
+      return errorResponse('VALIDATION_ERROR', 'Slug must be lowercase alphanumeric with hyphens only', 400);
+    }
+    
+    // Check if slug already exists
+    const existing = await prisma.organization.findUnique({
+      where: { slug },
+    });
+    
+    if (existing) {
+      return errorResponse('CONFLICT', 'An organization with this slug already exists', 409);
+    }
+    
+    // Create organization and membership in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Create the organization
+      const organization = await tx.organization.create({
+        data: {
+          name,
+          slug,
+          description: description || null,
+        },
+      });
+      
+      // Add the creating user as ADMIN
+      await tx.membership.create({
+        data: {
+          userId: session.user.id,
+          organizationId: organization.id,
+          role: 'ADMIN',
+        },
+      });
+      
+      return organization;
+    });
+    
+    return NextResponse.json({
+      data: {
+        id: result.id,
+        name: result.name,
+        slug: result.slug,
+        description: result.description,
+        role: 'ADMIN',
+      }
+    }, { status: 201 });
+  } catch (error) {
+    console.error('Failed to create organization:', error);
+    return serverError('Failed to create organization');
   }
 }

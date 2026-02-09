@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { Sidebar } from '@/components/dashboard/sidebar';
 import { Header } from '@/components/dashboard/header';
+import { AssistantDock } from '@/components/assistant/assistant-dock';
 
 export default async function DashboardLayout({
   children,
@@ -22,6 +23,7 @@ export default async function DashboardLayout({
         <main className="flex-1 overflow-y-auto p-6">
           {children}
         </main>
+        <AssistantDock />
       </div>
     </div>
   );

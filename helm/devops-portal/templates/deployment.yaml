@@ -48,6 +48,9 @@ spec:
               value: {{ include "devops-portal.databaseHost" . | quote }}
             - name: DB_PORT
               value: "5432"
+          securityContext:
+            runAsUser: 1001
+            runAsNonRoot: true
         {{- end }}
         
         {{- if .Values.initContainers.migrate.enabled }}
