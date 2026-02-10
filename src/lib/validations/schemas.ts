@@ -122,6 +122,13 @@ export const mergePullRequestSchema = z.object({
   method: z.enum(['merge', 'squash', 'rebase']).optional(),
 });
 
+export const listDependabotAlertsSchema = z.object({
+  repository: z.string().min(1),
+  state: z.enum(['open', 'dismissed', 'fixed', 'all']).default('open'),
+  page: z.coerce.number().min(1).default(1),
+  perPage: z.coerce.number().min(1).max(100).default(50),
+});
+
 // =============================================================================
 // ArgoCD Schemas
 // =============================================================================
@@ -208,6 +215,7 @@ export type ListPullRequests = z.infer<typeof listPullRequestsSchema>;
 export type ListPullRequestFiles = z.infer<typeof listPullRequestFilesSchema>;
 export type UpdatePullRequest = z.infer<typeof updatePullRequestSchema>;
 export type MergePullRequest = z.infer<typeof mergePullRequestSchema>;
+export type ListDependabotAlerts = z.infer<typeof listDependabotAlertsSchema>;
 export type SyncApplication = z.infer<typeof syncApplicationSchema>;
 export type RollbackApplication = z.infer<typeof rollbackApplicationSchema>;
 export type BulkFileUpdate = z.infer<typeof bulkFileUpdateSchema>;

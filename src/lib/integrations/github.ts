@@ -105,6 +105,25 @@ export interface GitHubWorkflowRun {
   updatedAt: string;
 }
 
+export type DependabotAlertState = 'open' | 'dismissed' | 'fixed' | 'all';
+export type DependabotAlertSeverity = 'critical' | 'high' | 'medium' | 'low' | 'unknown';
+
+export interface GitHubDependabotAlert {
+  number: number;
+  state: DependabotAlertState | string;
+  severity: DependabotAlertSeverity;
+  repository: string; // owner/repo
+  packageName?: string;
+  ecosystem?: string;
+  manifestPath?: string;
+  vulnerableVersionRange?: string;
+  firstPatchedVersion?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  htmlUrl?: string;
+  summary?: string;
+}
+
 export interface UpdateFileParams {
   repository: string;
   branch: string;
@@ -273,6 +292,68 @@ export class GitHubService {
       owner,
       repo,
       run_id: runId,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Security (Dependabot Alerts)
+  // ---------------------------------------------------------------------------
+
+  async listDependabotAlerts(
+    repository: string,
+    options: {
+      state?: DependabotAlertState;
+      perPage?: number;
+      page?: number;
+    } = {}
+  ): Promise<GitHubDependabotAlert[]> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
+    const state = options.state || 'open';
+    const per_page = options.perPage || 50;
+    const page = options.page || 1;
+
+    const res = await this.octokit.request('GET /repos/{owner}/{repo}/dependabot/alerts', {
+      owner,
+      repo,
+      state,
+      per_page,
+      page,
+      headers: {
+        accept: 'application/vnd.github+json',
+      },
+    });
+
+    const data = (res.data || []) as any[];
+    return data.map((a) => {
+      const advisory = a.security_advisory || {};
+      const dep = a.dependency || {};
+      const pkg = dep.package || {};
+      const sevRaw = String(advisory.severity || 'unknown').toLowerCase();
+      const severity: DependabotAlertSeverity =
+        sevRaw === 'critical' || sevRaw === 'high' || sevRaw === 'medium' || sevRaw === 'low'
+          ? (sevRaw as DependabotAlertSeverity)
+          : 'unknown';
+
+      const firstPatchedVersion =
+        a.security_vulnerability?.first_patched_version?.identifier ||
+        advisory?.patched_versions ||
+        undefined;
+
+      return {
+        number: a.number,
+        state: a.state,
+        severity,
+        repository: `${owner}/${repo}`,
+        packageName: pkg.name,
+        ecosystem: pkg.ecosystem,
+        manifestPath: dep.manifest_path,
+        vulnerableVersionRange: a.security_vulnerability?.vulnerable_version_range,
+        firstPatchedVersion,
+        createdAt: a.created_at,
+        updatedAt: a.updated_at,
+        htmlUrl: a.html_url,
+        summary: advisory.summary,
+      };
     });
   }
 
