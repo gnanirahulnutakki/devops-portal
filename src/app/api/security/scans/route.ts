@@ -67,7 +67,12 @@ export const POST = withTenantApiHandler(
     });
 
     // Create a K8s job to run the scan (in-cluster)
-    const jobNamespace = namespace || process.env.SECURITY_SCAN_NAMESPACE || process.env.POD_NAMESPACE || 'default';
+    const jobNamespace =
+      namespace ||
+      process.env.SECURITY_SCAN_NAMESPACE ||
+      process.env.DEVOPS_PORTAL_NAMESPACE ||
+      process.env.POD_NAMESPACE ||
+      'default';
     const jobName = `devops-portal-scan-${scan.id}`.toLowerCase();
     const job = buildTrivyImageScanJob({
       name: jobName,
