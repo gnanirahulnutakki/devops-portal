@@ -154,6 +154,25 @@ jobs:
           sarif_file: 'trivy-results.sarif'
           category: 'container-scan'
 
+      - name: Docker Scout CVE scan (SARIF)
+        if: github.event_name != 'pull_request'
+        uses: docker/scout-action@v1
+        continue-on-error: true
+        with:
+          command: cves
+          image: ${{ env.DOCKER_IMAGE }}:${{ steps.tags.outputs.primary_tag }}
+          sarif-file: scout-results.sarif
+          # Docker Scout works best when the image is pushed and accessible
+          to: ${{ env.DOCKER_IMAGE }}:${{ steps.tags.outputs.primary_tag }}
+
+      - name: Upload Docker Scout results to GitHub Security
+        if: github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: 'scout-results.sarif'
+          category: 'docker-scout'
+
   # Run tests before build
   test:
     name: Run Tests

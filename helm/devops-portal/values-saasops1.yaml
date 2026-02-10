@@ -143,3 +143,6 @@ extraEnv:
         key: GITHUB_TOKEN
   - name: GITHUB_ORGANIZATION
     value: "radiantlogic-saas"
+  # Security scan jobs default namespace (where portal runs)
+  - name: SECURITY_SCAN_NAMESPACE
+    value: "duploservices-saasops1"

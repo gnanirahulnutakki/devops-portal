@@ -38,6 +38,7 @@ model Organization {
   auditLogs      AuditLog[]
   alertRules     AlertRule[]
   integrationCredentials IntegrationCredential[]
+  securityScans  SecurityScan[]
   
   @@map("organizations")
 }
@@ -91,6 +92,7 @@ model User {
   auditLogs     AuditLog[]
   bulkOperations BulkOperation[]
   integrationCredentials IntegrationCredential[]
+  securityScans SecurityScan[]
   
   // Timestamps
   createdAt     DateTime  @default(now())
@@ -450,4 +452,58 @@ enum IntegrationProvider {
   LLM
   UPTIME_KUMA
   SUPABASE
+  VANTA
+}
+
+// =============================================================================
+// Security Scanning (Vulnerability Reports)
+// =============================================================================
+
+enum SecurityScanType {
+  TRIVY_IMAGE
+  TRIVY_CLUSTER
+  DOCKER_SCOUT_IMAGE
+}
+
+enum SecurityScanStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model SecurityScan {
+  id        String            @id @default(cuid())
+  type      SecurityScanType
+  status    SecurityScanStatus @default(PENDING)
+
+  // Target (e.g., image ref) and tool metadata
+  target    String
+  tool      String?           // trivy, docker-scout, etc.
+  toolVersion String?
+
+  // Execution details
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  // Results (store normalized summary + raw)
+  summary     Json?           // {critical,high,medium,low,...}
+  reportJson  Json?           // tool JSON output when available
+  reportText  String?         @db.Text // raw output (for download/debug)
+
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Actor
+  createdById String
+  createdBy   User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
+  @@map("security_scans")
 }

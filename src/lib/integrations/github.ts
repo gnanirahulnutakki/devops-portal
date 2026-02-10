@@ -124,6 +124,18 @@ export interface GitHubDependabotAlert {
   summary?: string;
 }
 
+export interface GitHubCodeScanningAlert {
+  number: number;
+  state: string;
+  ruleId?: string;
+  ruleDescription?: string;
+  severity?: string;
+  toolName?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  htmlUrl?: string;
+}
+
 export interface UpdateFileParams {
   repository: string;
   branch: string;
@@ -355,6 +367,51 @@ export class GitHubService {
         summary: advisory.summary,
       };
     });
+  }
+
+  async listCodeScanningAlerts(
+    repository: string,
+    options: {
+      state?: 'open' | 'dismissed' | 'fixed';
+      toolName?: string;
+      perPage?: number;
+      page?: number;
+    } = {}
+  ): Promise<GitHubCodeScanningAlert[]> {
+    const { owner, repo } = this.resolveOwnerRepo(repository);
+    const state = options.state || 'open';
+    const per_page = options.perPage || 50;
+    const page = options.page || 1;
+
+    const res = await this.octokit.request('GET /repos/{owner}/{repo}/code-scanning/alerts', {
+      owner,
+      repo,
+      state,
+      per_page,
+      page,
+      headers: {
+        accept: 'application/vnd.github+json',
+      },
+    });
+
+    const data = (res.data || []) as any[];
+    const mapped = data.map((a) => ({
+      number: a.number,
+      state: a.state,
+      ruleId: a.rule?.id,
+      ruleDescription: a.rule?.description,
+      severity: a.rule?.severity,
+      toolName: a.tool?.name,
+      createdAt: a.created_at,
+      updatedAt: a.updated_at,
+      htmlUrl: a.html_url,
+    })) as GitHubCodeScanningAlert[];
+
+    if (options.toolName) {
+      const toolLower = options.toolName.toLowerCase();
+      return mapped.filter((a) => (a.toolName || '').toLowerCase().includes(toolLower));
+    }
+    return mapped;
   }
 
   async createBranch(

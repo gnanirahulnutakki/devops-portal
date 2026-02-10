@@ -78,6 +78,10 @@ spec:
               protocol: TCP
           env:
             {{- include "devops-portal.env" . | nindent 12 }}
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

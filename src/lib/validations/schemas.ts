@@ -129,6 +129,26 @@ export const listDependabotAlertsSchema = z.object({
   perPage: z.coerce.number().min(1).max(100).default(50),
 });
 
+export const createSecurityScanSchema = z.object({
+  type: z.enum(['TRIVY_IMAGE']),
+  target: z.string().min(3).max(500), // image ref
+  namespace: z.string().min(1).max(63).regex(/^[a-z0-9-]+$/).optional(),
+});
+
+export const listSecurityScansSchema = z.object({
+  page: z.coerce.number().min(1).default(1),
+  pageSize: z.coerce.number().min(1).max(100).default(20),
+});
+
+export const listCodeScanningAlertsSchema = z.object({
+  repository: z.string().min(1),
+  // GitHub code scanning alerts endpoint supports: open, dismissed, fixed
+  state: z.enum(['open', 'dismissed', 'fixed']).default('open'),
+  toolName: z.string().optional(),
+  page: z.coerce.number().min(1).default(1),
+  perPage: z.coerce.number().min(1).max(100).default(50),
+});
+
 // =============================================================================
 // ArgoCD Schemas
 // =============================================================================
@@ -216,6 +236,9 @@ export type ListPullRequestFiles = z.infer<typeof listPullRequestFilesSchema>;
 export type UpdatePullRequest = z.infer<typeof updatePullRequestSchema>;
 export type MergePullRequest = z.infer<typeof mergePullRequestSchema>;
 export type ListDependabotAlerts = z.infer<typeof listDependabotAlertsSchema>;
+export type CreateSecurityScan = z.infer<typeof createSecurityScanSchema>;
+export type ListSecurityScans = z.infer<typeof listSecurityScansSchema>;
+export type ListCodeScanningAlerts = z.infer<typeof listCodeScanningAlertsSchema>;
 export type SyncApplication = z.infer<typeof syncApplicationSchema>;
 export type RollbackApplication = z.infer<typeof rollbackApplicationSchema>;
 export type BulkFileUpdate = z.infer<typeof bulkFileUpdateSchema>;

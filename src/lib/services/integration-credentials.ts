@@ -60,6 +60,11 @@ export interface SupabaseCredentials {
   serviceRoleKey?: string;
 }
 
+export interface VantaCredentials {
+  accessToken: string;
+  baseUrl?: string; // default: https://api.vanta.com
+}
+
 export type CredentialPayload =
   | { provider: 'ARGOCD'; credentials: ArgoCDCredentials }
   | { provider: 'GRAFANA'; credentials: GrafanaCredentials }
@@ -68,7 +73,8 @@ export type CredentialPayload =
   | { provider: 'S3'; credentials: S3Credentials }
   | { provider: 'LLM'; credentials: LlmCredentials }
   | { provider: 'UPTIME_KUMA'; credentials: UptimeKumaCredentials }
-  | { provider: 'SUPABASE'; credentials: SupabaseCredentials };
+  | { provider: 'SUPABASE'; credentials: SupabaseCredentials }
+  | { provider: 'VANTA'; credentials: VantaCredentials };
 
 // =============================================================================
 // Service Functions
@@ -333,6 +339,11 @@ function validateCredentials(
         return 'Supabase requires anonKey or serviceRoleKey';
       }
       break;
+    case 'VANTA':
+      if (!credentials.accessToken) {
+        return 'Vanta requires accessToken';
+      }
+      break;
   }
   return null;
 }
@@ -414,5 +425,21 @@ export async function getS3Credentials(
     };
   }
 
+  return null;
+}
+
+/**
+ * Get Vanta credentials with env fallback
+ */
+export async function getVantaCredentials(
+  organizationId: string
+): Promise<VantaCredentials | null> {
+  const orgCreds = await getCredentials<VantaCredentials>(organizationId, 'VANTA');
+  if (orgCreds) return orgCreds;
+
+  const accessToken = process.env.VANTA_ACCESS_TOKEN;
+  if (accessToken) {
+    return { accessToken, baseUrl: process.env.VANTA_BASE_URL || 'https://api.vanta.com' };
+  }
   return null;
 }
