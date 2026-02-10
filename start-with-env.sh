@@ -6,4 +6,4 @@ source .env
 set +a
 
 # Start yarn dev
-yarn dev
+npm run dev
