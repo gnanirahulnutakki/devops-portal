@@ -134,8 +134,6 @@ extraEnv:
       secretKeyRef:
         name: devops-portal-secrets
         key: NEXTAUTH_SECRET
-  - name: ENABLE_CREDENTIALS_AUTH
-    value: "true"
   - name: GITHUB_TOKEN
     valueFrom:
       secretKeyRef:

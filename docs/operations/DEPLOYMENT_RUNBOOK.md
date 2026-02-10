@@ -144,6 +144,46 @@ kubectl -n duploservices-saasops1 logs -l app.kubernetes.io/instance=devops-port
 
 ---
 
+### Helm upgrade (apply chart changes)
+
+```bash
+helm -n duploservices-saasops1 upgrade devops-portal ./helm/devops-portal \
+  -f helm/devops-portal/values-saasops1.yaml \
+  --set image.repository=rahulnutakki/devops-portal \
+  --set image.tag=v2-openapi-4 \
+  --wait --timeout 10m
+```
+
+If the upgrade fails due to an immutable/patch conflict, force a recreate:
+
+```bash
+helm -n duploservices-saasops1 upgrade devops-portal ./helm/devops-portal \
+  -f helm/devops-portal/values-saasops1.yaml \
+  --set image.repository=rahulnutakki/devops-portal \
+  --set image.tag=v2-openapi-4 \
+  --force \
+  --wait --timeout 10m
+```
+
+---
+
+### Database migrations (apply SQL migrations directly)
+
+When Prisma migrations can’t be run easily inside the app container, apply the generated SQL directly via `psql` in the Postgres pod:
+
+```bash
+kubectl -n duploservices-saasops1 exec devops-portal-postgres-0 -- \
+  psql -U postgres -d devops_portal -c "select 1;"
+
+kubectl -n duploservices-saasops1 exec -i devops-portal-postgres-0 -- \
+  psql -v ON_ERROR_STOP=1 -U postgres -d devops_portal \
+  < prisma/migrations/20260210000000_add_security_scans/migration.sql
+
+kubectl -n duploservices-saasops1 exec -i devops-portal-postgres-0 -- \
+  psql -v ON_ERROR_STOP=1 -U postgres -d devops_portal \
+  < prisma/migrations/20260210001000_add_vanta_integration_provider/migration.sql
+```
+
 ### Notes from last deployment session (2026-02-09)
 
 - **Node version alignment**: Dockerfile updated to Node `22-alpine` to match `package.json` engines (`>=22`).
