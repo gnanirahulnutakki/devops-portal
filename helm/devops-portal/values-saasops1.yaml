@@ -37,6 +37,14 @@ ingress:
 trivyOperator:
   enabled: true
 
+# Pass-through values to the trivy-operator dependency chart
+trivy-operator:
+  operator:
+    # Avoid generating ClusterComplianceReport resources (CRD may not be present)
+    clusterComplianceEnabled: false
+  compliance:
+    specs: []
+
 # Use existing secret for app configuration
 secrets:
   useSealedSecrets: false
