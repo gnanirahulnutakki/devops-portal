@@ -11,5 +11,8 @@ dependencies:
 - name: sealed-secrets
   repository: https://bitnami-labs.github.io/sealed-secrets
   version: 2.16.2
-digest: sha256:2ae63c8699df85e2dd4053d6286be106a473f6ef002b11fccee84248a982e56a
-generated: "2026-02-06T10:59:46.283697-06:00"
+- name: trivy-operator
+  repository: https://aquasecurity.github.io/helm-charts
+  version: 0.31.0
+digest: sha256:2a3dc1f71101d51784417ad143449f73933778b0c573ce245eb02d147399d5c9
+generated: "2026-02-09T19:58:45.579332-06:00"

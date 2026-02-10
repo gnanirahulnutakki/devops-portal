@@ -46,3 +46,9 @@ dependencies:
     version: "2.16.x"
     repository: https://bitnami-labs.github.io/sealed-secrets
     condition: sealedSecrets.install
+
+  # Trivy Operator (optional - runtime vulnerability reports)
+  - name: trivy-operator
+    version: "0.31.0"
+    repository: https://aquasecurity.github.io/helm-charts
+    condition: trivyOperator.enabled

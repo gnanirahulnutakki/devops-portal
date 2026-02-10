@@ -30,6 +30,8 @@ const nextConfig: NextConfig = {
               "font-src 'self' data:",
               // connect-src: APIs that can be called from client-side
               `connect-src 'self' https://api.github.com https://*.githubusercontent.com ${process.env.GRAFANA_URL ?? ''} ${process.env.ARGOCD_URL ?? ''}`.trim(),
+              // allow embedding external diagram editor
+              "frame-src 'self' https://app.diagrams.net",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

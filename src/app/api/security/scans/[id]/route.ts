@@ -1,6 +1,6 @@
 import { withTenantApiHandler, successResponse, errorResponse } from '@/lib/api';
 import { idSchema } from '@/lib/validations/schemas';
-import { findJobPodName, getPodLogs, readJob } from '@/lib/services/security-scans';
+import { findJobPodName, getPodLogs, getPodLogsTail, readJob } from '@/lib/services/security-scans';
 
 function summarizeTrivyReport(report: any) {
   // Trivy JSON has Results[].Vulnerabilities[].Severity
@@ -20,6 +20,26 @@ function summarizeTrivyReport(report: any) {
   return summary;
 }
 
+function extractJsonFromLogs(logs: string): any | null {
+  const trimmed = (logs || '').trim();
+  if (!trimmed) return null;
+
+  const startMarker = '===REPORT_JSON_START===';
+  const endMarker = '===REPORT_JSON_END===';
+  const s = trimmed.lastIndexOf(startMarker);
+  const e = trimmed.lastIndexOf(endMarker);
+  if (s >= 0 && e > s) {
+    const jsonText = trimmed.slice(s + startMarker.length, e).trim();
+    return JSON.parse(jsonText);
+  }
+
+  const jsonStart = trimmed.indexOf('{');
+  if (jsonStart >= 0) {
+    return JSON.parse(trimmed.slice(jsonStart));
+  }
+  return null;
+}
+
 export const GET = withTenantApiHandler(
   async (request, ctx) => {
     const url = new URL(request.url);
@@ -35,46 +55,61 @@ export const GET = withTenantApiHandler(
     });
     if (!scan) return errorResponse('NOT_FOUND', 'Scan not found', 404);
 
-    // If still running, try to refresh status by checking the K8s job/pod logs.
-    if (scan.status === 'RUNNING') {
-      const namespace = process.env.SECURITY_SCAN_NAMESPACE || process.env.POD_NAMESPACE || 'default';
-      const jobName = `devops-portal-scan-${scan.id}`.toLowerCase();
+    const defaultNamespace =
+      process.env.SECURITY_SCAN_NAMESPACE ||
+      process.env.DEVOPS_PORTAL_NAMESPACE ||
+      process.env.POD_NAMESPACE ||
+      'default';
+    const namespace = scan.k8sNamespace || defaultNamespace;
+    const jobName = scan.k8sJobName || `devops-portal-scan-${scan.id}`.toLowerCase();
 
-      try {
-        const job = await readJob(namespace, jobName);
-        const succeeded = (job?.status?.succeeded || 0) > 0;
-        const failed = (job?.status?.failed || 0) > 0;
+    // Always attempt a best-effort refresh (supports viewing progression)
+    let jobStatus: any = null;
+    let podName: string | null = null;
+    let logsTail: string | null = null;
 
-        if (succeeded || failed) {
-          const podName = await findJobPodName(namespace, jobName);
-          const logs = podName ? await getPodLogs(namespace, podName) : '';
+    try {
+      const job = await readJob(namespace, jobName);
+      jobStatus = job?.status || null;
 
-          let reportJson: any = null;
-          let summary: any = null;
-          if (succeeded && logs) {
-            // logs should be pure JSON, but may contain a prelude line; try parse leniently
-            const trimmed = logs.trim();
-            const jsonStart = trimmed.indexOf('{');
-            if (jsonStart >= 0) {
-              reportJson = JSON.parse(trimmed.slice(jsonStart));
-              summary = summarizeTrivyReport(reportJson);
-            }
-          }
-
-          await ctx.db.securityScan.update({
-            where: { id: scan.id },
-            data: {
-              status: succeeded ? 'COMPLETED' : 'FAILED',
-              completedAt: new Date(),
-              summary: summary ?? undefined,
-              reportJson: reportJson ?? undefined,
-              reportText: logs || undefined,
-            },
-          });
-        }
-      } catch {
-        // best-effort refresh, don't fail API call
+      podName = scan.k8sPodName || (await findJobPodName(namespace, jobName));
+      if (podName) {
+        logsTail = await getPodLogsTail(namespace, podName, 200);
       }
+
+      const succeeded = (job?.status?.succeeded || 0) > 0;
+      const failed = (job?.status?.failed || 0) > 0;
+
+      if ((succeeded || failed) && scan.status === 'RUNNING') {
+        const logs = podName ? await getPodLogs(namespace, podName) : '';
+        let reportJson: any = null;
+        let summary: any = null;
+        if (succeeded && logs) {
+          reportJson = extractJsonFromLogs(logs);
+          if (reportJson) summary = summarizeTrivyReport(reportJson);
+        }
+
+        await ctx.db.securityScan.update({
+          where: { id: scan.id },
+          data: {
+            status: succeeded ? 'COMPLETED' : 'FAILED',
+            completedAt: new Date(),
+            summary: summary ?? undefined,
+            reportJson: reportJson ?? undefined,
+            reportText: logs || undefined,
+            k8sNamespace: namespace,
+            k8sJobName: jobName,
+            k8sPodName: podName ?? undefined,
+          },
+        });
+      } else if (podName && (!scan.k8sPodName || scan.k8sPodName !== podName)) {
+        await ctx.db.securityScan.update({
+          where: { id: scan.id },
+          data: { k8sNamespace: namespace, k8sJobName: jobName, k8sPodName: podName },
+        });
+      }
+    } catch {
+      // ignore refresh issues (RBAC/network)
     }
 
     const updated = await ctx.db.securityScan.findFirst({
@@ -87,6 +122,9 @@ export const GET = withTenantApiHandler(
         tool: true,
         toolVersion: true,
         summary: true,
+        k8sNamespace: true,
+        k8sJobName: true,
+        k8sPodName: true,
         startedAt: true,
         completedAt: true,
         createdAt: true,
@@ -96,7 +134,16 @@ export const GET = withTenantApiHandler(
       },
     });
 
-    return successResponse(updated);
+    return successResponse({
+      ...updated,
+      k8s: {
+        namespace,
+        jobName,
+        podName,
+        jobStatus,
+        logsTail,
+      },
+    });
   },
   { rateLimit: 'general', requiredRole: 'USER' }
 );

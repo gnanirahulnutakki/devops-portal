@@ -33,6 +33,10 @@ resources:
 ingress:
   enabled: false  # Ingress already exists
 
+# Enable Trivy Operator for runtime vulnerability reports
+trivyOperator:
+  enabled: true
+
 # Use existing secret for app configuration
 secrets:
   useSealedSecrets: false

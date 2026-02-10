@@ -484,3 +484,9 @@ commonLabels: {}
 securityScans:
   rbac:
     create: true
+
+# =============================================================================
+# Trivy Operator (runtime vulnerability reports)
+# =============================================================================
+trivyOperator:
+  enabled: false

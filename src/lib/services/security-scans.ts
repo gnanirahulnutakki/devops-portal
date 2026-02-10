@@ -35,10 +35,10 @@ export function buildTrivyImageScanJob(params: {
   name: string;
   namespace: string;
   imageRef: string;
+  scanId?: string;
 }): any {
-  const { name, namespace, imageRef } = params;
+  const { name, namespace, imageRef, scanId } = params;
 
-  // Note: we print JSON to stdout so the app can capture it via pod logs.
   return {
     apiVersion: 'batch/v1',
     kind: 'Job',
@@ -48,16 +48,20 @@ export function buildTrivyImageScanJob(params: {
       labels: {
         'app.kubernetes.io/name': 'devops-portal',
         'devops-portal.radiantlogic.io/security-scan': 'true',
+        ...(scanId ? { 'devops-portal.radiantlogic.io/security-scan-id': scanId } : {}),
       },
     },
     spec: {
       backoffLimit: 0,
-      ttlSecondsAfterFinished: 3600,
+      // Keep around long enough for portal to fetch logs + persist report
+      ttlSecondsAfterFinished: 21600,
       template: {
         metadata: {
           labels: {
             'app.kubernetes.io/name': 'devops-portal',
             'job-name': name,
+            'devops-portal.radiantlogic.io/security-scan': 'true',
+            ...(scanId ? { 'devops-portal.radiantlogic.io/security-scan-id': scanId } : {}),
           },
         },
         spec: {
@@ -68,16 +72,17 @@ export function buildTrivyImageScanJob(params: {
               image: 'aquasec/trivy:latest',
               imagePullPolicy: 'IfNotPresent',
               env: [
-                { name: 'TRIVY_NO_PROGRESS', value: 'true' },
                 { name: 'TRIVY_TIMEOUT', value: '10m' },
               ],
               command: ['sh', '-lc'],
               args: [
                 [
                   'set -euo pipefail',
-                  'echo "{\\"tool\\":\\"trivy\\",\\"phase\\":\\"start\\"}"',
-                  // Avoid writing files; emit JSON report to stdout.
-                  `trivy image --format json "${imageRef}"`,
+                  'echo "scan: starting trivy image scan"',
+                  `trivy image --timeout 10m --format json -o /tmp/report.json "${imageRef}"`,
+                  'echo "===REPORT_JSON_START==="',
+                  'cat /tmp/report.json',
+                  'echo "===REPORT_JSON_END==="',
                 ].join('\n'),
               ],
               resources: {
@@ -122,6 +127,17 @@ export async function getPodLogs(namespace: string, podName: string): Promise<st
     name: podName,
     container: 'trivy',
     tailLines: 20000,
+  } as any);
+  return (res as any).body ?? String(res);
+}
+
+export async function getPodLogsTail(namespace: string, podName: string, tailLines = 200): Promise<string> {
+  const clients = getInClusterClients();
+  const res = await clients.core.readNamespacedPodLog({
+    namespace,
+    name: podName,
+    container: 'trivy',
+    tailLines,
   } as any);
   return (res as any).body ?? String(res);
 }

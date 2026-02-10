@@ -482,6 +482,11 @@ model SecurityScan {
   tool      String?           // trivy, docker-scout, etc.
   toolVersion String?
 
+  // K8s execution details (for in-cluster scans)
+  k8sNamespace String?
+  k8sJobName   String?
+  k8sPodName   String?
+
   // Execution details
   startedAt   DateTime?
   completedAt DateTime?
