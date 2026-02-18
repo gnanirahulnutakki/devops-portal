@@ -31,6 +31,7 @@ import {
   Plug,
   GitMerge,
   ChartNoAxesColumn,
+  BookOpen,
 } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -114,6 +115,7 @@ const navGroups: { id: string; title: string; items: NavItem[] }[] = [
       { title: 'Team', href: '/team', icon: Users, featureKey: 'team' },
       { title: 'Configurations', href: '/settings/configurations', icon: Plug, featureKey: 'settings' },
       { title: 'Settings', href: '/settings', icon: Settings, featureKey: 'settings' },
+      { title: 'Guides', href: '/guides', icon: BookOpen },
     ],
   },
 ];

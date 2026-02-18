@@ -8,7 +8,7 @@ replicaCount: 1
 
 image:
   repository: rahulnutakki/devops-portal
-  tag: "v2-openapi-18"
+  tag: "v2-openapi-19"
   pullPolicy: Always
 
 config:
@@ -162,13 +162,8 @@ extraEnv:
     value: "radiantlogic"
   - name: DEFAULT_ORG_ROLE
     value: "USER"
-  - name: GITHUB_TOKEN
-    valueFrom:
-      secretKeyRef:
-        name: devops-portal-secrets
-        key: GITHUB_TOKEN
-  - name: GITHUB_ORGANIZATION
-    value: "radiantlogic-saas"
+  # GitHub tokens are now managed via UI (Settings > Configurations > GitHub)
+  # No hardcoded tokens needed at deployment time.
   # Security scan jobs default namespace (where portal runs)
   - name: SECURITY_SCAN_NAMESPACE
     value: "duploservices-saasops1"

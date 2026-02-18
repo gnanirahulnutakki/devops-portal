@@ -786,8 +786,8 @@ export async function createGitHubServiceForUser(
   }
 
   if (!organization) {
-    logger.error('GITHUB_ORGANIZATION environment variable is not set');
-    throw new Error('GitHub integration is not configured. GITHUB_ORGANIZATION is required.');
+    logger.warn({ userId }, 'GitHub not configured: no GITHUB_ORGANIZATION and no org credentials');
+    return null;
   }
 
   const userToken = await githubTokens.get(userId);
@@ -808,7 +808,7 @@ export async function createGitHubServiceForUser(
 export function createGitHubServiceWithToken(token: string): GitHubService {
   const organization = process.env.GITHUB_ORGANIZATION;
   if (!organization) {
-    throw new Error('GitHub integration is not configured. GITHUB_ORGANIZATION is required.');
+    throw new Error('GitHub integration is not configured. Add a GitHub account via Settings > Configurations.');
   }
   return new GitHubService(token, organization);
 }
