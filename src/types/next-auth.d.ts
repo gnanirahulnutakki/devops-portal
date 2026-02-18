@@ -6,6 +6,7 @@ declare module 'next-auth' {
     user: {
       id: string;
       hasGitHubConnection?: boolean;
+      // OAuth connections are fetched via `/api/auth/connections` for accuracy
     } & DefaultSession['user'];
   }
 

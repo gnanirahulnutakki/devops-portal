@@ -2,6 +2,8 @@ import NextAuth from 'next-auth';
 import type { NextAuthConfig } from 'next-auth';
 import KeycloakProvider from 'next-auth/providers/keycloak';
 import GitHubProvider from 'next-auth/providers/github';
+import GoogleProvider from 'next-auth/providers/google';
+import AzureADProvider from 'next-auth/providers/azure-ad';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from './prisma';
@@ -39,124 +41,196 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 export const authConfig: NextAuthConfig = {
   adapter: PrismaAdapter(prisma),
   
-  providers: [
-    // Development: Credentials login (email/password)
-    // Only enabled when ENABLE_CREDENTIALS_AUTH=true
-    ...(process.env.ENABLE_CREDENTIALS_AUTH === 'true' ? [
-      CredentialsProvider({
-        id: 'credentials',
-        name: 'Email & Password',
-        credentials: {
-          email: { label: 'Email', type: 'email', placeholder: 'admin@example.com' },
-          password: { label: 'Password', type: 'password', placeholder: '••••••••' },
-        },
-        async authorize(credentials) {
-          if (!credentials?.email || !credentials?.password) {
-            return null;
-          }
+  providers: (() => {
+    /**
+     * Default to Keycloak-only, even in development.
+     * This helps catch auth/config problems early and reduces attack surface.
+     *
+     * To re-enable other providers for local experiments, explicitly set:
+     *   AUTH_MODE=multi
+     */
+    const authMode = (process.env.AUTH_MODE || 'keycloak-only').toLowerCase();
+    const keycloakConfigured = !!(process.env.KEYCLOAK_ID && process.env.KEYCLOAK_SECRET && process.env.KEYCLOAK_ISSUER);
 
-          const email = credentials.email as string;
-          const password = credentials.password as string;
-
-          // Find user by email
-          const user = await prisma.user.findUnique({
-            where: { email },
-            select: {
-              id: true,
-              email: true,
-              name: true,
-              image: true,
-              passwordHash: true,
+    if (authMode !== 'multi') {
+      if (!keycloakConfigured) {
+        logger.error(
+          'AUTH_MODE is keycloak-only but Keycloak is not configured. Set KEYCLOAK_ID, KEYCLOAK_SECRET, KEYCLOAK_ISSUER.'
+        );
+        return [];
+      }
+      return [
+        KeycloakProvider({
+          clientId: process.env.KEYCLOAK_ID!,
+          clientSecret: process.env.KEYCLOAK_SECRET!,
+          issuer: process.env.KEYCLOAK_ISSUER!,
+          /**
+           * Keycloak-only mode:
+           * If a user previously existed (e.g., from older GitHub/credentials experiments),
+           * NextAuth would otherwise block SSO with OAuthAccountNotLinked.
+           *
+           * In this environment Keycloak is the ONLY login method, so linking by verified email
+           * is the desired behavior.
+           */
+          allowDangerousEmailAccountLinking: true,
+          authorization: {
+            params: {
+              scope: 'openid email profile',
             },
-          });
-
-          if (!user) {
-            logger.warn({ email }, 'Login attempt for non-existent user');
-            return null;
-          }
-
-          // Verify password
-          if (!user.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
-            logger.warn({ email }, 'Invalid password attempt');
-            return null;
-          }
-
-          logger.info({ userId: user.id, email }, 'Credentials login successful');
-          
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            image: user.image,
-          };
-        },
-      }),
-    ] : []),
-
-    // Primary: Keycloak SSO (only if configured)
-    ...(process.env.KEYCLOAK_ID && process.env.KEYCLOAK_SECRET && process.env.KEYCLOAK_ISSUER ? [
-      KeycloakProvider({
-        clientId: process.env.KEYCLOAK_ID,
-        clientSecret: process.env.KEYCLOAK_SECRET,
-        issuer: process.env.KEYCLOAK_ISSUER,
-        allowDangerousEmailAccountLinking: true,
-        authorization: {
-          params: {
-            scope: 'openid email profile',
           },
-        },
-      }),
-    ] : []),
-    
-    // Secondary: Direct GitHub OAuth (only if configured)
-    ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET ? [
-      GitHubProvider({
-        clientId: process.env.GITHUB_CLIENT_ID,
-        clientSecret: process.env.GITHUB_CLIENT_SECRET,
-        // Allow linking GitHub to an existing account with the same email
-        // (e.g., user signed up with credentials first, then connects GitHub)
-        // Safe because GitHub verifies email ownership.
-        allowDangerousEmailAccountLinking: true,
-        async profile(profile, tokens) {
-          let email = profile.email as string | null | undefined;
-          // GitHub may not return email if it's private - fetch from /user/emails
-          if (!email && tokens.access_token) {
-            try {
-              const res = await fetch('https://api.github.com/user/emails', {
-                headers: {
-                  Authorization: `Bearer ${tokens.access_token}`,
-                  Accept: 'application/vnd.github+json',
+        }),
+      ];
+    }
+
+    // Multi-provider mode (opt-in)
+    return [
+      ...(process.env.ENABLE_CREDENTIALS_AUTH === 'true'
+        ? [
+            CredentialsProvider({
+              id: 'credentials',
+              name: 'Email & Password',
+              credentials: {
+                email: { label: 'Email', type: 'email', placeholder: 'admin@example.com' },
+                password: { label: 'Password', type: 'password', placeholder: '••••••••' },
+              },
+              async authorize(credentials) {
+                if (!credentials?.email || !credentials?.password) {
+                  return null;
+                }
+
+                const email = credentials.email as string;
+                const password = credentials.password as string;
+
+                const user = await prisma.user.findUnique({
+                  where: { email },
+                  select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    image: true,
+                    passwordHash: true,
+                  },
+                });
+
+                if (!user) {
+                  logger.warn({ email }, 'Login attempt for non-existent user');
+                  return null;
+                }
+
+                if (!user.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
+                  logger.warn({ email }, 'Invalid password attempt');
+                  return null;
+                }
+
+                logger.info({ userId: user.id, email }, 'Credentials login successful');
+
+                return {
+                  id: user.id,
+                  email: user.email,
+                  name: user.name,
+                  image: user.image,
+                };
+              },
+            }),
+          ]
+        : []),
+
+      ...(keycloakConfigured
+        ? [
+            KeycloakProvider({
+              clientId: process.env.KEYCLOAK_ID!,
+              clientSecret: process.env.KEYCLOAK_SECRET!,
+              issuer: process.env.KEYCLOAK_ISSUER!,
+              allowDangerousEmailAccountLinking: true,
+              authorization: {
+                params: {
+                  scope: 'openid email profile',
                 },
-              });
-              if (res.ok) {
-                const emails = await res.json() as Array<{
-                  email: string;
-                  primary: boolean;
-                  verified: boolean;
-                }>;
-                const primary = emails.find((e) => e.primary && e.verified) || emails.find((e) => e.verified);
-                email = primary?.email;
-              }
-            } catch {
-              // Ignore and fall back to whatever GitHub sent
-            }
-          }
+              },
+            }),
+          ]
+        : []),
 
-          return {
-            id: String(profile.id),
-            name: profile.name || profile.login,
-            email: email || undefined,
-            image: profile.avatar_url,
-          };
-        },
-        authorization: {
-          params: {
-            scope: 'read:user user:email repo read:org',
-          },
-        },
-      }),
-    ] : []),
-  ],
+      ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+        ? [
+            GoogleProvider({
+              clientId: process.env.GOOGLE_CLIENT_ID,
+              clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+              allowDangerousEmailAccountLinking: true,
+              authorization: {
+                params: {
+                  scope: 'openid email profile',
+                },
+              },
+            }),
+          ]
+        : []),
+
+      ...(process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET
+        ? [
+            AzureADProvider({
+              clientId: process.env.AZURE_AD_CLIENT_ID,
+              clientSecret: process.env.AZURE_AD_CLIENT_SECRET,
+              issuer: process.env.AZURE_AD_TENANT_ID
+                ? `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/v2.0`
+                : undefined,
+              allowDangerousEmailAccountLinking: true,
+              authorization: {
+                params: {
+                  scope: 'openid email profile',
+                },
+              },
+            }),
+          ]
+        : []),
+
+      ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
+        ? [
+            GitHubProvider({
+              clientId: process.env.GITHUB_CLIENT_ID,
+              clientSecret: process.env.GITHUB_CLIENT_SECRET,
+              allowDangerousEmailAccountLinking: true,
+              async profile(profile, tokens) {
+                let email = profile.email as string | null | undefined;
+                if (!email && tokens.access_token) {
+                  try {
+                    const res = await fetch('https://api.github.com/user/emails', {
+                      headers: {
+                        Authorization: `Bearer ${tokens.access_token}`,
+                        Accept: 'application/vnd.github+json',
+                      },
+                    });
+                    if (res.ok) {
+                      const emails = (await res.json()) as Array<{
+                        email: string;
+                        primary: boolean;
+                        verified: boolean;
+                      }>;
+                      const primary = emails.find((e) => e.primary && e.verified) || emails.find((e) => e.verified);
+                      email = primary?.email;
+                    }
+                  } catch {
+                    // ignore
+                  }
+                }
+
+                return {
+                  id: String(profile.id),
+                  name: profile.name || profile.login,
+                  email: email || undefined,
+                  image: profile.avatar_url,
+                };
+              },
+              authorization: {
+                params: {
+                  scope: 'read:user user:email repo read:org',
+                },
+              },
+            }),
+          ]
+        : []),
+    ];
+  })(),
 
   session: {
     strategy: 'jwt',

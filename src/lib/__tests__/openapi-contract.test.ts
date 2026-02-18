@@ -52,7 +52,7 @@ function extractMethods(contents: string) {
 describe('OpenAPI contract', () => {
   it('includes every API route and method', () => {
     const routes = walkRoutes(apiRoot);
-    const paths = OPENAPI_SPEC.paths || {};
+    const paths = (OPENAPI_SPEC.paths || {}) as Record<string, any>;
     const missing: string[] = [];
 
     for (const routeFile of routes) {
@@ -66,7 +66,7 @@ describe('OpenAPI contract', () => {
       }
 
       for (const method of methods) {
-        if (!paths[routePath][method]) {
+        if (!paths[routePath]?.[method]) {
           missing.push(`${method.toUpperCase()} ${routePath}`);
         }
       }

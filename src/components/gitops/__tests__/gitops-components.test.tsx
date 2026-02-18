@@ -212,30 +212,32 @@ describe('Monaco Editor Integration Logic', () => {
 
 describe('Change Detection', () => {
   it('should detect when content has changed', () => {
-    const originalContent = 'key: value\nfoo: bar';
-    const editedContent = 'key: newvalue\nfoo: bar';
-    const sameContent = 'key: value\nfoo: bar';
+    // Widen to `string` so TS doesn't treat comparisons as constant-foldable literals.
+    const originalContent: string = 'key: value\nfoo: bar';
+    const editedContent: string = 'key: newvalue\nfoo: bar';
+    const sameContent: string = 'key: value\nfoo: bar';
 
     expect(editedContent !== originalContent).toBe(true);
     expect(sameContent !== originalContent).toBe(false);
   });
 
   it('should handle whitespace-only changes', () => {
-    const original = 'key: value';
-    const withTrailingSpace = 'key: value ';
-    const withNewline = 'key: value\n';
+    // Widen to `string` so TS doesn't treat comparisons as constant-foldable literals.
+    const original: string = 'key: value';
+    const withTrailingSpace: string = 'key: value ';
+    const withNewline: string = 'key: value\n';
 
     expect(withTrailingSpace !== original).toBe(true);
     expect(withNewline !== original).toBe(true);
   });
 
   it('should handle multiline changes', () => {
-    const original = `apiVersion: v1
+    const original: string = `apiVersion: v1
 kind: ConfigMap
 metadata:
   name: test`;
     
-    const modified = `apiVersion: v1
+    const modified: string = `apiVersion: v1
 kind: ConfigMap
 metadata:
   name: test-modified`;

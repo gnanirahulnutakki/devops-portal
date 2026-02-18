@@ -5,8 +5,6 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
-  GitBranch,
-  Rocket,
   Activity,
   Settings,
   Server,
@@ -25,6 +23,14 @@ import {
   PlayCircle,
   Layers,
   FileText,
+  GitBranch,
+  Rocket,
+  Gauge,
+  BellRing,
+  Logs,
+  Plug,
+  GitMerge,
+  ChartNoAxesColumn,
 } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -38,6 +44,7 @@ interface NavItem {
   icon: React.ElementType;
   badge?: string;
   adminOnly?: boolean;
+  featureKey?: string;
 }
 
 const topLevelItems: NavItem[] = [
@@ -49,53 +56,64 @@ const navGroups: { id: string; title: string; items: NavItem[] }[] = [
     id: 'git',
     title: 'Git',
     items: [
-      { title: 'Repositories', href: '/repositories', icon: FolderGit2 },
-      { title: 'Pull Requests', href: '/pull-requests', icon: GitPullRequest },
-      { title: 'GitHub Actions', href: '/github-actions', icon: PlayCircle },
-      { title: 'GitOps Studio', href: '/gitops-studio', icon: Pencil, adminOnly: true },
+      { title: 'Repositories', href: '/repositories', icon: FolderGit2, featureKey: 'repositories' },
+      { title: 'Pull Requests', href: '/pull-requests', icon: GitPullRequest, featureKey: 'pullRequests' },
+      { title: 'GitHub Actions', href: '/github-actions', icon: PlayCircle, featureKey: 'githubActions' },
     ],
   },
   {
     id: 'monitoring',
     title: 'Monitoring',
     items: [
-      { title: 'Monitoring', href: '/monitoring', icon: Activity },
-      { title: 'ArgoCD', href: '/argocd', icon: GitBranch },
-      { title: 'Clusters', href: '/clusters', icon: Server },
-      { title: 'Deployments', href: '/deployments', icon: Rocket },
-      { title: 'Uptime Kuma', href: '/uptime-kuma', icon: Activity },
+      { title: 'Grafana · Dashboards', href: '/monitoring/grafana/dashboards', icon: Gauge, featureKey: 'monitoring' },
+      { title: 'Grafana · Alerts', href: '/monitoring/grafana/alerts', icon: BellRing, featureKey: 'monitoring' },
+      { title: 'Grafana · Insights', href: '/monitoring/grafana/insights', icon: ChartNoAxesColumn, featureKey: 'monitoring' },
+      { title: 'Loki · Logs', href: '/monitoring/loki', icon: Logs, featureKey: 'monitoring' },
+      { title: 'Uptime Kuma', href: '/uptime-kuma', icon: Activity, featureKey: 'uptimeKuma' },
+    ],
+  },
+  {
+    id: 'gitops',
+    title: 'Gitops',
+    items: [
+      { title: 'Overview', href: '/gitops', icon: GitMerge },
+      { title: 'ArgoCD', href: '/argocd', icon: GitBranch, featureKey: 'argocd' },
+      { title: 'Clusters', href: '/clusters', icon: Server, featureKey: 'clusters' },
+      { title: 'Deployments', href: '/deployments', icon: Rocket, featureKey: 'deployments' },
+      { title: 'GitOps Studio', href: '/gitops-studio', icon: Pencil, adminOnly: true, featureKey: 'gitOpsStudio' },
     ],
   },
   {
     id: 'logging',
     title: 'Logging',
     items: [
-      { title: 'Alerts', href: '/alerts', icon: Bell, badge: '3' },
-      { title: 'Vulnerability', href: '/vulnerability', icon: ShieldCheck },
+      { title: 'Alerts', href: '/alerts', icon: Bell, badge: '3', featureKey: 'alerts' },
+      { title: 'Vulnerability', href: '/vulnerability', icon: ShieldCheck, featureKey: 'vulnerability' },
     ],
   },
   {
     id: 'log-browser',
     title: 'Log-Browser',
-    items: [{ title: 'Log Browser', href: '/storage', icon: HardDrive }],
+    items: [{ title: 'Log Browser', href: '/storage', icon: HardDrive, featureKey: 'storage' }],
   },
   {
     id: 'tools',
     title: 'Tools',
     items: [
-      { title: 'Helm', href: '/helm', icon: Layers },
-      { title: 'Diagrams', href: '/diagrams', icon: FileText },
-      { title: 'MCP', href: '/mcp', icon: Puzzle },
-      { title: 'API Docs', href: '/api-docs', icon: FileText },
+      { title: 'Helm', href: '/helm', icon: Layers, featureKey: 'helm' },
+      { title: 'Diagrams', href: '/diagrams', icon: FileText, featureKey: 'diagrams' },
+      { title: 'MCP', href: '/mcp', icon: Puzzle, featureKey: 'mcp' },
+      { title: 'API Docs', href: '/api-docs', icon: FileText, featureKey: 'apiDocs' },
     ],
   },
   {
     id: 'settings',
     title: 'Settings',
     items: [
-      { title: 'Organizations', href: '/organizations', icon: Building2 },
-      { title: 'Team', href: '/team', icon: Users },
-      { title: 'Settings', href: '/settings', icon: Settings },
+      { title: 'Organizations', href: '/organizations', icon: Building2, featureKey: 'organizations' },
+      { title: 'Team', href: '/team', icon: Users, featureKey: 'team' },
+      { title: 'Configurations', href: '/settings/configurations', icon: Plug, featureKey: 'settings' },
+      { title: 'Settings', href: '/settings', icon: Settings, featureKey: 'settings' },
     ],
   },
 ];
@@ -106,6 +124,7 @@ export function Sidebar() {
   const currentOrganization = useOrganizationStore((state) => state.currentOrganization);
   const setOrganization = useOrganizationStore((state) => state.setOrganization);
   const userIsAdmin = isAdmin(currentOrganization?.role);
+  const [featureAccess, setFeatureAccess] = useState<Record<string, boolean> | null>(null);
 
   // Always ensure role is loaded -- fetch from API if the store is missing role data.
   // Cannot rely on cookie because middleware sets it httpOnly (invisible to JS).
@@ -142,6 +161,26 @@ export function Sidebar() {
     return () => { cancelled = true; };
   }, [currentOrganization?.id, currentOrganization?.role, setOrganization]);
 
+  // Fetch effective feature access for this user/org (org policy + per-user overrides)
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFeatureAccess() {
+      try {
+        const res = await fetch('/api/features');
+        const json = await res.json();
+        if (cancelled || !res.ok) return;
+        setFeatureAccess(json?.data?.effective || {});
+      } catch {
+        // Fail open: keep nav visible if feature endpoint is unavailable
+        setFeatureAccess(null);
+      }
+    }
+    void loadFeatureAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentOrganization?.id]);
+
   // Filter nav items based on admin status
   const filteredGroups = useMemo(() => {
     return navGroups.map((group) => ({
@@ -149,6 +188,20 @@ export function Sidebar() {
       items: group.items.filter((item) => !item.adminOnly || userIsAdmin),
     }));
   }, [userIsAdmin]);
+
+  const featureFilteredGroups = useMemo(() => {
+    // If we haven't loaded feature flags yet, render everything (role filter still applies)
+    if (!featureAccess) return filteredGroups;
+    return filteredGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          if (!item.featureKey) return true;
+          return featureAccess[item.featureKey] !== false;
+        }),
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [featureAccess, filteredGroups]);
 
   const renderNavLink = (item: NavItem, isCollapsed: boolean) => {
     const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -227,10 +280,10 @@ export function Sidebar() {
           </div>
 
           {collapsed ? (
-            filteredGroups.flatMap((group) => group.items).map((item) => renderNavLink(item, true))
+            featureFilteredGroups.flatMap((group) => group.items).map((item) => renderNavLink(item, true))
           ) : (
-            <Accordion type="multiple" defaultValue={filteredGroups.map((group) => group.id)}>
-              {filteredGroups.map((group) => (
+            <Accordion type="multiple" defaultValue={featureFilteredGroups.map((group) => group.id)}>
+              {featureFilteredGroups.map((group) => (
                 <AccordionItem key={group.id} value={group.id} className="border-b-0">
                   <AccordionTrigger className="rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:no-underline">
                     {group.title}

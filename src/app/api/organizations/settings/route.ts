@@ -44,6 +44,17 @@ const settingsSchema = z.object({
       credentialId: z.string().optional(),
     })
     .optional(),
+  features: z
+    .record(
+      z.string(),
+      z
+        .object({
+          enabled: z.boolean().optional(),
+          minRole: z.enum(['USER', 'READWRITE', 'ADMIN']).optional(),
+        })
+        .optional()
+    )
+    .optional(),
 });
 
 export const GET = withTenantApiHandler(
@@ -87,6 +98,10 @@ export const PUT = withTenantApiHandler(
         mcp: {
           ...(current as any).mcp,
           ...(validation.data.mcp || {}),
+        },
+        features: {
+          ...(current as any).features,
+          ...(validation.data.features || {}),
         },
         llm: {
           ...(current as any).llm,

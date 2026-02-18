@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ExternalLink, RefreshCcw, Eye, AlertCircle, Loader2, FolderOpen } from 'lucide-react';
+import { ExternalLink, RefreshCcw, Eye, AlertCircle, Loader2, FolderOpen, Pencil } from 'lucide-react';
 
 interface DashboardItem {
   id: number;
@@ -190,7 +190,24 @@ export function GrafanaDashboardList({ credentialId }: { credentialId?: string }
           {filtered.length === 0 ? (
             <EmptyState filtered={filter.length > 0} />
           ) : (
-            filtered.map((dash) => (
+            filtered.map((dash) => {
+              let portalUrl: string | null = null;
+              let portalEditUrl: string | null = null;
+              try {
+                const dashUrl = new URL(dash.url);
+                const p = new URL(`/grafana${dashUrl.pathname}`, window.location.origin);
+                dashUrl.searchParams.forEach((v, k) => p.searchParams.set(k, v));
+                if (credentialId) p.searchParams.set('credentialId', credentialId);
+                portalUrl = p.toString();
+
+                const e = new URL(p.toString());
+                e.searchParams.set('editview', 'dashboard');
+                portalEditUrl = e.toString();
+              } catch {
+                // Ignore; external link will still work
+              }
+
+              return (
               <Card key={dash.uid} className="hover:border-primary transition-colors">
                 <CardContent className="p-4 flex flex-col gap-2">
                   <div className="flex items-start justify-between gap-2">
@@ -207,6 +224,26 @@ export function GrafanaDashboardList({ credentialId }: { credentialId?: string }
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
+                      {portalUrl ? (
+                        <Button asChild size="icon" variant="ghost" aria-label="Open in portal" title="Open in portal">
+                          <a href={portalUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      ) : null}
+                      {portalEditUrl ? (
+                        <Button
+                          asChild
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Edit dashboard"
+                          title="Edit dashboard"
+                        >
+                          <a href={portalEditUrl} target="_blank" rel="noopener noreferrer">
+                            <Pencil className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      ) : null}
                       <Button asChild size="icon" variant="ghost" aria-label="Open in Grafana">
                         <a href={dash.url} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="h-4 w-4" />
@@ -236,109 +273,85 @@ export function GrafanaDashboardList({ credentialId }: { credentialId?: string }
                   )}
                 </CardContent>
               </Card>
-            ))
+              );
+            })
           )}
         </div>
       )}
 
-      <GrafanaPreviewDialog dashboard={selected} onClose={() => setSelected(null)} />
+      <GrafanaPreviewDialog
+        dashboard={selected}
+        credentialId={credentialId}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }
 
 function GrafanaPreviewDialog({
   dashboard,
+  credentialId,
   onClose,
 }: {
   dashboard: DashboardItem | null;
+  credentialId?: string;
   onClose: () => void;
 }) {
-  const [iframeLoading, setIframeLoading] = useState(true);
-  const [iframeError, setIframeError] = useState(false);
-
   if (!dashboard) return null;
 
-  // Detect system theme preference for Grafana render
-  const prefersDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const theme = prefersDark ? 'dark' : 'light';
-
-  // Embed via Next.js proxy to avoid exposing API key
-  const renderSrc = `/api/monitoring/grafana/render?uid=${dashboard.uid}&panelId=1&width=1200&height=700&theme=${theme}`;
+  const dashUrl = new URL(dashboard.url);
+  const proxyUrl = new URL(`/grafana${dashUrl.pathname}`, window.location.origin);
+  // Preserve Grafana query params (orgId, etc.)
+  dashUrl.searchParams.forEach((v, k) => proxyUrl.searchParams.set(k, v));
+  // Ensure the proxy uses the selected Grafana credential when provided
+  if (credentialId) proxyUrl.searchParams.set('credentialId', credentialId);
+  const editUrl = new URL(proxyUrl.toString());
+  editUrl.searchParams.set('editview', 'dashboard');
 
   return (
     <Dialog
       open
       onOpenChange={(open: boolean) => {
         if (!open) {
-          setIframeLoading(true);
-          setIframeError(false);
           onClose();
         }
       }}
     >
-      <DialogContent className="max-w-5xl">
+      <DialogContent className="max-w-6xl h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>
             {dashboard.folderTitle ? `${dashboard.folderTitle} / ` : ''}
             {dashboard.title}
           </DialogTitle>
           <div className="flex items-center gap-2 pt-1">
+            <Button asChild size="sm">
+              <a href={proxyUrl.toString()} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-3 w-3 mr-1.5" />
+                Open in portal
+              </a>
+            </Button>
+            <Button asChild variant="secondary" size="sm">
+              <a href={editUrl.toString()} target="_blank" rel="noopener noreferrer">
+                <Pencil className="h-3 w-3 mr-1.5" />
+                Edit dashboard
+              </a>
+            </Button>
             <Button asChild variant="outline" size="sm">
               <a href={dashboard.url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-3 w-3 mr-1.5" />
-                Open in Grafana
+                Open directly
               </a>
             </Button>
           </div>
         </DialogHeader>
-        <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
-          {/* Loading overlay */}
-          {iframeLoading && !iframeError && (
-            <div className="absolute inset-0 flex items-center justify-center rounded-md border bg-muted/30">
-              <div className="flex flex-col items-center gap-2">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">Loading dashboard preview...</p>
-              </div>
-            </div>
-          )}
-
-          {/* Error state */}
-          {iframeError && (
-            <div className="absolute inset-0 flex items-center justify-center rounded-md border bg-destructive/5">
-              <div className="flex flex-col items-center gap-3 text-center px-4">
-                <AlertCircle className="h-10 w-10 text-destructive" />
-                <div>
-                  <p className="font-semibold text-destructive">Failed to load preview</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    The Grafana image renderer may not be installed or the panel could not be rendered.
-                  </p>
-                </div>
-                <Button asChild variant="outline" size="sm">
-                  <a href={dashboard.url} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="h-3 w-3 mr-1.5" />
-                    View directly in Grafana
-                  </a>
-                </Button>
-              </div>
-            </div>
-          )}
-
+        <div className="flex-1 overflow-hidden rounded-md border bg-background">
           <iframe
-            src={renderSrc}
-            className={`absolute inset-0 h-full w-full rounded-md border transition-opacity ${
-              iframeLoading ? 'opacity-0' : 'opacity-100'
-            }`}
-            loading="lazy"
-            onLoad={() => setIframeLoading(false)}
-            onError={() => {
-              setIframeLoading(false);
-              setIframeError(true);
-            }}
-            // Security: sandbox iframe to prevent script execution
-            sandbox="allow-same-origin"
-            // Security: don't leak referrer to embedded content
-            referrerPolicy="no-referrer"
-            title={`Preview: ${dashboard.title}`}
+            src={proxyUrl.toString()}
+            className="h-full w-full"
+            // Grafana is a full SPA, needs scripts/forms/popups. Still keep it sandboxed.
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+            referrerPolicy="strict-origin-when-cross-origin"
+            title={`Grafana: ${dashboard.title}`}
           />
         </div>
       </DialogContent>

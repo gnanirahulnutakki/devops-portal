@@ -85,8 +85,8 @@ export interface ArgoCDHistory {
 export class ArgoCDService {
   private client: KyInstance;
 
-  constructor(baseUrl: string, token: string) {
-    this.client = createArgoCDClient(baseUrl, token);
+  constructor(baseUrl: string, token: string, insecure: boolean = false) {
+    this.client = createArgoCDClient(baseUrl, token, insecure);
   }
 
   // ---------------------------------------------------------------------------

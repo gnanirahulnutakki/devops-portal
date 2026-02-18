@@ -174,5 +174,5 @@ export const POST = withTenantApiHandler(
       404
     );
   },
-  { rateLimit: 'general', requiredRole: 'USER' }
+  { rateLimit: 'general', requiredRole: 'USER', requiredFeature: 'mcp' }
 );

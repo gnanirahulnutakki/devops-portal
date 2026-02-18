@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getRedis } from '@/lib/redis';
+import { createArgoCDClient } from '@/lib/http-client';
 
 // =============================================================================
 // Health Check Types
@@ -139,11 +140,13 @@ export async function GET(request: Request) {
     if (process.env.ARGOCD_URL) {
       const argoStart = Date.now();
       try {
-        const response = await fetch(`${process.env.ARGOCD_URL}/api/v1/session/userinfo`, {
-          headers: {
-            'Authorization': `Bearer ${process.env.ARGOCD_TOKEN || ''}`,
-          },
-          signal: AbortSignal.timeout(5000),
+        const client = createArgoCDClient(
+          process.env.ARGOCD_URL,
+          process.env.ARGOCD_TOKEN || '',
+          process.env.ARGOCD_INSECURE === 'true'
+        );
+        const response = await client.get('api/v1/session/userinfo', {
+          timeout: 5000,
         });
         checks.argocd = {
           status: response.ok ? 'healthy' : 'degraded',
@@ -180,6 +183,29 @@ export async function GET(request: Request) {
         };
       }
     }
+  }
+
+  // 5. Auth configuration check (always)
+  try {
+    const authMode = (process.env.AUTH_MODE || 'keycloak-only').toLowerCase();
+    if (authMode !== 'multi') {
+      const ok = !!(process.env.KEYCLOAK_ID && process.env.KEYCLOAK_SECRET && process.env.KEYCLOAK_ISSUER);
+      checks.auth = {
+        status: ok ? 'healthy' : 'unhealthy',
+        details: {
+          mode: authMode,
+          keycloakConfigured: ok,
+        },
+        ...(ok ? {} : { error: 'Keycloak is required but not configured' }),
+      };
+    } else {
+      checks.auth = {
+        status: 'healthy',
+        details: { mode: authMode },
+      };
+    }
+  } catch (error) {
+    checks.auth = { status: 'degraded', error: (error as Error).message };
   }
 
   // Calculate overall status

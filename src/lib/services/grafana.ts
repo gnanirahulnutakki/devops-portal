@@ -55,6 +55,36 @@ export interface GrafanaAlert {
   annotations?: Record<string, string>;
 }
 
+export interface GrafanaAnnotation {
+  id: number;
+  dashboardId?: number;
+  panelId?: number;
+  time: number; // ms epoch
+  timeEnd?: number;
+  text: string;
+  tags?: string[];
+  type?: string;
+  newState?: string;
+  prevState?: string;
+  alertId?: number;
+  ruleId?: number;
+  userId?: number;
+  login?: string;
+}
+
+export interface GrafanaAlertmanagerAlert {
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
+  startsAt?: string;
+  endsAt?: string;
+  generatorURL?: string;
+  status?: {
+    state?: string;
+    silencedBy?: string[];
+    inhibitedBy?: string[];
+  };
+}
+
 interface GrafanaCreds {
   baseUrl: string;
   apiKey: string;
@@ -121,10 +151,19 @@ export async function listFolders(
   const { baseUrl, apiKey } = await getGrafanaCreds(orgId, credentialId);
   const client = createGrafanaClient(baseUrl, apiKey);
   const folders = await fetchJson<GrafanaFolder[]>(client, 'api/folders');
+  const slugify = (s: string) =>
+    (s || 'folder')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'folder';
+
   // Resolve relative folder URLs to absolute URLs so the UI doesn't need to know the Grafana base URL
   return folders.map((f) => ({
     ...f,
-    url: f.url.startsWith('http') ? f.url : `${baseUrl}${f.url}`,
+    url: f.url
+      ? (f.url.startsWith('http') ? f.url : `${baseUrl}${f.url}`)
+      : `${baseUrl}/dashboards/f/${f.uid}/${slugify(f.title)}`,
   }));
 }
 
@@ -134,7 +173,31 @@ export async function listAlerts(
 ): Promise<GrafanaAlert[]> {
   const { baseUrl, apiKey } = await getGrafanaCreds(orgId, credentialId);
   const client = createGrafanaClient(baseUrl, apiKey);
-  // Grafana Alerting (Unified) API can return nested groups
+  // Grafana Alerting (Unified) - try modern provisioning endpoint first (Grafana 9+)
+  try {
+    const rules = await fetchJson<any[]>(client, 'api/v1/provisioning/alert-rules');
+    if (Array.isArray(rules)) {
+      return rules.map((r: any) => ({
+        uid: r.uid || r.id || r.title,
+        title: r.title || r.name || 'Untitled Alert',
+        condition: r.condition || '',
+        data: r,
+        orgId: r.orgID ?? r.orgId,
+        updated: r.updated,
+        ruleGroup: r.ruleGroup,
+        folderUid: r.folderUID ?? r.folderUid,
+        folderTitle: r.folderTitle,
+        state: r.state,
+        health: r.health,
+        labels: r.labels,
+        annotations: r.annotations,
+      }));
+    }
+  } catch {
+    // fall through to ruler API
+  }
+
+  // Grafana Alerting (Unified) API can return nested groups (ruler)
   const payload = await fetchJson<any>(client, 'api/ruler/grafana/api/v1/rules');
   if (Array.isArray(payload)) return payload as GrafanaAlert[];
 
@@ -169,6 +232,43 @@ export async function listAlerts(
   });
 
   return rules;
+}
+
+/**
+ * Fetch alert events from Grafana annotations API.
+ * This is the best way to build "recent alerts" + "noisiest alerts" analytics.
+ */
+export async function listAlertAnnotations(
+  orgId: string,
+  params: {
+    fromMs: number;
+    toMs: number;
+    limit?: number;
+    credentialId?: string;
+  }
+): Promise<GrafanaAnnotation[]> {
+  const { baseUrl, apiKey } = await getGrafanaCreds(orgId, params.credentialId);
+  const client = createGrafanaClient(baseUrl, apiKey);
+  const limit = params.limit ?? 1000;
+  const path = `api/annotations?type=alert&from=${encodeURIComponent(
+    String(params.fromMs)
+  )}&to=${encodeURIComponent(String(params.toMs))}&limit=${encodeURIComponent(String(limit))}`;
+  const annotations = await fetchJson<GrafanaAnnotation[]>(client, path);
+  return Array.isArray(annotations) ? annotations : [];
+}
+
+/**
+ * Fetch active alerts from Grafana's embedded Alertmanager API (Unified Alerting).
+ * Useful as a fallback when annotation history isn't available.
+ */
+export async function listAlertmanagerAlerts(
+  orgId: string,
+  credentialId?: string
+): Promise<GrafanaAlertmanagerAlert[]> {
+  const { baseUrl, apiKey } = await getGrafanaCreds(orgId, credentialId);
+  const client = createGrafanaClient(baseUrl, apiKey);
+  const alerts = await fetchJson<GrafanaAlertmanagerAlert[]>(client, 'api/alertmanager/grafana/api/v2/alerts');
+  return Array.isArray(alerts) ? alerts : [];
 }
 
 export async function listDashboardPanels(

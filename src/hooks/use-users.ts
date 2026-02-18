@@ -7,6 +7,7 @@ export interface User {
   name: string | null;
   image: string | null;
   role: 'USER' | 'READWRITE' | 'ADMIN';
+  featureFlags?: Record<string, any>;
   createdAt: string;
   emailVerified: string | null;
   membershipId: string;
@@ -23,6 +24,7 @@ export interface UpdateUserData {
   name?: string;
   role?: 'USER' | 'READWRITE' | 'ADMIN';
   password?: string;
+  featureFlags?: Record<string, any>;
 }
 
 // Fetch all users in the organization

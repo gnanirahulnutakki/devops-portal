@@ -8,12 +8,12 @@ replicaCount: 1
 
 image:
   repository: rahulnutakki/devops-portal
-  tag: "v2-latest"
+  tag: "v2-openapi-17"
   pullPolicy: Always
 
 config:
   baseUrl: "https://devops-portal.dev01.radiantlogic.io"
-  enableCredentialsAuth: true  # Enable local login
+  enableCredentialsAuth: false  # Keycloak-only login (catch auth issues early)
   logLevel: "info"
   bcryptRounds: 10
 
@@ -37,6 +37,12 @@ ingress:
 trivyOperator:
   enabled: true
 
+# Mailpit: capture Keycloak verification emails in dev
+mailpit:
+  # NOTE: This cluster appears to restrict pod-to-pod traffic on non-standard ports (1025/8025),
+  # so we run Mailpit as a sidecar in the Keycloak deployment instead.
+  enabled: false
+
 # Pass-through values to the trivy-operator dependency chart
 trivy-operator:
   operator:
@@ -48,6 +54,7 @@ trivy-operator:
 # Use existing secret for app configuration
 secrets:
   useSealedSecrets: false
+  # NOTE: In this environment, `devops-portal-secrets` is managed by a SealedSecret (recommended for GitOps).
   existingSecret: "devops-portal-secrets"
 
 # PostgreSQL - disabled, using external
@@ -103,7 +110,12 @@ integrations:
     clientSecretKey: "GITHUB_OAUTH_CLIENT_SECRET"
   
   keycloak:
-    enabled: false
+    enabled: true
+    existingSecret: "devops-portal-keycloak"
+    issuer: "" # read from secret via issuerKey
+    clientIdKey: "KEYCLOAK_CLIENT_ID"
+    clientSecretKey: "KEYCLOAK_CLIENT_SECRET"
+    issuerKey: "KEYCLOAK_ISSUER"
 
 # Disable network policies
 networkPolicy:
@@ -135,8 +147,6 @@ jobs:
 
 # Extra environment variables
 extraEnv:
-  - name: NODE_TLS_REJECT_UNAUTHORIZED
-    value: "0"
   - name: AUTH_TRUST_HOST
     value: "true"
   - name: AUTH_URL
@@ -146,6 +156,12 @@ extraEnv:
       secretKeyRef:
         name: devops-portal-secrets
         key: NEXTAUTH_SECRET
+  - name: AUTH_MODE
+    value: "keycloak-only"
+  - name: DEFAULT_ORG_SLUG
+    value: "radiantlogic"
+  - name: DEFAULT_ORG_ROLE
+    value: "USER"
   - name: GITHUB_TOKEN
     valueFrom:
       secretKeyRef:

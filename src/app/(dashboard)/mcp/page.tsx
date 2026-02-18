@@ -14,9 +14,21 @@ const mockServers = [
 ];
 
 export default function McpPage() {
-  const [servers] = useState(mockServers);
+  const [servers, setServers] = useState(mockServers);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      // Placeholder until MCP server discovery is wired to a backend provider.
+      // Keeps the UX consistent (and avoids a dead refresh button).
+      setServers([...mockServers]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -27,9 +39,9 @@ export default function McpPage() {
             Connect Model Context Protocol servers for automation and diagnostics
           </p>
         </div>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" onClick={refresh} disabled={refreshing}>
           <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
+          {refreshing ? 'Refreshing' : 'Refresh'}
         </Button>
       </div>
 

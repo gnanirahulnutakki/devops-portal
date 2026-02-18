@@ -74,6 +74,7 @@ const mockAlerts = [
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState(mockAlerts);
+  const [refreshing, setRefreshing] = useState(false);
 
   const activeAlerts = alerts.filter((a) => a.status === 'active');
   const resolvedAlerts = alerts.filter((a) => a.status === 'resolved');
@@ -211,10 +212,19 @@ export default function AlertsPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setAlerts([...mockAlerts])}
+          disabled={refreshing}
+          onClick={async () => {
+            setRefreshing(true);
+            try {
+              // Placeholder until live alert sources are integrated.
+              setAlerts([...mockAlerts]);
+            } finally {
+              setRefreshing(false);
+            }
+          }}
         >
           <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
+          {refreshing ? 'Refreshing' : 'Refresh'}
         </Button>
       </div>
 

@@ -156,7 +156,7 @@ export const GET = withTenantApiHandler(
 
     return successResponse(refreshed, { page, pageSize, total: refreshed.length });
   },
-  { rateLimit: 'general', requiredRole: 'USER' }
+  { rateLimit: 'general', requiredRole: 'USER', requiredFeature: 'vulnerability' }
 );
 
 export const POST = withTenantApiHandler(
@@ -233,6 +233,7 @@ export const POST = withTenantApiHandler(
   {
     rateLimit: 'general',
     requiredRole: 'READWRITE',
+    requiredFeature: 'vulnerability',
     audit: { action: 'create', resource: 'security_scan' },
   }
 );

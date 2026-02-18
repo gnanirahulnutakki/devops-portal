@@ -10,6 +10,7 @@ import {
   requireRole, 
   logAuditEvent 
 } from './api-context';
+import { canAccessFeature, defaultFeaturePolicy, mergeFeaturePolicy, type FeatureKey, type MembershipFeatureOverrides } from './features';
 import {
   recordHttpRequest,
   recordRateLimitHit,
@@ -317,6 +318,7 @@ type TenantApiHandler = (
 export interface TenantApiOptions {
   rateLimit?: RateLimitType;
   requiredRole?: 'USER' | 'READWRITE' | 'ADMIN';
+  requiredFeature?: import('./features').FeatureKey;
   audit?: {
     action: string;
     resource: string;
@@ -354,6 +356,32 @@ export function withTenantApiHandler(
         // Role check
         if (options.requiredRole) {
           requireRole(ctx, options.requiredRole);
+        }
+
+        // Feature check (org policy + per-user overrides)
+        if (options.requiredFeature) {
+          const feature = options.requiredFeature as FeatureKey;
+          const org = await ctx.db.organization.findUnique({
+            where: { id: ctx.tenant.organizationId },
+            select: { settings: true },
+          });
+          const membership = await ctx.db.membership.findUnique({
+            where: {
+              userId_organizationId: {
+                userId: ctx.tenant.userId,
+                organizationId: ctx.tenant.organizationId,
+              },
+            },
+            select: { featureFlags: true },
+          });
+          const settings = (org?.settings as any) || {};
+          const orgFeaturePolicy = mergeFeaturePolicy(defaultFeaturePolicy(), (settings.features || {}) as any);
+          const overrides = (membership?.featureFlags as MembershipFeatureOverrides) || {};
+          const ok = canAccessFeature(ctx.tenant.userRole, orgFeaturePolicy, feature, overrides);
+          if (!ok) {
+            recordHttpRequest(method, path, 403, Date.now() - startTime, ctx.tenant.organizationId);
+            return forbiddenError('This feature is disabled for your account or role.');
+          }
         }
         
         // Organization-scoped rate limiting

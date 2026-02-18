@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Github, Loader2, Mail, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Github, Loader2, Mail, AlertCircle, ShieldCheck, Chrome, AppWindow } from 'lucide-react';
 
 // Type for providers returned by getProviders()
 type Providers = Awaited<ReturnType<typeof getProviders>>;
@@ -22,6 +22,7 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
   const authError = searchParams.get('error');
+  const [popupRef, setPopupRef] = useState<Window | null>(null);
 
   // Fetch available providers
   useEffect(() => {
@@ -34,7 +35,7 @@ function LoginContent() {
       const errorMessages: Record<string, string> = {
         'OAuthCallback': 'OAuth callback error. Check your provider configuration.',
         'OAuthSignin': 'Error starting OAuth sign in. Try again.',
-        'OAuthAccountNotLinked': 'This email is already registered with another provider. Ensure your GitHub primary email matches your portal email.',
+        'OAuthAccountNotLinked': 'This email is already registered with another sign-in method. Contact an admin to link/merge accounts.',
         'AccessDenied': 'Access denied. You may not be a member of the required organization.',
         'Callback': 'Callback error during sign in.',
         'CredentialsSignin': 'Invalid email or password.',
@@ -56,6 +57,83 @@ function LoginContent() {
       setIsLoading(null);
     }
   };
+
+  /**
+   * Keycloak SSO without navigating away from the portal.
+   * This opens the IdP flow in a popup and completes auth via postMessage.
+   */
+  const handleKeycloakPopup = async () => {
+    const provider = 'keycloak';
+    setIsLoading(provider);
+    setError(null);
+
+    try {
+      const popupComplete = `/auth/popup-complete?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+      const res = (await signIn(provider, {
+        callbackUrl: popupComplete,
+        redirect: false,
+      })) as any;
+
+      const url = res?.url as string | undefined;
+      if (!url) {
+        // Fallback to normal flow
+        await signIn(provider, { callbackUrl });
+        return;
+      }
+
+      const w = window.open(url, 'keycloak-sso', 'width=520,height=720');
+      if (!w) {
+        // Popup blocked; fallback to normal flow in same tab
+        window.location.href = url;
+        return;
+      }
+      setPopupRef(w);
+    } catch (err) {
+      console.error('Keycloak popup sign in error:', err);
+      setError('An error occurred during sign in');
+      setIsLoading(null);
+    }
+  };
+
+  // Listen for popup completion
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data as any;
+      if (!data || data.type !== 'auth:complete') return;
+
+      if (data.status !== 'success') {
+        setError('Sign in failed');
+        setIsLoading(null);
+        return;
+      }
+
+      // Close popup if still open
+      try {
+        if (popupRef && !popupRef.closed) popupRef.close();
+      } catch {
+        // ignore
+      }
+
+      window.location.href = data.callbackUrl || callbackUrl;
+    }
+
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [callbackUrl, popupRef]);
+
+  // If popup is closed without completing, stop spinner
+  useEffect(() => {
+    if (!popupRef) return;
+    const t = window.setInterval(() => {
+      if (popupRef.closed) {
+        window.clearInterval(t);
+        setPopupRef(null);
+        setIsLoading(null);
+      }
+    }, 400);
+    return () => window.clearInterval(t);
+  }, [popupRef]);
 
   const handleCredentialsSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,7 +161,9 @@ function LoginContent() {
   const hasCredentials = providers?.credentials;
   const hasGitHub = providers?.github;
   const hasKeycloak = providers?.keycloak;
-  const hasOAuthProviders = hasGitHub || hasKeycloak;
+  const hasGoogle = providers?.google;
+  const hasMicrosoft = providers?.['azure-ad'];
+  const hasOAuthProviders = hasGitHub || hasKeycloak || hasGoogle || hasMicrosoft;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rl-navy via-rl-navy-light to-rl-navy-dark">
@@ -178,11 +258,17 @@ function LoginContent() {
 
           {/* OAuth Providers */}
           {hasOAuthProviders && (
-            <div className={`grid ${hasGitHub && hasKeycloak ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
+            <div
+              className={`grid ${
+                [hasKeycloak, hasGitHub, hasGoogle, hasMicrosoft].filter(Boolean).length > 1
+                  ? 'grid-cols-2'
+                  : 'grid-cols-1'
+              } gap-3`}
+            >
               {hasKeycloak && (
                 <Button
                   variant="outline"
-                  onClick={() => handleSignIn('keycloak')}
+                  onClick={() => handleKeycloakPopup()}
                   disabled={isLoading !== null}
                   className="w-full"
                 >
@@ -192,6 +278,38 @@ function LoginContent() {
                     <ShieldCheck className="mr-2 h-4 w-4" />
                   )}
                   SSO (Keycloak)
+                </Button>
+              )}
+
+              {hasGoogle && (
+                <Button
+                  variant="outline"
+                  onClick={() => handleSignIn('google')}
+                  disabled={isLoading !== null}
+                  className="w-full"
+                >
+                  {isLoading === 'google' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Chrome className="mr-2 h-4 w-4" />
+                  )}
+                  Google
+                </Button>
+              )}
+
+              {hasMicrosoft && (
+                <Button
+                  variant="outline"
+                  onClick={() => handleSignIn('azure-ad')}
+                  disabled={isLoading !== null}
+                  className="w-full"
+                >
+                  {isLoading === 'azure-ad' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <AppWindow className="mr-2 h-4 w-4" />
+                  )}
+                  Microsoft
                 </Button>
               )}
 

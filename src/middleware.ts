@@ -9,6 +9,7 @@ import { getToken } from 'next-auth/jwt';
 // Paths that don't require organization context
 const PUBLIC_PATHS = [
   '/login',
+  '/auth/popup-complete',
   '/api/auth',
   '/api/health',
   '/_next',
@@ -53,6 +54,43 @@ function validateMembership(
  */
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // ---------------------------------------------------------------------------
+  // Grafana-in-portal support
+  // ---------------------------------------------------------------------------
+  // Grafana often emits root-absolute URLs like `/public/build/...` and `/api/...`.
+  // When embedded under `/grafana/*`, those requests would otherwise hit the portal
+  // (and our `/api/*` org header enforcement), resulting in a blank UI.
+  //
+  // If the request originates from a `/grafana/*` page (Referer), rewrite common
+  // Grafana root paths to `/grafana/*` so the reverse-proxy can handle them.
+  const referer = request.headers.get('referer') || '';
+  const fromGrafana = referer.includes('/grafana');
+  if (fromGrafana && !pathname.startsWith('/grafana')) {
+    const grafanaRootPrefixes = [
+      '/public/',
+      '/build/',
+      '/api/',
+      '/d/',
+      '/dashboards/',
+      '/explore',
+      '/alerting',
+      '/datasources',
+      '/connections',
+      '/org',
+      '/profile',
+      '/plugins',
+      '/avatar/',
+      '/img/',
+      '/render/',
+    ];
+
+    if (grafanaRootPrefixes.some((p) => pathname === p || pathname.startsWith(p))) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/grafana${pathname}`;
+      return NextResponse.rewrite(url);
+    }
+  }
 
   // Skip public paths
   if (PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
@@ -130,11 +168,23 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set('x-user-role', userRole);
     requestHeaders.set('x-request-id', crypto.randomUUID());
 
-    return NextResponse.next({
+    // IMPORTANT: Persist the last-selected organization in an httpOnly cookie.
+    // This makes org selection survive hard reloads / server restarts even when
+    // the client does not (or cannot) send x-organization-id for page navigation.
+    const response = NextResponse.next({
       request: {
         headers: requestHeaders,
       },
     });
+
+    response.cookies.set('organization-id', organizationId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+    });
+
+    return response;
   }
 
   // For page routes, redirect to org selection if no org selected
@@ -177,6 +227,6 @@ export const config = {
      * - favicon.ico (favicon file)
      * - public folder
      */
-    '/((?!_next/static|_next/image|favicon.ico|public/).*)',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };

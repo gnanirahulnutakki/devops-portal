@@ -26,6 +26,6 @@ export const GET = withTenantApiHandler(
     const items = await listTrivyOperatorVulnerabilityReports(namespace);
     return successResponse({ installed: true, namespace, items });
   },
-  { rateLimit: 'general', requiredRole: 'USER' }
+  { rateLimit: 'general', requiredRole: 'USER', requiredFeature: 'vulnerability' }
 );
 

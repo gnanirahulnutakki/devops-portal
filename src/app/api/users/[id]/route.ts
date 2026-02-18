@@ -12,6 +12,7 @@ const updateUserSchema = z.object({
   name: z.string().min(1).optional(),
   role: z.enum(['USER', 'READWRITE', 'ADMIN']).optional(),
   password: z.string().min(8, 'Password must be at least 8 characters').optional(),
+  featureFlags: z.record(z.string(), z.any()).optional(),
 });
 
 // Get a single user
@@ -52,6 +53,7 @@ export const GET = withTenantApiHandler(
         name: membership.user.name,
         image: membership.user.image,
         role: membership.role,
+        featureFlags: membership.featureFlags ?? {},
         createdAt: membership.user.createdAt,
         emailVerified: membership.user.emailVerified,
         membershipId: membership.id,
@@ -80,6 +82,7 @@ export const PATCH = withTenantApiHandler(
       if ('error' in validation) return validation.error;
       
       const { name, role, password } = validation.data;
+      const featureFlags = (validation.data as any).featureFlags as any;
 
       // Find membership
       const membership = await ctx.db.membership.findFirst({
@@ -139,10 +142,19 @@ export const PATCH = withTenantApiHandler(
         });
       }
 
+      // Update per-user feature overrides if provided
+      if (featureFlags) {
+        await ctx.db.membership.update({
+          where: { id: membership.id },
+          data: { featureFlags },
+        });
+      }
+
       return successResponse({
         id: userId,
         name: name || membership.user.name,
         role: role || membership.role,
+        featureFlags: featureFlags ?? membership.featureFlags ?? {},
         updated: true,
       });
     } catch (error) {

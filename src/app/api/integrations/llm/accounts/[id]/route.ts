@@ -1,0 +1,57 @@
+import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
+import { z } from 'zod';
+import { deleteCredentialById, updateCredentialById } from '@/lib/services/integration-credentials';
+
+const updateSchema = z.object({
+  name: z.string().min(2).max(100).optional(),
+  enabled: z.boolean().optional(),
+  provider: z.string().min(2).max(50).optional(),
+  apiKey: z.string().min(10).optional(),
+  baseUrl: z.string().url().optional(),
+  model: z.string().optional(),
+});
+
+export const PATCH = withTenantApiHandler(
+  async (request, ctx) => {
+    const id = new URL(request.url).pathname.split('/').pop() || '';
+    if (!id) return errorResponse('VALIDATION_ERROR', 'id is required', 400);
+
+    const validation = await validateRequest(request, updateSchema);
+    if ('error' in validation) return validation.error;
+
+    const { name, enabled, provider, apiKey, baseUrl, model } = validation.data;
+    const credentialsPatch =
+      provider || apiKey || baseUrl || model
+        ? ({
+            ...(provider ? { provider } : {}),
+            ...(apiKey ? { apiKey } : {}),
+            ...(baseUrl ? { baseUrl } : {}),
+            ...(typeof model === 'string' ? { model } : {}),
+          } as any)
+        : undefined;
+
+    const result = await updateCredentialById(ctx.tenant.organizationId, 'LLM', id, {
+      name,
+      enabled,
+      credentialsPatch,
+    });
+    if (!result.success) {
+      return errorResponse('LLM_ACCOUNT_UPDATE_FAILED', result.error || 'Failed to update LLM account', 500);
+    }
+    return successResponse({ success: true });
+  },
+  { rateLimit: 'general', requiredRole: 'ADMIN' }
+);
+
+export const DELETE = withTenantApiHandler(
+  async (request, ctx) => {
+    const id = new URL(request.url).pathname.split('/').pop() || '';
+    if (!id) return errorResponse('VALIDATION_ERROR', 'id is required', 400);
+
+    const ok = await deleteCredentialById(ctx.tenant.organizationId, 'LLM', id);
+    if (!ok) return errorResponse('NOT_FOUND', 'LLM account not found', 404);
+    return successResponse({ success: true });
+  },
+  { rateLimit: 'general', requiredRole: 'ADMIN' }
+);
+

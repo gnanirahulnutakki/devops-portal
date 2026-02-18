@@ -5,7 +5,9 @@ import {
   validateRequest,
 } from '@/lib/api';
 import { z } from 'zod';
-import { listCredentials, saveCredentials } from '@/lib/services/integration-credentials';
+import { saveCredentials } from '@/lib/services/integration-credentials';
+import { prisma } from '@/lib/prisma';
+import { decrypt } from '@/lib/encryption';
 
 const createArgocdAccountSchema = z.object({
   name: z.string().min(2).max(100),
@@ -17,8 +19,41 @@ const createArgocdAccountSchema = z.object({
 export const GET = withTenantApiHandler(
   async (_request, ctx) => {
     try {
-      const credentials = await listCredentials(ctx.tenant.organizationId, 'ARGOCD');
-      return successResponse(credentials);
+      const rows = await prisma.integrationCredential.findMany({
+        where: { organizationId: ctx.tenant.organizationId, provider: 'ARGOCD' },
+        select: {
+          id: true,
+          provider: true,
+          name: true,
+          enabled: true,
+          lastUsedAt: true,
+          lastErrorAt: true,
+          lastError: true,
+          createdAt: true,
+          updatedAt: true,
+          credentials: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+
+      const enriched = await Promise.all(
+        rows.map(async (r) => {
+          try {
+            const raw = JSON.parse(await decrypt(r.credentials)) as any;
+            return {
+              ...r,
+              url: raw?.url,
+              insecure: Boolean(raw?.insecure),
+              hasToken: Boolean(raw?.token),
+              credentials: undefined,
+            };
+          } catch {
+            return { ...r, url: undefined, insecure: false, hasToken: false, credentials: undefined };
+          }
+        })
+      );
+
+      return successResponse(enriched);
     } catch (error) {
       return errorResponse('ARGOCD_ACCOUNTS_FETCH_FAILED', (error as Error).message, 500);
     }

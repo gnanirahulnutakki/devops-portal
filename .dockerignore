@@ -57,6 +57,10 @@ Dockerfile*
 docker-compose*
 .dockerignore
 
+# Local artifacts / accidental duplicates
+*.tgz
+* 2*
+
 # Misc
 *.md
 LICENSE

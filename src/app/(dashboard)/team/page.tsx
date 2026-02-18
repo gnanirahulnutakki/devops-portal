@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import {
   Users,
   UserPlus,
@@ -70,6 +71,12 @@ export default function TeamPage() {
   const [editUserName, setEditUserName] = useState('');
   const [editUserRole, setEditUserRole] = useState<'USER' | 'READWRITE' | 'ADMIN'>('USER');
   const [editUserPassword, setEditUserPassword] = useState('');
+  const [editUserFeatures, setEditUserFeatures] = useState<Record<string, boolean>>({
+    vulnerability: true,
+    mcp: true,
+    diagrams: true,
+    helm: true,
+  });
 
   // Current user's role
   const currentUserRole = users?.find(u => u.email === session?.user?.email)?.role;
@@ -143,6 +150,12 @@ export default function TeamPage() {
           name: editUserName || undefined,
           role: editUserRole,
           password: editUserPassword || undefined,
+          featureFlags: {
+            vulnerability: { enabled: editUserFeatures.vulnerability },
+            mcp: { enabled: editUserFeatures.mcp },
+            diagrams: { enabled: editUserFeatures.diagrams },
+            helm: { enabled: editUserFeatures.helm },
+          },
         },
       });
       setShowEditDialog(false);
@@ -175,6 +188,18 @@ export default function TeamPage() {
     setEditUserName(user.name || '');
     setEditUserRole(user.role);
     setEditUserPassword('');
+    const flags = (user as any).featureFlags || {};
+    const getEnabled = (k: string) => {
+      const v = flags?.[k];
+      if (typeof v?.enabled === 'boolean') return v.enabled;
+      return true;
+    };
+    setEditUserFeatures({
+      vulnerability: getEnabled('vulnerability'),
+      mcp: getEnabled('mcp'),
+      diagrams: getEnabled('diagrams'),
+      helm: getEnabled('helm'),
+    });
     setShowEditDialog(true);
   };
 
@@ -427,7 +452,8 @@ export default function TeamPage() {
           <DialogHeader>
             <DialogTitle>Add Team Member</DialogTitle>
             <DialogDescription>
-              Add a new member to your organization. They will receive an email invitation.
+              Add a member to your organization. In Keycloak-only mode, no invitation email is sent; create the user in
+              Keycloak (or have them sign in once) to activate access.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -545,6 +571,48 @@ export default function TeamPage() {
                 value={editUserPassword}
                 onChange={(e) => setEditUserPassword(e.target.value)}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Feature access overrides</Label>
+              <div className="space-y-2 rounded-lg border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">Vulnerability</span>
+                  <Switch
+                    checked={!!editUserFeatures.vulnerability}
+                    onCheckedChange={(checked) =>
+                      setEditUserFeatures((prev) => ({ ...prev, vulnerability: checked }))
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">MCP</span>
+                  <Switch
+                    checked={!!editUserFeatures.mcp}
+                    onCheckedChange={(checked) => setEditUserFeatures((prev) => ({ ...prev, mcp: checked }))}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">Diagrams</span>
+                  <Switch
+                    checked={!!editUserFeatures.diagrams}
+                    onCheckedChange={(checked) =>
+                      setEditUserFeatures((prev) => ({ ...prev, diagrams: checked }))
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">Helm</span>
+                  <Switch
+                    checked={!!editUserFeatures.helm}
+                    onCheckedChange={(checked) => setEditUserFeatures((prev) => ({ ...prev, helm: checked }))}
+                  />
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  These overrides apply only within the current organization and take precedence over org-level feature
+                  policy.
+                </div>
+              </div>
             </div>
             {updateUser.error && (
               <Alert variant="destructive">

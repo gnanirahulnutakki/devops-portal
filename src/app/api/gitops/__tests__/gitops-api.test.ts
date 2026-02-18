@@ -406,9 +406,10 @@ describe('GitOps Studio API', () => {
 
   describe('Change Tracking', () => {
     it('should detect unsaved changes', () => {
-      const originalContent = 'key: value';
-      const editedContent = 'key: newvalue';
-      const sameContent = 'key: value';
+      // Widen to `string` so TS doesn't treat comparisons as constant-foldable literals.
+      const originalContent: string = 'key: value';
+      const editedContent: string = 'key: newvalue';
+      const sameContent: string = 'key: value';
 
       expect(editedContent !== originalContent).toBe(true);
       expect(sameContent !== originalContent).toBe(false);

@@ -33,9 +33,11 @@ export default function DiagramsPage() {
         <CardContent className="h-[70vh] overflow-hidden rounded-md border">
           <iframe
             title="drawio"
-            src="https://app.diagrams.net/?embed=1&proto=json&spin=1&ui=min"
+            // Use the dedicated embed host (app.diagrams.net frequently blocks framing)
+            src="https://embed.diagrams.net/?embed=1&proto=json&spin=1&ui=min"
             className="h-full w-full"
             allow="clipboard-write"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
           />
         </CardContent>
       </Card>

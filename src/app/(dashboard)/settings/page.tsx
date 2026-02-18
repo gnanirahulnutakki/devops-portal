@@ -10,11 +10,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { useOrganizationStore } from '@/store/organization-store';
+import { isAdmin, useOrganizationStore } from '@/store/organization-store';
+import { toast } from 'sonner';
 import {
   User,
   KeyRound,
   Github,
+  Chrome,
+  AppWindow,
   Link2,
   Shield,
   Bell,
@@ -32,6 +35,10 @@ export default function SettingsPage() {
   const orgId = currentOrganization?.id;
   const [draft, setDraft] = useState<any>({});
   const [saving, setSaving] = useState(false);
+  const [savingGrafana, setSavingGrafana] = useState(false);
+  const [connections, setConnections] = useState<Array<{ provider: string; type: string }>>([]);
+  const [connectionsLoading, setConnectionsLoading] = useState(false);
+  const [availableProviders, setAvailableProviders] = useState<Record<string, any> | null>(null);
   const [githubAccounts, setGithubAccounts] = useState<any[]>([]);
   const [grafanaAccounts, setGrafanaAccounts] = useState<any[]>([]);
   const [uptimeAccounts, setUptimeAccounts] = useState<any[]>([]);
@@ -103,23 +110,79 @@ export default function SettingsPage() {
     loadAccounts();
   }, [orgId]);
 
+  const loadConnections = async () => {
+    setConnectionsLoading(true);
+    try {
+      const res = await fetch('/api/auth/connections');
+      const data = await res.json();
+      if (res.ok) {
+        setConnections(data.data || []);
+      }
+    } finally {
+      setConnectionsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadConnections();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProviders() {
+      try {
+        const res = await fetch('/api/auth/providers');
+        const data = await res.json();
+        if (cancelled) return;
+        setAvailableProviders(data || {});
+      } catch {
+        // Ignore - just render connections optimistically
+        setAvailableProviders({});
+      }
+    }
+    void loadProviders();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const isConnected = (provider: string) => connections.some((a) => a.provider === provider);
+  const isProviderEnabled = (provider: string) => (availableProviders ? !!availableProviders[provider] : true);
+
+  const disconnect = async (provider: string) => {
+    await fetch(`/api/auth/connections?provider=${encodeURIComponent(provider)}`, { method: 'DELETE' });
+    await loadConnections();
+  };
+
   const updateSettings = async (payload: any) => {
     if (!orgId) return;
+    if (!isAdmin(currentOrganization?.role)) {
+      toast.error('Admin role required to update organization settings.');
+      return;
+    }
     setSaving(true);
     const res = await fetch('/api/organizations/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
       body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (res.ok) {
-      setDraft(data.data || {});
+    const data = await res.json().catch(() => ({} as any));
+    if (!res.ok) {
+      toast.error(data?.error?.message || `Failed to update settings (HTTP ${res.status})`);
+      setSaving(false);
+      return;
     }
+    toast.success('Settings saved.');
+    setDraft(data.data || {});
     setSaving(false);
   };
 
   const saveGithubAccount = async () => {
     if (!orgId || !githubForm.name || !githubForm.token) return;
+    if (!isAdmin(currentOrganization?.role)) {
+      toast.error('Admin role required to add GitHub accounts for this organization.');
+      return;
+    }
     const res = await fetch('/api/integrations/github/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
@@ -129,40 +192,67 @@ export default function SettingsPage() {
         organization: githubForm.organization || undefined,
       }),
     });
-    if (res.ok) {
-      setGithubForm((prev) => ({ ...prev, token: '' }));
-      await loadAccounts();
+    const data = await res.json().catch(() => ({} as any));
+    if (!res.ok) {
+      toast.error(data?.error?.message || `Failed to save GitHub account (HTTP ${res.status})`);
+      return;
     }
+    toast.success('GitHub account saved.');
+    setGithubForm((prev) => ({ ...prev, token: '' }));
+    await loadAccounts();
   };
 
   const saveGrafanaAccount = async () => {
     if (!orgId || !grafanaForm.name || !grafanaForm.url || !grafanaForm.apiKey) return;
+    if (!isAdmin(currentOrganization?.role)) {
+      toast.error('Admin role required to add Grafana accounts for this organization.');
+      return;
+    }
+    setSavingGrafana(true);
     const res = await fetch('/api/integrations/grafana/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
       body: JSON.stringify(grafanaForm),
     });
-    if (res.ok) {
-      setGrafanaForm((prev) => ({ ...prev, apiKey: '' }));
-      await loadAccounts();
+    const data = await res.json().catch(() => ({} as any));
+    if (!res.ok) {
+      toast.error(data?.error?.message || `Failed to save Grafana account (HTTP ${res.status})`);
+      setSavingGrafana(false);
+      return;
     }
+    toast.success('Grafana account saved.');
+    setGrafanaForm((prev) => ({ ...prev, apiKey: '' }));
+    await loadAccounts();
+    setSavingGrafana(false);
   };
 
   const saveUptimeAccount = async () => {
     if (!orgId || !uptimeForm.name || !uptimeForm.url || !uptimeForm.apiKey) return;
+    if (!isAdmin(currentOrganization?.role)) {
+      toast.error('Admin role required to add Uptime Kuma accounts for this organization.');
+      return;
+    }
     const res = await fetch('/api/integrations/uptime-kuma/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
       body: JSON.stringify(uptimeForm),
     });
-    if (res.ok) {
-      setUptimeForm((prev) => ({ ...prev, apiKey: '' }));
-      await loadAccounts();
+    const data = await res.json().catch(() => ({} as any));
+    if (!res.ok) {
+      toast.error(data?.error?.message || `Failed to save Uptime Kuma account (HTTP ${res.status})`);
+      return;
     }
+    toast.success('Uptime Kuma account saved.');
+    setUptimeForm((prev) => ({ ...prev, apiKey: '' }));
+    await loadAccounts();
   };
 
   const saveLlmAccount = async () => {
     if (!orgId || !llmForm.name || !llmForm.provider || !llmForm.apiKey) return;
+    if (!isAdmin(currentOrganization?.role)) {
+      toast.error('Admin role required to add LLM accounts for this organization.');
+      return;
+    }
     const res = await fetch('/api/integrations/llm/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
@@ -174,23 +264,35 @@ export default function SettingsPage() {
         model: llmForm.model || undefined,
       }),
     });
-    if (res.ok) {
-      setLlmForm((prev) => ({ ...prev, apiKey: '' }));
-      await loadAccounts();
+    const data = await res.json().catch(() => ({} as any));
+    if (!res.ok) {
+      toast.error(data?.error?.message || `Failed to save LLM account (HTTP ${res.status})`);
+      return;
     }
+    toast.success('LLM account saved.');
+    setLlmForm((prev) => ({ ...prev, apiKey: '' }));
+    await loadAccounts();
   };
 
   const saveArgocdAccount = async () => {
     if (!orgId || !argocdForm.name || !argocdForm.url || !argocdForm.token) return;
+    if (!isAdmin(currentOrganization?.role)) {
+      toast.error('Admin role required to add ArgoCD accounts for this organization.');
+      return;
+    }
     const res = await fetch('/api/integrations/argocd/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
       body: JSON.stringify(argocdForm),
     });
-    if (res.ok) {
-      setArgocdForm((prev) => ({ ...prev, token: '' }));
-      await loadAccounts();
+    const data = await res.json().catch(() => ({} as any));
+    if (!res.ok) {
+      toast.error(data?.error?.message || `Failed to save ArgoCD account (HTTP ${res.status})`);
+      return;
     }
+    toast.success('ArgoCD account saved.');
+    setArgocdForm((prev) => ({ ...prev, token: '' }));
+    await loadAccounts();
   };
 
   const githubOptions = useMemo(
@@ -213,6 +315,15 @@ export default function SettingsPage() {
     () => llmAccounts.map((cred) => ({ value: cred.id, label: cred.name || 'default' })),
     [llmAccounts]
   );
+
+  const canEditOrgSettings = currentOrganization?.role === 'ADMIN';
+  const featureKeys: Array<{ key: string; label: string; defaultMinRole: 'USER' | 'READWRITE' | 'ADMIN' }> = [
+    { key: 'vulnerability', label: 'Vulnerability', defaultMinRole: 'USER' },
+    { key: 'mcp', label: 'MCP', defaultMinRole: 'READWRITE' },
+    { key: 'diagrams', label: 'Diagrams', defaultMinRole: 'USER' },
+    { key: 'helm', label: 'Helm', defaultMinRole: 'READWRITE' },
+    { key: 'gitOpsStudio', label: 'GitOps Studio', defaultMinRole: 'ADMIN' },
+  ];
 
   return (
     <div className="space-y-6">
@@ -265,41 +376,139 @@ export default function SettingsPage() {
             <CardDescription>Linked accounts</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-3 rounded-lg border">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
-                  <KeyRound className="h-5 w-5 text-rl-navy" />
+            {isProviderEnabled('keycloak') && (
+              <div className="flex items-center justify-between p-3 rounded-lg border">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                    <KeyRound className="h-5 w-5 text-rl-navy" />
+                  </div>
+                  <div>
+                    <p className="font-medium">Keycloak SSO</p>
+                    <p className="text-sm text-gray-500">Primary login</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-medium">Keycloak SSO</p>
-                  <p className="text-sm text-gray-500">Primary login</p>
-                </div>
+                {isConnected('keycloak') ? (
+                  <Badge variant="default">Connected</Badge>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => signIn('keycloak', { callbackUrl: '/settings' })}
+                    disabled={connectionsLoading}
+                  >
+                    Connect
+                  </Button>
+                )}
               </div>
-              <Badge variant="default">Connected</Badge>
-            </div>
+            )}
             
-            <div className="flex items-center justify-between p-3 rounded-lg border">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
-                  <Github className="h-5 w-5" />
+            {isProviderEnabled('github') && (
+              <div className="flex items-center justify-between p-3 rounded-lg border">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                    <Github className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium">GitHub</p>
+                    <p className="text-sm text-gray-500">Repository access</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-medium">GitHub</p>
-                  <p className="text-sm text-gray-500">Repository access</p>
-                </div>
+                {isConnected('github') ? (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="default">Connected</Badge>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => disconnect('github')}
+                      disabled={connectionsLoading}
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => signIn('github', { callbackUrl: '/settings' })}
+                    disabled={connectionsLoading}
+                  >
+                    Connect
+                  </Button>
+                )}
               </div>
-              {session?.user?.hasGitHubConnection ? (
-                <Badge variant="default">Connected</Badge>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => signIn('github', { callbackUrl: '/settings' })}
-                >
-                  Connect
-                </Button>
-              )}
-            </div>
+            )}
+
+            {isProviderEnabled('google') && (
+              <div className="flex items-center justify-between p-3 rounded-lg border">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                    <Chrome className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium">Google</p>
+                    <p className="text-sm text-gray-500">OAuth login</p>
+                  </div>
+                </div>
+                {isConnected('google') ? (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="default">Connected</Badge>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => disconnect('google')}
+                      disabled={connectionsLoading}
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => signIn('google', { callbackUrl: '/settings' })}
+                    disabled={connectionsLoading}
+                  >
+                    Connect
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {isProviderEnabled('azure-ad') && (
+              <div className="flex items-center justify-between p-3 rounded-lg border">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                    <AppWindow className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium">Microsoft</p>
+                    <p className="text-sm text-gray-500">Entra ID (Azure AD)</p>
+                  </div>
+                </div>
+                {isConnected('azure-ad') ? (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="default">Connected</Badge>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => disconnect('azure-ad')}
+                      disabled={connectionsLoading}
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => signIn('azure-ad', { callbackUrl: '/settings' })}
+                    disabled={connectionsLoading}
+                  >
+                    Connect
+                  </Button>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -319,6 +528,20 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between">
                 <span className="text-sm">Two-factor authentication</span>
                 <Badge variant="outline">Via SSO</Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Manage 2FA in Keycloak</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    // Keycloak Account Console (OTP/TOTP setup lives here)
+                    const url = `${window.location.origin}/keycloak/realms/devops-portal/account/#/security`;
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                  }}
+                >
+                  Setup 2FA
+                </Button>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm">Session timeout</span>
@@ -388,6 +611,81 @@ export default function SettingsPage() {
                 <span className="text-sm">Compact mode</span>
                 <Badge variant="outline">Off</Badge>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="md:col-span-3">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Feature Access Control
+            </CardTitle>
+            <CardDescription>
+              Enable/disable portal sections and set the minimum role required. Admins can also override per-user access
+              from the Team page.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {featureKeys.map((f) => {
+                const current = (draft?.features?.[f.key] || {}) as { enabled?: boolean; minRole?: string };
+                const enabled = current.enabled ?? true;
+                const minRole = (current.minRole as any) ?? f.defaultMinRole;
+                return (
+                  <div key={f.key} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{f.label}</p>
+                        <p className="text-xs text-muted-foreground">Key: {f.key}</p>
+                      </div>
+                      <Switch
+                        checked={enabled}
+                        disabled={!canEditOrgSettings}
+                        onCheckedChange={(checked) =>
+                          setDraft((prev: any) => ({
+                            ...prev,
+                            features: {
+                              ...(prev?.features || {}),
+                              [f.key]: { ...(prev?.features?.[f.key] || {}), enabled: checked },
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="mt-3 space-y-1">
+                      <Label>Minimum role</Label>
+                      <Select
+                        value={minRole}
+                        onValueChange={(value) =>
+                          setDraft((prev: any) => ({
+                            ...prev,
+                            features: {
+                              ...(prev?.features || {}),
+                              [f.key]: { ...(prev?.features?.[f.key] || {}), minRole: value },
+                            },
+                          }))
+                        }
+                        disabled={!canEditOrgSettings}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="USER">USER</SelectItem>
+                          <SelectItem value="READWRITE">READWRITE</SelectItem>
+                          <SelectItem value="ADMIN">ADMIN</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={() => updateSettings(draft)} disabled={saving || !canEditOrgSettings}>
+                Save Feature Policy
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -620,7 +918,13 @@ export default function SettingsPage() {
                   value={grafanaForm.apiKey}
                   onChange={(e) => setGrafanaForm((prev) => ({ ...prev, apiKey: e.target.value }))}
                 />
-                <Button onClick={saveGrafanaAccount} disabled={saving}>
+                {!isAdmin(currentOrganization?.role) ? (
+                  <p className="text-xs text-muted-foreground">
+                    Only <span className="font-medium">Admins</span> can add organization integration accounts. Switch to
+                    an org where you are Admin.
+                  </p>
+                ) : null}
+                <Button onClick={saveGrafanaAccount} disabled={savingGrafana || saving || !isAdmin(currentOrganization?.role)}>
                   Save Grafana Account
                 </Button>
               </div>

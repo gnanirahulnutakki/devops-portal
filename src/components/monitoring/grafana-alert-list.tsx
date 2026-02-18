@@ -25,6 +25,8 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
+  ExternalLink,
+  Pencil,
 } from 'lucide-react';
 
 interface GrafanaAlert {
@@ -297,11 +299,27 @@ export function GrafanaAlertList({ credentialId }: { credentialId?: string }) {
                 <TableHead>State</TableHead>
                 <TableHead>Rule Group</TableHead>
                 <TableHead>Folder</TableHead>
+                <TableHead>Open</TableHead>
                 <TableHead className="text-right">Updated</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {alerts.map((alert: GrafanaAlert) => (
+              {alerts.map((alert: GrafanaAlert) => {
+                const p = new URL(
+                  `/grafana/alerting/grafana/${encodeURIComponent(alert.uid)}/view`,
+                  window.location.origin
+                );
+                if (credentialId) p.searchParams.set('credentialId', credentialId);
+                const portalUrl = p.toString();
+
+                const e = new URL(
+                  `/grafana/alerting/grafana/${encodeURIComponent(alert.uid)}/edit`,
+                  window.location.origin
+                );
+                if (credentialId) e.searchParams.set('credentialId', credentialId);
+                const portalEditUrl = e.toString();
+
+                return (
                 <TableRow
                   key={alert.uid}
                   className={
@@ -333,6 +351,32 @@ export function GrafanaAlertList({ credentialId }: { credentialId?: string }) {
                   <TableCell className="text-muted-foreground">
                     {alert.folderTitle || '-'}
                   </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        asChild
+                        aria-label="Open alert in portal"
+                        title="Open in portal"
+                      >
+                        <a href={portalUrl} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        asChild
+                        aria-label="Edit alert"
+                        title="Edit alert"
+                      >
+                        <a href={portalEditUrl} target="_blank" rel="noopener noreferrer">
+                          <Pencil className="h-4 w-4" />
+                        </a>
+                      </Button>
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
                     {alert.updated ? (
                       <span title={new Date(alert.updated).toLocaleString()}>
@@ -343,7 +387,8 @@ export function GrafanaAlertList({ credentialId }: { credentialId?: string }) {
                     )}
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </div>

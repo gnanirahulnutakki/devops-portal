@@ -35,6 +35,6 @@ export const GET = withTenantApiHandler(
       },
     });
   },
-  { rateLimit: 'general', requiredRole: 'USER' }
+  { rateLimit: 'general', requiredRole: 'USER', requiredFeature: 'vulnerability' }
 );
 

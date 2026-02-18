@@ -205,6 +205,37 @@ secrets:
     REDIS_URL: ""
 
 # =============================================================================
+# External Secrets Operator (ESO) integration (optional)
+# =============================================================================
+externalSecrets:
+  enabled: false
+  # Name of the Secret produced by the ExternalSecret (and consumed by the portal)
+  targetSecretName: devops-portal-secrets
+  refreshInterval: 1h
+  storeRef:
+    # Pre-created SecretStore/ClusterSecretStore (recommended)
+    name: ""
+    kind: ClusterSecretStore
+  # Map remote secrets into the target K8s Secret
+  # - secretKey: key in resulting K8s Secret
+  #   remoteRef:
+  #     key: remote secret identifier/path
+  #     property: optional JSON property within remote secret
+  data: []
+
+# =============================================================================
+# Secrets Store CSI Driver (optional)
+# =============================================================================
+secretsStoreCsi:
+  enabled: false
+  provider: aws # aws|vault|azure|gcp
+  secretProviderClassName: devops-portal-spc
+  # When true, the CSI driver will also sync to a Kubernetes Secret (for envFrom usage)
+  syncToKubernetesSecret: true
+  # Provider-specific parameters (see docs/operations/SECRETS_AND_VAULT.md)
+  parameters: {}
+
+# =============================================================================
 # Sealed Secrets
 # =============================================================================
 sealedSecrets:
@@ -482,6 +513,8 @@ commonLabels: {}
 # Security Scans (ad-hoc Trivy jobs launched by portal)
 # =============================================================================
 securityScans:
+  # Namespace where ad-hoc scan Jobs are created (defaults to release namespace)
+  namespace: ""
   rbac:
     create: true
 
@@ -490,3 +523,32 @@ securityScans:
 # =============================================================================
 trivyOperator:
   enabled: false
+  rbac:
+    create: true
+
+# =============================================================================
+# Mailpit (dev SMTP sink for Keycloak verification emails)
+# =============================================================================
+mailpit:
+  enabled: false
+  image:
+    repository: axllent/mailpit
+    tag: "v1.25.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    smtpPort: 1025
+    uiPort: 8025
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    host: mailpit.example.com
+    tls: []
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 25m
+      memory: 64Mi

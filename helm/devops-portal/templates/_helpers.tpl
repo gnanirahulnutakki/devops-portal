@@ -263,7 +263,14 @@ Environment variables for the application
 # Keycloak OIDC
 {{- if .Values.integrations.keycloak.enabled }}
 - name: KEYCLOAK_ISSUER
+  {{- if .Values.integrations.keycloak.issuer }}
   value: {{ .Values.integrations.keycloak.issuer | quote }}
+  {{- else }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.integrations.keycloak.existingSecret | default "devops-portal-keycloak-sealed" }}
+      key: {{ .Values.integrations.keycloak.issuerKey | default "issuer" }}
+  {{- end }}
 - name: KEYCLOAK_ID
   valueFrom:
     secretKeyRef:

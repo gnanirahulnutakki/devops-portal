@@ -1,5 +1,6 @@
 import ky, { type KyInstance, type Options } from 'ky';
 import { logger } from './logger';
+import { Agent } from 'undici';
 
 // =============================================================================
 // HTTP Client Configuration
@@ -10,12 +11,28 @@ export interface HttpClientConfig {
   timeout?: number;
   retries?: number;
   headers?: Record<string, string>;
+  /**
+   * Allow insecure TLS for THIS client only (e.g., internal services with self-signed certs).
+   * Prefer using service-specific flags (ARGOCD_INSECURE) instead of global NODE_TLS_REJECT_UNAUTHORIZED.
+   */
+  insecureTls?: boolean;
 }
 
 export function createHttpClient(config: HttpClientConfig): KyInstance {
+  const insecureAgent = config.insecureTls
+    ? new Agent({
+        connect: {
+          rejectUnauthorized: false,
+        },
+      })
+    : null;
+
   return ky.create({
     prefixUrl: config.baseUrl,
     timeout: config.timeout || 30000,
+    fetch: insecureAgent
+      ? ((input, init) => fetch(input as any, { ...(init as any), dispatcher: insecureAgent } as any) as any)
+      : undefined,
     retry: {
       limit: config.retries || 2,
       methods: ['get', 'put', 'head', 'delete', 'options', 'trace'],
@@ -90,9 +107,10 @@ export function createGitHubClient(token: string): KyInstance {
 }
 
 // ArgoCD API client
-export function createArgoCDClient(baseUrl: string, token: string): KyInstance {
+export function createArgoCDClient(baseUrl: string, token: string, insecure: boolean = false): KyInstance {
   return createHttpClient({
     baseUrl,
+    insecureTls: insecure,
     headers: {
       Authorization: `Bearer ${token}`,
     },

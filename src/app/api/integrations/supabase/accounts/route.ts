@@ -1,6 +1,8 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
-import { listCredentials, saveCredentials } from '@/lib/services/integration-credentials';
+import { saveCredentials } from '@/lib/services/integration-credentials';
+import { prisma } from '@/lib/prisma';
+import { decrypt } from '@/lib/encryption';
 
 const createSupabaseAccountSchema = z
   .object({
@@ -17,8 +19,41 @@ const createSupabaseAccountSchema = z
 export const GET = withTenantApiHandler(
   async (_request, ctx) => {
     try {
-      const credentials = await listCredentials(ctx.tenant.organizationId, 'SUPABASE');
-      return successResponse(credentials);
+      const rows = await prisma.integrationCredential.findMany({
+        where: { organizationId: ctx.tenant.organizationId, provider: 'SUPABASE' },
+        select: {
+          id: true,
+          provider: true,
+          name: true,
+          enabled: true,
+          lastUsedAt: true,
+          lastErrorAt: true,
+          lastError: true,
+          createdAt: true,
+          updatedAt: true,
+          credentials: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+
+      const enriched = await Promise.all(
+        rows.map(async (r) => {
+          try {
+            const raw = JSON.parse(await decrypt(r.credentials)) as any;
+            return {
+              ...r,
+              url: raw?.url,
+              hasAnonKey: Boolean(raw?.anonKey),
+              hasServiceRoleKey: Boolean(raw?.serviceRoleKey),
+              credentials: undefined,
+            };
+          } catch {
+            return { ...r, url: undefined, hasAnonKey: false, hasServiceRoleKey: false, credentials: undefined };
+          }
+        })
+      );
+
+      return successResponse(enriched);
     } catch (error) {
       return errorResponse('SUPABASE_ACCOUNTS_FETCH_FAILED', (error as Error).message, 500);
     }

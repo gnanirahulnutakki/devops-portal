@@ -29,7 +29,7 @@ interface Organization {
 function SelectOrganizationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { status } = useSession();
+  const { status, update } = useSession();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -37,10 +37,12 @@ function SelectOrganizationContent() {
   const [createSlug, setCreateSlug] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [selectingOrgId, setSelectingOrgId] = useState<string | null>(null);
   const setOrganization = useOrganizationStore((state) => state.setOrganization);
 
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
   const manageMode = searchParams.get('manage') === '1';
+  const invalidOrg = searchParams.get('error') === 'invalid_org';
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -53,6 +55,16 @@ function SelectOrganizationContent() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, router]);
+
+  async function refreshSessionMemberships() {
+    try {
+      // Forces NextAuth JWT callback with trigger === 'update',
+      // which refreshes the org membership map stored in the JWT.
+      await update?.();
+    } catch {
+      // Best-effort; we'll still attempt navigation.
+    }
+  }
 
   async function fetchOrganizations() {
     try {
@@ -75,7 +87,8 @@ function SelectOrganizationContent() {
     }
   }
 
-  function selectOrganization(org: Organization) {
+  async function selectOrganization(org: Organization) {
+    setSelectingOrgId(org.id);
     // Set organization in Zustand store (persisted to localStorage)
     setOrganization({
       id: org.id,
@@ -83,12 +96,19 @@ function SelectOrganizationContent() {
       slug: org.slug,
       role: org.role as UserRole,
     });
+
+    // IMPORTANT:
+    // Middleware validates org access from memberships embedded in the JWT.
+    // Right after org creation (or membership changes), the JWT can be stale.
+    // Refresh session first so the next navigation isn't rejected as invalid_org.
+    await refreshSessionMemberships();
     
     // Set cookie for middleware with security flags
     // Note: httpOnly can only be set server-side; middleware re-sets it with httpOnly on next request
     const isSecure = window.location.protocol === 'https:';
     document.cookie = `organization-id=${org.id}; path=/; max-age=${60 * 60 * 24 * 30}; samesite=lax${isSecure ? '; secure' : ''}`;
     router.push(callbackUrl);
+    setSelectingOrgId(null);
   }
 
   // Auto-generate slug from name
@@ -126,7 +146,7 @@ function SelectOrganizationContent() {
       }
 
       // Select the newly created org (user is ADMIN)
-      selectOrganization({
+      await selectOrganization({
         id: result.data.id,
         name: result.data.name,
         slug: result.data.slug,
@@ -170,6 +190,15 @@ function SelectOrganizationContent() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {invalidOrg && (
+            <div className="flex items-center gap-2 p-3 text-sm text-amber-700 bg-amber-50 dark:bg-amber-950/20 rounded-md">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              <span>
+                Your selected organization wasn&apos;t recognized by your current session yet. Select it again to
+                refresh access.
+              </span>
+            </div>
+          )}
           {organizations.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-gray-500 mb-4">
@@ -186,6 +215,7 @@ function SelectOrganizationContent() {
                 <button
                   key={org.id}
                   onClick={() => selectOrganization(org)}
+                  disabled={selectingOrgId === org.id}
                   className="w-full flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
                 >
                   <div className="flex items-center gap-3">
@@ -201,7 +231,11 @@ function SelectOrganizationContent() {
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className="h-5 w-5 text-gray-400" />
+                  {selectingOrgId === org.id ? (
+                    <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
+                  ) : (
+                    <ChevronRight className="h-5 w-5 text-gray-400" />
+                  )}
                 </button>
               ))}
               <Button

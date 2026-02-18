@@ -7,13 +7,14 @@ import { KyInstance } from 'ky';
 interface ArgoCreds {
   baseUrl: string;
   token: string;
+  insecure: boolean;
 }
 
 async function getArgoCreds(organizationId: string): Promise<ArgoCreds> {
   // 1. Try encrypted IntegrationCredential DB + env fallback (preferred path)
   const creds = await getArgoCDCredentials(organizationId);
   if (creds) {
-    return { baseUrl: creds.url.replace(/\/$/, ''), token: creds.token };
+    return { baseUrl: creds.url.replace(/\/$/, ''), token: creds.token, insecure: !!creds.insecure };
   }
 
   // 2. Legacy fallback: plaintext org.settings (deprecated, for backward compat)
@@ -26,6 +27,7 @@ async function getArgoCreds(organizationId: string): Promise<ArgoCreds> {
     return {
       baseUrl: (settings.argocdUrl as string).replace(/\/$/, ''),
       token: settings.argocdToken as string,
+      insecure: false,
     };
   }
 
@@ -41,13 +43,13 @@ export async function getArgoBaseUrl(organizationId: string): Promise<string> {
  * Get the ArgoCD HTTP client for making direct API calls
  */
 export async function getArgoCDClient(organizationId: string): Promise<KyInstance> {
-  const { baseUrl, token } = await getArgoCreds(organizationId);
-  return createArgoCDClient(baseUrl, token);
+  const { baseUrl, token, insecure } = await getArgoCreds(organizationId);
+  return createArgoCDClient(baseUrl, token, insecure);
 }
 
 export async function getArgoService(orgId: string): Promise<ArgoCDService> {
-  const { baseUrl, token } = await getArgoCreds(orgId);
-  return new ArgoCDService(baseUrl, token);
+  const { baseUrl, token, insecure } = await getArgoCreds(orgId);
+  return new ArgoCDService(baseUrl, token, insecure);
 }
 
 // Convenience wrappers

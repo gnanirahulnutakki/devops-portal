@@ -42,6 +42,7 @@ export const GET = withTenantApiHandler(
         name: m.user.name,
         image: m.user.image,
         role: m.role,
+        featureFlags: m.featureFlags ?? {},
         createdAt: m.user.createdAt,
         emailVerified: m.user.emailVerified,
         membershipId: m.id,

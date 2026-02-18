@@ -46,6 +46,15 @@ model Organization {
 model Membership {
   id             String   @id @default(cuid())
   role           Role     @default(USER)
+  /**
+   * Per-user feature overrides for this organization.
+   * Example shape:
+   * {
+   *   "vulnerability": { "enabled": false },
+   *   "mcp": { "enabled": true }
+   * }
+   */
+  featureFlags   Json     @default("{}")
   
   // Relations
   userId         String

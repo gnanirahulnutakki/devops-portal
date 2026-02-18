@@ -147,7 +147,14 @@ export function GrafanaFolderList({ credentialId }: { credentialId?: string }) {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {folders.map((folder) => (
+        {folders.map((folder) => {
+          const u = new URL(folder.url);
+          const p = new URL(`/grafana${u.pathname}`, window.location.origin);
+          u.searchParams.forEach((v, k) => p.searchParams.set(k, v));
+          if (credentialId) p.searchParams.set('credentialId', credentialId);
+          const portalUrl = p.toString();
+
+          return (
           <Card key={folder.uid} className="hover:border-primary/50 transition-colors">
             <CardContent className="p-4 flex items-center gap-4">
               <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
@@ -157,19 +164,38 @@ export function GrafanaFolderList({ credentialId }: { credentialId?: string }) {
                 <p className="font-medium truncate">{folder.title}</p>
                 <p className="text-xs text-muted-foreground">UID: {folder.uid}</p>
               </div>
-              <Button variant="ghost" size="icon" asChild>
-                <a
-                  href={folder.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Open ${folder.title} in Grafana`}
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  asChild
+                  aria-label={`Open ${folder.title} in portal`}
+                  title="Open in portal"
                 >
-                  <ExternalLink className="h-4 w-4" />
-                </a>
-              </Button>
+                  <a
+                    href={portalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                  </a>
+                </Button>
+                <Button variant="ghost" size="icon" asChild>
+                  <a
+                    href={folder.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Open ${folder.title} in Grafana`}
+                    title="Open in Grafana"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                </Button>
+              </div>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

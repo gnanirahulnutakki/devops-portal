@@ -246,6 +246,89 @@ export async function listCredentials(
 }
 
 /**
+ * Update a single credential record by id (CRUD support).
+ * - Verifies org + provider ownership
+ * - Optionally updates name, enabled, and/or decrypted credentials payload (patch merge)
+ */
+export async function updateCredentialById<T extends Record<string, any>>(
+  organizationId: string,
+  provider: IntegrationProvider,
+  credentialId: string,
+  update: {
+    name?: string;
+    enabled?: boolean;
+    credentialsPatch?: Partial<T>;
+    replaceCredentials?: T;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const existing = await prisma.integrationCredential.findFirst({
+      where: { id: credentialId, organizationId, provider },
+      select: { id: true, name: true, credentials: true, enabled: true },
+    });
+    if (!existing) return { success: false, error: 'Credential not found' };
+
+    let nextCreds: Record<string, unknown> | undefined;
+    if (update.replaceCredentials) {
+      nextCreds = update.replaceCredentials;
+    } else if (update.credentialsPatch && Object.keys(update.credentialsPatch).length > 0) {
+      const decrypted = JSON.parse(await decrypt(existing.credentials)) as Record<string, unknown>;
+      nextCreds = { ...decrypted, ...update.credentialsPatch };
+    }
+
+    // Validate & encrypt only if creds are changing
+    let encrypted: string | undefined;
+    if (nextCreds) {
+      const validationError = validateCredentials(provider, nextCreds as any);
+      if (validationError) return { success: false, error: validationError };
+      encrypted = await encrypt(JSON.stringify(nextCreds));
+    }
+
+    await prisma.integrationCredential.update({
+      where: { id: existing.id },
+      data: {
+        ...(typeof update.name === 'string' ? { name: update.name } : {}),
+        ...(typeof update.enabled === 'boolean' ? { enabled: update.enabled } : {}),
+        ...(encrypted ? { credentials: encrypted } : {}),
+        ...(encrypted
+          ? {
+              lastError: null,
+              lastErrorAt: null,
+              updatedAt: new Date(),
+            }
+          : { updatedAt: new Date() }),
+      },
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    // Prisma unique constraint error when renaming to an existing name
+    const msg = typeof error?.message === 'string' ? error.message : 'Failed to update credentials';
+    logger.error({ organizationId, provider, credentialId, error }, 'Failed to update credential by id');
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Delete a credential record by id (CRUD support).
+ * Ensures org + provider ownership.
+ */
+export async function deleteCredentialById(
+  organizationId: string,
+  provider: IntegrationProvider,
+  credentialId: string
+): Promise<boolean> {
+  try {
+    const res = await prisma.integrationCredential.deleteMany({
+      where: { id: credentialId, organizationId, provider },
+    });
+    return res.count > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Check if credentials exist and are enabled
  */
 export async function hasCredentials(
