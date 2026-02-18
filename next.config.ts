@@ -34,9 +34,8 @@ const nextConfig: NextConfig = {
               "img-src 'self' data: https: blob:",
               "font-src 'self' data:",
               // connect-src: APIs that can be called from client-side
-              `connect-src 'self' https://api.github.com https://*.githubusercontent.com ${process.env.GRAFANA_URL ?? ''} ${process.env.ARGOCD_URL ?? ''}`.trim(),
-              // allow embedding external diagram editor
-              "frame-src 'self' https://app.diagrams.net https://embed.diagrams.net",
+              `connect-src 'self' https://api.github.com https://*.githubusercontent.com https://*.diagrams.net https://*.draw.io ${process.env.GRAFANA_URL ?? ''} ${process.env.ARGOCD_URL ?? ''}`.trim(),
+              "frame-src 'self' https://app.diagrams.net https://embed.diagrams.net https://viewer.diagrams.net",
               // Block external framing, but allow same-origin iframes we rely on (render previews)
               "frame-ancestors 'self'",
               "base-uri 'self'",
