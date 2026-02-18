@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { GrafanaAlertList } from '@/components/monitoring/grafana-alert-list';
+import { OrgBanner } from '@/components/dashboard/org-banner';
 
 interface GrafanaAccount {
   id: string;
@@ -51,6 +52,7 @@ export default function GrafanaAlertsPage() {
   return (
     <div className="space-y-6">
       <div>
+        <OrgBanner />
         <h1 className="text-2xl font-bold tracking-tight">Grafana Alerts</h1>
         <p className="text-muted-foreground">
           List alert rules from the selected Grafana account and open them in the portal to view/edit in Grafana.

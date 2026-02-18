@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { GrafanaDashboardList } from '@/components/monitoring/grafana-dashboard-list';
+import { OrgBanner } from '@/components/dashboard/org-banner';
 
 interface GrafanaAccount {
   id: string;
@@ -51,6 +52,7 @@ export default function GrafanaDashboardsPage() {
   return (
     <div className="space-y-6">
       <div>
+        <OrgBanner />
         <h1 className="text-2xl font-bold tracking-tight">Grafana Dashboards</h1>
         <p className="text-muted-foreground">
           Select an account, then open dashboards inside the portal to view and edit using the full Grafana UI.

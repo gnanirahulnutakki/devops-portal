@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { RefreshCcw, AlertTriangle, Clock, Flame, ExternalLink, Activity } from 'lucide-react';
+import { OrgBanner } from '@/components/dashboard/org-banner';
 
 interface GrafanaAccount {
   id: string;
@@ -132,6 +133,7 @@ export default function GrafanaAlertInsightsPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
+          <OrgBanner />
           <h1 className="text-2xl font-bold tracking-tight">Grafana Alert Insights</h1>
           <p className="text-muted-foreground">
             Noisy alerts, recent alert events, and trend analysis for the selected Grafana account.

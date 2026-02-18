@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ExternalLink } from 'lucide-react';
+import { OrgBanner } from '@/components/dashboard/org-banner';
 
 interface GrafanaAccount {
   id: string;
@@ -113,6 +114,7 @@ export default function LokiLogsPage() {
   return (
     <div className="space-y-6">
       <div>
+        <OrgBanner />
         <h1 className="text-2xl font-bold tracking-tight">Loki Logs</h1>
         <p className="text-muted-foreground">
           When a Loki datasource exists in Grafana, open Explore inside the portal and query logs.

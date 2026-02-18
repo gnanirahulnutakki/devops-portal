@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Pencil, Plus, Trash2, RefreshCcw } from 'lucide-react';
+import { OrgBanner } from '@/components/dashboard/org-banner';
 
 type GitHubAccount = {
   id: string;
@@ -195,6 +196,7 @@ export default function GitHubConfigurationsPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
+          <OrgBanner />
           <h1 className="text-2xl font-bold tracking-tight">GitHub Configuration</h1>
           <p className="text-muted-foreground">CRUD for GitHub tokens and defaults.</p>
         </div>

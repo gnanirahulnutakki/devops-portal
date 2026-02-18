@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Pencil, Plus, Trash2, RefreshCcw } from 'lucide-react';
+import { OrgBanner } from '@/components/dashboard/org-banner';
 
 type LlmAccount = {
   id: string;
@@ -215,6 +216,7 @@ export default function LlmConfigurationsPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
+          <OrgBanner />
           <h1 className="text-2xl font-bold tracking-tight">LLM Configuration</h1>
           <p className="text-muted-foreground">CRUD for LLM providers/keys/models.</p>
         </div>

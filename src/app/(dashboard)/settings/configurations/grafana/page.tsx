@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Pencil, Plus, Trash2, RefreshCcw } from 'lucide-react';
+import { OrgBanner } from '@/components/dashboard/org-banner';
 
 type GrafanaAccount = {
   id: string;
@@ -260,6 +261,7 @@ export default function GrafanaConfigurationsPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
+          <OrgBanner />
           <h1 className="text-2xl font-bold tracking-tight">Grafana Configuration</h1>
           <p className="text-muted-foreground">Full CRUD for Grafana accounts. Tokens are never exposed to the browser.</p>
         </div>

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, GitBranch, Github, Gauge, Activity, Brain, Database } from 'lucide-react';
+import { OrgBanner } from '@/components/dashboard/org-banner';
 
 const tiles = [
   {
@@ -48,6 +49,7 @@ export default function ConfigurationsLandingPage() {
   return (
     <div className="space-y-6">
       <div>
+        <OrgBanner />
         <h1 className="text-2xl font-bold tracking-tight">Configurations</h1>
         <p className="text-muted-foreground">
           Add, edit, enable/disable, and delete integration accounts. This portal is meant to be CRUD-friendly.
