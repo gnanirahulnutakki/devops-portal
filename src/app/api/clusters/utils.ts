@@ -1,5 +1,5 @@
 import { ApiContext } from '@/lib/api';
-import { createKubeClients, loadKubeConfigFromCluster } from '@/lib/services/kubernetes';
+import { createKubeClients, loadKubeConfigFromClusterAsync } from '@/lib/services/kubernetes';
 
 export async function getClusterOrThrow(ctx: ApiContext, id: string) {
   const cluster = await ctx.db.cluster.findUnique({
@@ -20,10 +20,11 @@ export async function getClusterOrThrow(ctx: ApiContext, id: string) {
 
 export async function getKubeClientsForCluster(ctx: ApiContext, id: string) {
   const cluster = await getClusterOrThrow(ctx, id);
-  const kc = loadKubeConfigFromCluster({
+  const kc = await loadKubeConfigFromClusterAsync({
     id: cluster.id,
     name: cluster.name,
     kubeconfig: cluster.kubeconfig,
+    config: cluster.config,
   });
   return {
     cluster,

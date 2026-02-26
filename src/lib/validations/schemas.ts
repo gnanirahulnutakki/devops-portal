@@ -40,8 +40,23 @@ export const createClusterSchema = z.object({
   region: z.string().max(50).optional().or(z.literal('')),
   environment: z.enum(['production', 'staging', 'development']),
   argocdUrl: z.string().url().optional(),
+  // Standard auth
   kubeconfig: z.string().min(10).optional(),
-  jitUrl: z.string().url().optional(),
+  // Auth type routing
+  authType: z.enum(['standard', 'duplo', 'eks']).default('standard'),
+  // Duplo credentials
+  duploHost: z.string().optional(),
+  duploToken: z.string().optional(),
+  planId: z.string().optional(),
+  duploIsAdmin: z.boolean().optional(),
+  // EKS credentials
+  eksClusterName: z.string().optional(),
+  eksRegion: z.string().optional(),
+  eksEndpoint: z.string().optional(),
+  eksCaData: z.string().optional(),
+  eksAccessKeyId: z.string().optional(),
+  eksSecretAccessKey: z.string().optional(),
+  eksRoleArn: z.string().optional(),
 });
 
 export const updateClusterSchema = createClusterSchema.partial();

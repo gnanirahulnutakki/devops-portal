@@ -1,6 +1,6 @@
 import { withTenantApiHandler, successResponse, errorResponse } from '@/lib/api';
 import { getClusterOrThrow } from '@/app/api/clusters/utils';
-import { createKubeClients, loadKubeConfigFromCluster } from '@/lib/services/kubernetes';
+import { createKubeClients, loadKubeConfigFromClusterAsync } from '@/lib/services/kubernetes';
 export const GET = withTenantApiHandler(
   async (request, ctx) => {
     const segments = new URL(request.url).pathname.split('/').filter(Boolean);
@@ -18,7 +18,7 @@ export const GET = withTenantApiHandler(
     }
 
     try {
-      const kc = loadKubeConfigFromCluster(cluster);
+      const kc = await loadKubeConfigFromClusterAsync(cluster);
       const clients = createKubeClients(kc);
       const response = await (clients.core as any).listSecretForAllNamespaces(
         undefined,

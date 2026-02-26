@@ -1,11 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useOrganizationStore } from '@/store/organization-store';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,23 +20,33 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import {
   Server,
   CheckCircle2,
-  AlertTriangle,
-  Cpu,
-  MemoryStick,
-  Boxes,
+  XCircle,
   FolderTree,
   Layers,
-  ShieldCheck,
+  Globe,
+  FileCode2,
   Plus,
-  FileText,
+  Pencil,
+  Trash2,
+  RefreshCcw,
+  Search,
+  Terminal,
+  ChevronRight,
+  Box,
+  Activity,
+  Shield,
+  Key,
+  Cloud,
 } from 'lucide-react';
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type AuthType = 'standard' | 'duplo' | 'eks';
 
 interface ClusterItem {
   id: string;
@@ -49,86 +56,69 @@ interface ClusterItem {
   region: string;
   environment: string;
   status: string;
+  authType: AuthType;
   hasKubeconfig: boolean;
-  jitUrl?: string;
+  duploHost?: string;
+  planId?: string;
+  eksClusterName?: string;
+  eksRegion?: string;
+  eksEndpoint?: string;
 }
 
-interface OverviewData {
-  version: string;
-  nodes: number;
-  namespaces: number;
-  pods: number;
+interface OverviewData { version: string; nodes: number; namespaces: number; pods: number; }
+interface NodeItem { name: string; status: string; version: string; cpu: string; memory: string; pods: string; age: string; }
+interface NamespaceItem { name: string; pods: number; status: string; }
+interface WorkloadItem { name: string; kind: string; status: string; namespace: string; }
+interface ServiceItem { name: string; namespace: string; type: string; clusterIP: string; ports: string; }
+interface IngressItem { name: string; namespace: string; className: string; hosts: string; }
+interface CrdItem { name: string; scope: string; version: string; kind: string; }
+interface PodItem { name: string; namespace: string; status: string; ready: string; restarts: number; age: string; containers: string[]; }
+
+type TabKey = 'nodes' | 'namespaces' | 'workloads' | 'services' | 'pods' | 'ingresses' | 'crds';
+
+const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
+  { key: 'nodes', label: 'Nodes', icon: Server },
+  { key: 'namespaces', label: 'Namespaces', icon: FolderTree },
+  { key: 'workloads', label: 'Workloads', icon: Layers },
+  { key: 'services', label: 'Services', icon: Globe },
+  { key: 'pods', label: 'Pods', icon: Box },
+  { key: 'ingresses', label: 'Ingresses', icon: Activity },
+  { key: 'crds', label: 'CRDs', icon: FileCode2 },
+];
+
+function timeAgo(ts: string) {
+  if (!ts) return '-';
+  const diff = Date.now() - new Date(ts).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
 }
 
-interface NodeItem {
-  name: string;
-  status: string;
-  version: string;
-  cpu: string;
-  memory: string;
-  pods: string;
-  age: string;
+function StatusDot({ status }: { status: string }) {
+  const s = status?.toLowerCase();
+  if (s === 'running' || s === 'ready' || s === 'active' || s === 'healthy')
+    return <span className="inline-block h-2 w-2 rounded-full bg-green-500 shrink-0" />;
+  if (s === 'pending' || s === 'progressing' || s === 'degraded')
+    return <span className="inline-block h-2 w-2 rounded-full bg-yellow-500 shrink-0" />;
+  if (s === 'failed' || s === 'error' || s === 'notready')
+    return <span className="inline-block h-2 w-2 rounded-full bg-red-500 shrink-0" />;
+  return <span className="inline-block h-2 w-2 rounded-full bg-gray-400 shrink-0" />;
 }
 
-interface NamespaceItem {
-  name: string;
-  pods: number;
-  status: string;
-}
-
-interface WorkloadItem {
-  name: string;
-  kind: string;
-  status: string;
-  namespace: string;
-}
-
-interface ServiceItem {
-  name: string;
-  namespace: string;
-  type: string;
-  clusterIP: string;
-  ports: string;
-}
-
-interface IngressItem {
-  name: string;
-  namespace: string;
-  className: string;
-  hosts: string;
-}
-
-interface CrdItem {
-  name: string;
-  scope: string;
-  version: string;
-  kind: string;
-}
-
-interface PodItem {
-  name: string;
-  namespace: string;
-  status: string;
-  ready: string;
-  restarts: number;
-  age: string;
-  containers: string[];
-}
-
-const DEFAULT_DUPLO_JIT_TEMPLATE =
-  'https://dev01.dc.radiantlogic.io/app/user/verify-token?localAppName=duplo-jit&localPort=53611&isAdmin=true&success=true';
-
-const getDuploJitTemplate = (override?: string) =>
-  override || process.env.NEXT_PUBLIC_DUPLO_JIT_TEMPLATE_URL || DEFAULT_DUPLO_JIT_TEMPLATE;
-
-const isDuploKubeconfig = (kubeconfig?: string) => {
-  if (!kubeconfig) return false;
-  const text = kubeconfig.toLowerCase();
-  return text.includes('duplo') || text.includes('duploinfra') || text.includes('duploservices');
+const AUTH_TYPE_META: Record<AuthType, { label: string; icon: React.ElementType; desc: string }> = {
+  standard: { label: 'Standard', icon: Key, desc: 'Token or certificate-based kubeconfig' },
+  duplo: { label: 'Duplo JIT', icon: Shield, desc: 'DuploCloud API token — generates K8s tokens server-side' },
+  eks: { label: 'AWS EKS', icon: Cloud, desc: 'AWS credentials — generates bearer tokens via STS presign' },
 };
+
+// ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function ClustersPage() {
   const currentOrganization = useOrganizationStore((state) => state.currentOrganization);
+  const orgId = currentOrganization?.id;
+
   const [clusters, setClusters] = useState<ClusterItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [overview, setOverview] = useState<OverviewData | null>(null);
@@ -139,996 +129,669 @@ export default function ClustersPage() {
   const [ingresses, setIngresses] = useState<IngressItem[]>([]);
   const [crds, setCrds] = useState<CrdItem[]>([]);
   const [pods, setPods] = useState<PodItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>('nodes');
+  const [filter, setFilter] = useState('');
+  const [nsFilter, setNsFilter] = useState<string>('');
   const [logs, setLogs] = useState('');
   const [logPod, setLogPod] = useState<PodItem | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createError, setCreateError] = useState('');
-  const [createValidation, setCreateValidation] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
-  const [editOpen, setEditOpen] = useState(false);
-  const [editError, setEditError] = useState('');
-  const [editValidation, setEditValidation] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deletingCluster, setDeletingCluster] = useState(false);
-  const [duploTemplateUrl, setDuploTemplateUrl] = useState<string>('');
 
-  const [newCluster, setNewCluster] = useState({
-    name: '',
-    slug: '',
-    provider: 'aws',
-    region: '',
-    environment: 'production',
-    kubeconfig: '',
-    jitUrl: '',
-  });
-  const [editCluster, setEditCluster] = useState({
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [formValidation, setFormValidation] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+  const [savingCluster, setSavingCluster] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const [form, setForm] = useState({
     id: '',
     name: '',
     slug: '',
     provider: 'aws',
     region: '',
     environment: 'production',
+    authType: 'standard' as AuthType,
+    // Standard
     kubeconfig: '',
-    jitUrl: '',
+    // Duplo
+    duploHost: '',
+    duploToken: '',
+    planId: '',
+    duploIsAdmin: true,
+    // EKS
+    eksClusterName: '',
+    eksRegion: '',
+    eksEndpoint: '',
+    eksCaData: '',
+    eksAccessKeyId: '',
+    eksSecretAccessKey: '',
+    eksRoleArn: '',
   });
-  const [savingCluster, setSavingCluster] = useState(false);
 
-  const orgId = currentOrganization?.id;
+  const selectedCluster = useMemo(() => clusters.find((c) => c.id === selectedId) || null, [clusters, selectedId]);
 
-  const selectedCluster = useMemo(
-    () => clusters.find((c) => c.id === selectedId) || null,
-    [clusters, selectedId]
-  );
+  // ─── Data fetching ──────────────────────────────────────────────────────
 
-  const healthyCount = clusters.filter((c) => c.status === 'HEALTHY').length;
-  const warningCount = clusters.filter((c) => c.status === 'DEGRADED').length;
-  const totalNodes = overview?.nodes ?? 0;
-  const demoMode = clusters.length === 0 || !clusters.some((c) => c.hasKubeconfig);
+  useEffect(() => {
+    if (!orgId) return;
+    fetch('/api/clusters', { headers: { 'x-organization-id': orgId } })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = d.data || [];
+        setClusters(list);
+        if (!selectedId && list[0]) setSelectedId(list[0].id);
+      });
+  }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'HEALTHY':
-        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Healthy</Badge>;
-      case 'DEGRADED':
-        return <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">Warning</Badge>;
-      default:
-        return <Badge variant="secondary">Unknown</Badge>;
+  const refreshClusterData = useCallback(async () => {
+    if (!orgId || !selectedId) return;
+    setLoading(true);
+    try {
+      const h = { 'x-organization-id': orgId };
+      const base = `/api/clusters/${selectedId}`;
+      const [ov, nd, ns, wl, sv, ig, cr, pd] = await Promise.all([
+        fetch(`${base}/overview`, { headers: h }).then((r) => r.json()),
+        fetch(`${base}/nodes`, { headers: h }).then((r) => r.json()),
+        fetch(`${base}/namespaces`, { headers: h }).then((r) => r.json()),
+        fetch(`${base}/workloads`, { headers: h }).then((r) => r.json()),
+        fetch(`${base}/services`, { headers: h }).then((r) => r.json()),
+        fetch(`${base}/ingresses`, { headers: h }).then((r) => r.json()),
+        fetch(`${base}/crds`, { headers: h }).then((r) => r.json()),
+        fetch(`${base}/pods`, { headers: h }).then((r) => r.json()),
+      ]);
+      if (ov.data) setOverview(ov.data);
+      setNodes(nd.data || []);
+      setNamespaces(ns.data || []);
+      setWorkloads(wl.data || []);
+      setServices(sv.data || []);
+      setIngresses(ig.data || []);
+      setCrds(cr.data || []);
+      setPods(pd.data || []);
+    } finally {
+      setLoading(false);
     }
+  }, [orgId, selectedId]);
+
+  useEffect(() => { refreshClusterData(); }, [refreshClusterData]);
+
+  // ─── Test connection ────────────────────────────────────────────────────
+
+  const testConnection = useCallback(async () => {
+    if (!orgId) return;
+    setFormValidation('running');
+    setFormError('');
+
+    let body: Record<string, any>;
+    if (form.authType === 'standard') {
+      if (!form.kubeconfig?.trim()) { setFormValidation('idle'); return; }
+      body = { authType: 'standard', kubeconfig: form.kubeconfig };
+    } else if (form.authType === 'duplo') {
+      if (!form.duploHost || !form.duploToken || !form.planId) { setFormValidation('idle'); toast.error('Fill in all Duplo fields'); return; }
+      body = { authType: 'duplo', duploHost: form.duploHost, duploToken: form.duploToken, planId: form.planId, isAdmin: form.duploIsAdmin };
+    } else {
+      if (!form.eksEndpoint || !form.eksAccessKeyId || !form.eksSecretAccessKey || !form.eksClusterName) { setFormValidation('idle'); toast.error('Fill in all EKS fields'); return; }
+      body = { authType: 'eks', eksClusterName: form.eksClusterName, eksRegion: form.eksRegion, eksEndpoint: form.eksEndpoint, eksCaData: form.eksCaData, eksAccessKeyId: form.eksAccessKeyId, eksSecretAccessKey: form.eksSecretAccessKey, eksRoleArn: form.eksRoleArn || undefined };
+    }
+
+    try {
+      const res = await fetch('/api/clusters/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setFormValidation('success');
+        toast.success(`Connected — ${data.data?.namespaces ?? 0} namespaces found`);
+      } else {
+        setFormValidation('error');
+        setFormError(data?.error?.message || 'Connection failed');
+        toast.error(data?.error?.message || 'Connection failed');
+      }
+    } catch (err) {
+      setFormValidation('error');
+      setFormError((err as Error).message);
+    }
+  }, [orgId, form]);
+
+  // ─── Cluster CRUD ───────────────────────────────────────────────────────
+
+  const resetForm = () => {
+    setForm({ id: '', name: '', slug: '', provider: 'aws', region: '', environment: 'production', authType: 'standard', kubeconfig: '', duploHost: '', duploToken: '', planId: '', duploIsAdmin: true, eksClusterName: '', eksRegion: '', eksEndpoint: '', eksCaData: '', eksAccessKeyId: '', eksSecretAccessKey: '', eksRoleArn: '' });
+    setFormError('');
+    setFormValidation('idle');
   };
 
-  const ProgressBar = ({ value, max, color }: { value: number; max: number; color: string }) => (
-    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-      <div className={`h-2 rounded-full ${color}`} style={{ width: `${(value / max) * 100}%` }} />
-    </div>
-  );
+  const openCreate = () => { resetForm(); setCreateOpen(true); };
 
-  const openEditDialog = (cluster: ClusterItem) => {
-    setEditCluster({
-      id: cluster.id,
-      name: cluster.name,
-      slug: cluster.slug,
-      provider: cluster.provider,
-      region: cluster.region || '',
-      environment: cluster.environment || 'production',
-      kubeconfig: '',
-      jitUrl: cluster.jitUrl || '',
-    });
-    setEditError('');
-    setEditValidation('idle');
+  const openEdit = (c: ClusterItem) => {
+    setForm({ id: c.id, name: c.name, slug: c.slug, provider: c.provider, region: c.region || '', environment: c.environment || 'production', authType: c.authType || 'standard', kubeconfig: '', duploHost: c.duploHost || '', duploToken: '', planId: c.planId || '', duploIsAdmin: true, eksClusterName: c.eksClusterName || '', eksRegion: c.eksRegion || '', eksEndpoint: c.eksEndpoint || '', eksCaData: '', eksAccessKeyId: '', eksSecretAccessKey: '', eksRoleArn: '' });
+    setFormError('');
+    setFormValidation('idle');
     setEditOpen(true);
   };
 
-  const testKubeconfig = async (kubeconfig: string, setStatus: (value: any) => void) => {
-    if (!orgId || !kubeconfig?.trim()) return;
-    setStatus('running');
-    const res = await fetch('/api/clusters/validate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId },
-      body: JSON.stringify({ kubeconfig }),
-    });
-    if (res.ok) {
-      setStatus('success');
-      toast.success('Kubeconfig validated successfully');
-    } else {
-      setStatus('error');
-      const data = await res.json();
-      toast.error(data?.error?.message || 'Kubeconfig validation failed');
-      if (isDuploKubeconfig(kubeconfig)) {
-        window.open(getDuploJitTemplate(duploTemplateUrl), '_blank', 'noopener,noreferrer');
-      }
-    }
-  };
-
-  useEffect(() => {
+  const handleSave = async (isEdit: boolean) => {
     if (!orgId) return;
-    const fetchSettings = async () => {
-      const res = await fetch('/api/organizations/settings', {
-        headers: { 'x-organization-id': orgId },
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setDuploTemplateUrl(data.data?.duplo?.jitTemplateUrl || '');
-      }
-    };
-    const fetchClusters = async () => {
-      const res = await fetch('/api/clusters', {
-        headers: { 'x-organization-id': orgId },
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setClusters(data.data || []);
-        if (!selectedId && data.data?.[0]) {
-          setSelectedId(data.data[0].id);
-        }
-      }
-    };
-    fetchSettings();
-    fetchClusters();
-  }, [orgId, selectedId]);
+    if (!form.name || !form.slug) { setFormError('Name and slug are required.'); return; }
+    if (form.authType === 'standard' && !isEdit && !form.kubeconfig) { setFormError('Kubeconfig is required.'); return; }
+    if (form.authType === 'duplo' && (!form.duploHost || !form.duploToken || !form.planId)) { setFormError('All Duplo fields are required.'); return; }
+    if (form.authType === 'eks' && (!form.eksEndpoint || !form.eksAccessKeyId || !form.eksSecretAccessKey || !form.eksClusterName)) { setFormError('All EKS fields are required.'); return; }
 
-  useEffect(() => {
-    if (!orgId || !selectedId) return;
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [overviewRes, nodesRes, nsRes, workloadsRes, servicesRes, ingressRes, crdsRes, podsRes] =
-          await Promise.all([
-            fetch(`/api/clusters/${selectedId}/overview`, { headers: { 'x-organization-id': orgId } }),
-            fetch(`/api/clusters/${selectedId}/nodes`, { headers: { 'x-organization-id': orgId } }),
-            fetch(`/api/clusters/${selectedId}/namespaces`, { headers: { 'x-organization-id': orgId } }),
-            fetch(`/api/clusters/${selectedId}/workloads`, { headers: { 'x-organization-id': orgId } }),
-            fetch(`/api/clusters/${selectedId}/services`, { headers: { 'x-organization-id': orgId } }),
-            fetch(`/api/clusters/${selectedId}/ingresses`, { headers: { 'x-organization-id': orgId } }),
-            fetch(`/api/clusters/${selectedId}/crds`, { headers: { 'x-organization-id': orgId } }),
-            fetch(`/api/clusters/${selectedId}/pods`, { headers: { 'x-organization-id': orgId } }),
-          ]);
-
-        const overviewData = await overviewRes.json();
-        const nodesData = await nodesRes.json();
-        const nsData = await nsRes.json();
-        const workloadsData = await workloadsRes.json();
-        const servicesData = await servicesRes.json();
-        const ingressData = await ingressRes.json();
-        const crdData = await crdsRes.json();
-        const podsData = await podsRes.json();
-
-        if (overviewRes.ok) setOverview(overviewData.data);
-        if (nodesRes.ok) setNodes(nodesData.data || []);
-        if (nsRes.ok) setNamespaces(nsData.data || []);
-        if (workloadsRes.ok) setWorkloads(workloadsData.data || []);
-        if (servicesRes.ok) setServices(servicesData.data || []);
-        if (ingressRes.ok) setIngresses(ingressData.data || []);
-        if (crdsRes.ok) setCrds(crdData.data || []);
-        if (podsRes.ok) setPods(podsData.data || []);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [orgId, selectedId]);
-
-  const handleCreateCluster = async () => {
-    if (!orgId) return;
-    if (!newCluster.name || !newCluster.slug || !newCluster.kubeconfig) {
-      setCreateError('Name, slug, and kubeconfig are required.');
-      toast.error('Please fill all required fields.');
-      return;
-    }
     setSavingCluster(true);
-    setCreateError('');
-    const cleanedJitUrl = newCluster.jitUrl?.trim() || undefined;
-    const payload = {
-      ...newCluster,
-      jitUrl:
-        cleanedJitUrl || (isDuploKubeconfig(newCluster.kubeconfig) ? getDuploJitTemplate(duploTemplateUrl) : undefined),
+    setFormError('');
+
+    const payload: Record<string, any> = {
+      name: form.name, slug: form.slug, provider: form.provider, region: form.region, environment: form.environment, authType: form.authType,
     };
-    const res = await fetch('/api/clusters', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-organization-id': orgId,
-      },
-      body: JSON.stringify(payload),
-    });
+
+    if (form.authType === 'standard') {
+      if (form.kubeconfig) payload.kubeconfig = form.kubeconfig;
+    } else if (form.authType === 'duplo') {
+      payload.duploHost = form.duploHost;
+      if (form.duploToken) payload.duploToken = form.duploToken;
+      payload.planId = form.planId;
+      payload.duploIsAdmin = form.duploIsAdmin;
+    } else if (form.authType === 'eks') {
+      payload.eksClusterName = form.eksClusterName;
+      payload.eksRegion = form.eksRegion;
+      payload.eksEndpoint = form.eksEndpoint;
+      if (form.eksCaData) payload.eksCaData = form.eksCaData;
+      if (form.eksAccessKeyId) payload.eksAccessKeyId = form.eksAccessKeyId;
+      if (form.eksSecretAccessKey) payload.eksSecretAccessKey = form.eksSecretAccessKey;
+      if (form.eksRoleArn) payload.eksRoleArn = form.eksRoleArn;
+    }
+
+    const url = isEdit ? `/api/clusters/${form.id}` : '/api/clusters';
+    const method = isEdit ? 'PATCH' : 'POST';
+    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId }, body: JSON.stringify(payload) });
     const data = await res.json().catch(() => null);
+
     if (res.ok) {
-      const shouldPromptJit =
-        !cleanedJitUrl && isDuploKubeconfig(payload.kubeconfig) && Boolean(getDuploJitTemplate(duploTemplateUrl));
-      setNewCluster({
-        name: '',
-        slug: '',
-        provider: 'aws',
-        region: '',
-        environment: 'production',
-        kubeconfig: '',
-        jitUrl: '',
-      });
-      setCreateValidation('idle');
-      if (data?.data) {
+      if (isEdit) {
+        setClusters((prev) => prev.map((c) => (c.id === form.id ? data.data : c)));
+        setEditOpen(false);
+      } else {
         setClusters((prev) => [data.data, ...prev]);
         setSelectedId(data.data.id);
+        setCreateOpen(false);
       }
-      setCreateOpen(false);
-      toast.success('Cluster added');
-      if (shouldPromptJit) {
-        const confirmOpen = window.confirm(
-          'Duplo JIT approval is required for this kubeconfig. Open the JIT approval page now?'
-        );
-        if (confirmOpen) {
-          window.open(getDuploJitTemplate(duploTemplateUrl), '_blank', 'noopener,noreferrer');
-        }
-      }
+      toast.success(isEdit ? 'Cluster updated' : 'Cluster added');
+      resetForm();
+      refreshClusterData();
     } else {
-      const message = data?.error?.message || 'Failed to add cluster';
-      setCreateError(message);
-      toast.error(message);
+      const msg = data?.error?.message || 'Failed';
+      setFormError(msg);
+      toast.error(msg);
     }
     setSavingCluster(false);
   };
 
-  const handleUpdateCluster = async () => {
-    if (!orgId || !editCluster.id) return;
-    if (!editCluster.name || !editCluster.slug) {
-      setEditError('Name and slug are required.');
-      return;
-    }
-    setSavingCluster(true);
-    setEditError('');
-    const cleanedJitUrl = editCluster.jitUrl?.trim() || undefined;
-    const payload = {
-      name: editCluster.name,
-      slug: editCluster.slug,
-      provider: editCluster.provider,
-      region: editCluster.region,
-      environment: editCluster.environment,
-      kubeconfig: editCluster.kubeconfig || undefined,
-      jitUrl:
-        cleanedJitUrl || (isDuploKubeconfig(editCluster.kubeconfig) ? getDuploJitTemplate(duploTemplateUrl) : undefined),
-    };
-    const res = await fetch(`/api/clusters/${editCluster.id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-organization-id': orgId,
-      },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json().catch(() => null);
-    if (res.ok) {
-      setClusters((prev) => prev.map((item) => (item.id === editCluster.id ? data.data : item)));
-      setEditOpen(false);
-      toast.success('Cluster updated');
-    } else {
-      const message = data?.error?.message || 'Failed to update cluster';
-      setEditError(message);
-      toast.error(message);
-    }
-    setSavingCluster(false);
-  };
-
-  const handleDeleteCluster = async () => {
+  const handleDelete = async () => {
     if (!orgId || !selectedCluster) return;
-    setDeletingCluster(true);
-    const res = await fetch(`/api/clusters/${selectedCluster.id}`, {
-      method: 'DELETE',
-      headers: { 'x-organization-id': orgId },
-    });
-    const data = await res.json().catch(() => null);
+    setSavingCluster(true);
+    const res = await fetch(`/api/clusters/${selectedCluster.id}`, { method: 'DELETE', headers: { 'x-organization-id': orgId } });
     if (res.ok) {
       setClusters((prev) => {
-        const remaining = prev.filter((item) => item.id !== selectedCluster.id);
-        setSelectedId((current) => {
-          if (current !== selectedCluster.id) return current;
-          return remaining[0]?.id || null;
-        });
-        return remaining;
+        const rest = prev.filter((c) => c.id !== selectedCluster.id);
+        setSelectedId(rest[0]?.id || null);
+        return rest;
       });
       setDeleteOpen(false);
       toast.success('Cluster deleted');
     } else {
-      toast.error(data?.error?.message || 'Failed to delete cluster');
+      toast.error('Failed to delete cluster');
     }
-    setDeletingCluster(false);
+    setSavingCluster(false);
   };
 
   const loadKubeconfigFile = (file: File | null) => {
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      setNewCluster((prev) => ({ ...prev, kubeconfig: String(reader.result || '') }));
-    };
-    reader.readAsText(file);
-  };
-
-  const loadEditKubeconfigFile = (file: File | null) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setEditCluster((prev) => ({ ...prev, kubeconfig: String(reader.result || '') }));
-    };
+    reader.onload = () => setForm((p) => ({ ...p, kubeconfig: String(reader.result || '') }));
     reader.readAsText(file);
   };
 
   const fetchPodLogs = async (pod: PodItem) => {
     if (!orgId || !selectedId) return;
-    const res = await fetch(
-      `/api/clusters/${selectedId}/pods/${pod.name}/logs?namespace=${pod.namespace}`,
-      { headers: { 'x-organization-id': orgId } }
-    );
+    const res = await fetch(`/api/clusters/${selectedId}/pods/${pod.name}/logs?namespace=${pod.namespace}`, { headers: { 'x-organization-id': orgId } });
     const data = await res.json();
-    if (res.ok) {
-      setLogs(data.data?.logs || '');
-      setLogPod(pod);
-    }
+    if (res.ok) { setLogs(data.data?.logs || ''); setLogPod(pod); }
   };
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Clusters</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">
-          Lens-style Kubernetes view across clusters, nodes, and workloads.
-        </p>
-      </div>
+  // ─── Filtering ──────────────────────────────────────────────────────────
 
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        {demoMode && (
-          <Alert className="flex-1">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Demo Mode</AlertTitle>
-            <AlertDescription>
-              Upload a kubeconfig to see real cluster data.
-            </AlertDescription>
-          </Alert>
-        )}
-        <Dialog
-          open={createOpen}
-          onOpenChange={(open) => {
-            setCreateOpen(open);
-            if (!open) {
-              setCreateError('');
-              setCreateValidation('idle');
-            }
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Cluster
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Kubernetes Cluster</DialogTitle>
-              <DialogDescription>
-                Upload a kubeconfig file to enable Lens-style browsing.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <Label>Name</Label>
-                <Input
-                  value={newCluster.name}
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    setNewCluster((prev) => ({
-                      ...prev,
-                      name,
-                      slug: name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, ''),
-                    }));
-                  }}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Slug</Label>
-                <Input
-                  value={newCluster.slug}
-                  onChange={(e) => setNewCluster((prev) => ({ ...prev, slug: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Provider</Label>
-                <Select
-                  value={newCluster.provider}
-                  onValueChange={(value) => setNewCluster((prev) => ({ ...prev, provider: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="aws">AWS</SelectItem>
-                    <SelectItem value="gcp">GCP</SelectItem>
-                    <SelectItem value="azure">Azure</SelectItem>
-                    <SelectItem value="on-prem">On-Prem</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Region (optional)</Label>
-                <Input
-                  value={newCluster.region}
-                  onChange={(e) => setNewCluster((prev) => ({ ...prev, region: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Environment</Label>
-                <Select
-                  value={newCluster.environment}
-                  onValueChange={(value) => setNewCluster((prev) => ({ ...prev, environment: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select environment" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="production">Production</SelectItem>
-                    <SelectItem value="staging">Staging</SelectItem>
-                    <SelectItem value="development">Development</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Duplo JIT URL (optional)</Label>
-                <Input
-                  value={newCluster.jitUrl}
-                  onChange={(e) => setNewCluster((prev) => ({ ...prev, jitUrl: e.target.value }))}
-                  placeholder="https://<duplo-host>/..."
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Kubeconfig File</Label>
-                <Input type="file" onChange={(e) => loadKubeconfigFile(e.target.files?.[0] || null)} />
-              </div>
-              <div className="space-y-1">
-                <Label>Kubeconfig</Label>
-                <Textarea
-                  value={newCluster.kubeconfig}
-                  onChange={(e) => setNewCluster((prev) => ({ ...prev, kubeconfig: e.target.value }))}
-                  rows={6}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => testKubeconfig(newCluster.kubeconfig, setCreateValidation)}
-                  disabled={createValidation === 'running' || !newCluster.kubeconfig}
-                >
-                  {createValidation === 'running' ? 'Testing...' : 'Test Connection'}
-                </Button>
-                {createValidation === 'success' ? (
-                  <Badge variant="secondary">Connection OK</Badge>
-                ) : createValidation === 'error' ? (
-                  <Badge variant="outline">Failed</Badge>
-                ) : null}
-              </div>
-              <Button onClick={handleCreateCluster} disabled={savingCluster}>
-                {savingCluster ? 'Saving...' : 'Save Cluster'}
-              </Button>
-              {createError ? <p className="text-sm text-red-500">{createError}</p> : null}
-            </div>
-          </DialogContent>
-        </Dialog>
-        <Dialog
-          open={editOpen}
-          onOpenChange={(open) => {
-            setEditOpen(open);
-            if (!open) {
-              setEditError('');
-              setEditValidation('idle');
-            }
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Edit Cluster</DialogTitle>
-              <DialogDescription>Update cluster metadata or replace kubeconfig.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <Label>Name</Label>
-                <Input
-                  value={editCluster.name}
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    setEditCluster((prev) => ({
-                      ...prev,
-                      name,
-                      slug: prev.slug || name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, ''),
-                    }));
-                  }}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Slug</Label>
-                <Input
-                  value={editCluster.slug}
-                  onChange={(e) => setEditCluster((prev) => ({ ...prev, slug: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Provider</Label>
-                <Select
-                  value={editCluster.provider}
-                  onValueChange={(value) => setEditCluster((prev) => ({ ...prev, provider: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="aws">AWS</SelectItem>
-                    <SelectItem value="gcp">GCP</SelectItem>
-                    <SelectItem value="azure">Azure</SelectItem>
-                    <SelectItem value="on-prem">On-Prem</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Region (optional)</Label>
-                <Input
-                  value={editCluster.region}
-                  onChange={(e) => setEditCluster((prev) => ({ ...prev, region: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Environment</Label>
-                <Select
-                  value={editCluster.environment}
-                  onValueChange={(value) => setEditCluster((prev) => ({ ...prev, environment: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select environment" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="production">Production</SelectItem>
-                    <SelectItem value="staging">Staging</SelectItem>
-                    <SelectItem value="development">Development</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Duplo JIT URL (optional)</Label>
-                <Input
-                  value={editCluster.jitUrl}
-                  onChange={(e) => setEditCluster((prev) => ({ ...prev, jitUrl: e.target.value }))}
-                  placeholder="https://<duplo-host>/..."
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Replace Kubeconfig (optional)</Label>
-                <Input type="file" onChange={(e) => loadEditKubeconfigFile(e.target.files?.[0] || null)} />
-              </div>
-              <div className="space-y-1">
-                <Label>Kubeconfig</Label>
-                <Textarea
-                  value={editCluster.kubeconfig}
-                  onChange={(e) => setEditCluster((prev) => ({ ...prev, kubeconfig: e.target.value }))}
-                  rows={5}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => testKubeconfig(editCluster.kubeconfig, setEditValidation)}
-                  disabled={editValidation === 'running' || !editCluster.kubeconfig}
-                >
-                  {editValidation === 'running' ? 'Testing...' : 'Test Connection'}
-                </Button>
-                {editValidation === 'success' ? (
-                  <Badge variant="secondary">Connection OK</Badge>
-                ) : editValidation === 'error' ? (
-                  <Badge variant="outline">Failed</Badge>
-                ) : null}
-              </div>
-              <Button onClick={handleUpdateCluster} disabled={savingCluster}>
-                {savingCluster ? 'Saving...' : 'Save Changes'}
-              </Button>
-              {editError ? <p className="text-sm text-red-500">{editError}</p> : null}
-            </div>
-          </DialogContent>
-        </Dialog>
-        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Delete Cluster</DialogTitle>
-              <DialogDescription>
-                This will remove the cluster from the portal. It does not delete any Kubernetes resources.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex items-center justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleDeleteCluster} disabled={deletingCluster}>
-                {deletingCluster ? 'Deleting...' : 'Delete'}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
+  const q = filter.toLowerCase();
+  const allNamespaces = useMemo(() => {
+    const set = new Set<string>();
+    pods.forEach((p) => set.add(p.namespace));
+    workloads.forEach((w) => set.add(w.namespace));
+    services.forEach((s) => set.add(s.namespace));
+    return Array.from(set).sort();
+  }, [pods, workloads, services]);
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Clusters</CardDescription>
-            <CardTitle className="text-2xl">{clusters.length}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="border-green-200 dark:border-green-800">
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1">
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
-              Healthy
-            </CardDescription>
-            <CardTitle className="text-2xl text-green-600">{healthyCount}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="border-yellow-200 dark:border-yellow-800">
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1">
-              <AlertTriangle className="h-4 w-4 text-yellow-500" />
-              Warning
-            </CardDescription>
-            <CardTitle className="text-2xl text-yellow-600">{warningCount}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Nodes</CardDescription>
-            <CardTitle className="text-2xl">{totalNodes}</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
+  const applyNsFilter = <T extends { namespace?: string; name?: string }>(items: T[]) => {
+    let list = items;
+    if (nsFilter) list = list.filter((i) => i.namespace === nsFilter);
+    if (q) list = list.filter((i) => (i.name || '').toLowerCase().includes(q) || (i.namespace || '').toLowerCase().includes(q));
+    return list;
+  };
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Server className="h-5 w-5" />
-              Clusters
-            </CardTitle>
-            <CardDescription>Select a cluster</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {clusters.map((cluster) => (
+  const filteredNodes = useMemo(() => nodes.filter((n) => !q || n.name.toLowerCase().includes(q)), [nodes, q]);
+  const filteredNamespaces = useMemo(() => namespaces.filter((n) => !q || n.name.toLowerCase().includes(q)), [namespaces, q]);
+  const filteredWorkloads = useMemo(() => applyNsFilter(workloads), [workloads, q, nsFilter]); // eslint-disable-line
+  const filteredServices = useMemo(() => applyNsFilter(services), [services, q, nsFilter]); // eslint-disable-line
+  const filteredPods = useMemo(() => applyNsFilter(pods), [pods, q, nsFilter]); // eslint-disable-line
+  const filteredIngresses = useMemo(() => applyNsFilter(ingresses), [ingresses, q, nsFilter]); // eslint-disable-line
+  const filteredCrds = useMemo(() => crds.filter((c) => !q || c.name.toLowerCase().includes(q) || c.kind.toLowerCase().includes(q)), [crds, q]);
+
+  // ─── Cluster form dialog ───────────────────────────────────────────────
+
+  const ClusterFormBody = ({ isEdit }: { isEdit: boolean }) => {
+    const atMeta = AUTH_TYPE_META[form.authType];
+    return (
+      <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+        {/* Name / Slug */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Name</Label>
+            <Input className="h-8 text-sm" value={form.name} onChange={(e) => { const name = e.target.value; setForm((p) => ({ ...p, name, slug: p.id ? p.slug : name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') })); }} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Slug</Label>
+            <Input className="h-8 text-sm" value={form.slug} onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))} />
+          </div>
+        </div>
+
+        {/* Provider / Region / Env */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Provider</Label>
+            <Select value={form.provider} onValueChange={(v) => setForm((p) => ({ ...p, provider: v }))}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="aws">AWS</SelectItem>
+                <SelectItem value="gcp">GCP</SelectItem>
+                <SelectItem value="azure">Azure</SelectItem>
+                <SelectItem value="on-prem">On-Prem</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Region</Label>
+            <Input className="h-8 text-sm" value={form.region} onChange={(e) => setForm((p) => ({ ...p, region: e.target.value }))} placeholder="us-west-2" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Environment</Label>
+            <Select value={form.environment} onValueChange={(v) => setForm((p) => ({ ...p, environment: v }))}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="production">Production</SelectItem>
+                <SelectItem value="staging">Staging</SelectItem>
+                <SelectItem value="development">Development</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* ── Auth Type Selector ── */}
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold">Authentication</Label>
+          <div className="grid grid-cols-3 gap-2">
+            {(Object.entries(AUTH_TYPE_META) as [AuthType, typeof atMeta][]).map(([key, meta]) => (
               <button
-                key={cluster.id}
-                onClick={() => setSelectedId(cluster.id)}
-                className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                  selectedId === cluster.id ? 'border-primary bg-muted' : 'hover:bg-muted/50'
-                }`}
+                key={key}
+                type="button"
+                onClick={() => setForm((p) => ({ ...p, authType: key }))}
+                className={`flex flex-col items-center gap-1 rounded-md border p-2.5 text-center transition-colors ${form.authType === key ? 'border-primary bg-accent ring-1 ring-primary' : 'border-border hover:bg-accent/50'}`}
               >
-                <div>
-                  <p className="font-medium">{cluster.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {cluster.provider} • {cluster.region}
-                  </p>
-                </div>
-                {getStatusBadge(cluster.status)}
+                <meta.icon className="h-4 w-4" />
+                <span className="text-xs font-medium">{meta.label}</span>
               </button>
             ))}
-          </CardContent>
-        </Card>
+          </div>
+          <p className="text-[10px] text-muted-foreground">{atMeta.desc}</p>
+        </div>
 
-        <Card className="lg:col-span-3">
-          <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <CardTitle>{selectedCluster?.name || 'Select a cluster'}</CardTitle>
-              <CardDescription>
-                {selectedCluster?.provider} • {selectedCluster?.region} • {overview?.version || 'unknown'}
-              </CardDescription>
+        {/* ── Standard: Kubeconfig ── */}
+        {form.authType === 'standard' && (
+          <div className="space-y-2 rounded-md border p-3">
+            <Label className="text-xs">Kubeconfig {isEdit && <span className="text-muted-foreground">(leave blank to keep current)</span>}</Label>
+            <Input type="file" className="h-8 text-xs" accept=".yaml,.yml" onChange={(e) => loadKubeconfigFile(e.target.files?.[0] || null)} />
+            <Textarea className="text-xs font-mono" value={form.kubeconfig} onChange={(e) => setForm((p) => ({ ...p, kubeconfig: e.target.value }))} rows={4} placeholder="Paste kubeconfig YAML (must be token or cert-based, not exec)..." />
+          </div>
+        )}
+
+        {/* ── Duplo JIT ── */}
+        {form.authType === 'duplo' && (
+          <div className="space-y-2 rounded-md border p-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Duplo Host</Label>
+              <Input className="h-8 text-sm" value={form.duploHost} onChange={(e) => setForm((p) => ({ ...p, duploHost: e.target.value }))} placeholder="https://ops01.dc.radiantlogic.io" />
             </div>
-            <div className="flex items-center gap-3">
-              {selectedCluster?.jitUrl ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.open(selectedCluster.jitUrl as string, '_blank', 'noopener,noreferrer')}
-                >
-                  Open Duplo JIT
-                </Button>
-              ) : null}
-              {selectedCluster ? (
-                <>
-                  <Button variant="outline" size="sm" onClick={() => openEditDialog(selectedCluster)}>
-                    Edit
-                  </Button>
-                  <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
-                    Delete
-                  </Button>
-                </>
-              ) : null}
-              {selectedCluster && getStatusBadge(selectedCluster.status)}
-              <Badge variant="outline">{overview?.nodes ?? 0} nodes</Badge>
-              <Badge variant="outline">{overview?.pods ?? 0} pods</Badge>
+            <div className="space-y-1">
+              <Label className="text-xs">API Token {isEdit && <span className="text-muted-foreground">(leave blank to keep)</span>}</Label>
+              <Input className="h-8 text-sm font-mono" type="password" value={form.duploToken} onChange={(e) => setForm((p) => ({ ...p, duploToken: e.target.value }))} placeholder="Permanent Duplo API token" />
             </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <Cpu className="h-4 w-4" />
-                    CPU
-                  </span>
-                  <span>{loading ? '...' : '-'}</span>
-                </div>
-                <ProgressBar
-                  value={0}
-                  max={100}
-                  color="bg-green-500"
-                />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Plan ID / Tenant ID</Label>
+                <Input className="h-8 text-sm" value={form.planId} onChange={(e) => setForm((p) => ({ ...p, planId: e.target.value }))} placeholder="rli-ops00" />
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <MemoryStick className="h-4 w-4" />
-                    Memory
-                  </span>
-                  <span>{loading ? '...' : '-'}</span>
-                </div>
-                <ProgressBar
-                  value={0}
-                  max={100}
-                  color="bg-green-500"
-                />
+              <div className="space-y-1">
+                <Label className="text-xs">Access Level</Label>
+                <Select value={form.duploIsAdmin ? 'admin' : 'tenant'} onValueChange={(v) => setForm((p) => ({ ...p, duploIsAdmin: v === 'admin' }))}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin (plan-level)</SelectItem>
+                    <SelectItem value="tenant">Tenant (tenant-level)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
+            <p className="text-[10px] text-muted-foreground">The portal calls Duplo&apos;s REST API server-side to get a short-lived K8s token. No exec plugin needed.</p>
+          </div>
+        )}
 
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="flex flex-wrap gap-2 h-auto w-full justify-start">
-                <TabsTrigger value="overview" className="gap-2">
-                  <ShieldCheck className="h-4 w-4" />
-                  Overview
-                </TabsTrigger>
-                <TabsTrigger value="nodes" className="gap-2">
-                  <Server className="h-4 w-4" />
-                  Nodes
-                </TabsTrigger>
-                <TabsTrigger value="namespaces" className="gap-2">
-                  <FolderTree className="h-4 w-4" />
-                  Namespaces
-                </TabsTrigger>
-                <TabsTrigger value="workloads" className="gap-2">
-                  <Layers className="h-4 w-4" />
-                  Workloads
-                </TabsTrigger>
-                <TabsTrigger value="services" className="gap-2">
-                  <Boxes className="h-4 w-4" />
-                  Services
-                </TabsTrigger>
-                <TabsTrigger value="pods" className="gap-2">
-                  <FileText className="h-4 w-4" />
-                  Pods
-                </TabsTrigger>
-                <TabsTrigger value="ingresses" className="gap-2">
-                  <Boxes className="h-4 w-4" />
-                  Ingresses
-                </TabsTrigger>
-                <TabsTrigger value="crds" className="gap-2">
-                  <Boxes className="h-4 w-4" />
-                  CRDs
-                </TabsTrigger>
-              </TabsList>
+        {/* ── EKS ── */}
+        {form.authType === 'eks' && (
+          <div className="space-y-2 rounded-md border p-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Cluster Name</Label>
+                <Input className="h-8 text-sm" value={form.eksClusterName} onChange={(e) => setForm((p) => ({ ...p, eksClusterName: e.target.value }))} placeholder="my-eks-cluster" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Region</Label>
+                <Input className="h-8 text-sm" value={form.eksRegion} onChange={(e) => setForm((p) => ({ ...p, eksRegion: e.target.value }))} placeholder="us-west-2" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">API Server Endpoint</Label>
+              <Input className="h-8 text-sm font-mono" value={form.eksEndpoint} onChange={(e) => setForm((p) => ({ ...p, eksEndpoint: e.target.value }))} placeholder="https://XXXXXXXXX.gr7.us-west-2.eks.amazonaws.com" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Certificate Authority Data (base64)</Label>
+              <Textarea className="text-xs font-mono" value={form.eksCaData} onChange={(e) => setForm((p) => ({ ...p, eksCaData: e.target.value }))} rows={2} placeholder="LS0tLS1CRUdJTi..." />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">AWS Access Key ID {isEdit && <span className="text-muted-foreground">(blank = keep)</span>}</Label>
+                <Input className="h-8 text-sm font-mono" type="password" value={form.eksAccessKeyId} onChange={(e) => setForm((p) => ({ ...p, eksAccessKeyId: e.target.value }))} placeholder="AKIA..." />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Secret Access Key {isEdit && <span className="text-muted-foreground">(blank = keep)</span>}</Label>
+                <Input className="h-8 text-sm font-mono" type="password" value={form.eksSecretAccessKey} onChange={(e) => setForm((p) => ({ ...p, eksSecretAccessKey: e.target.value }))} placeholder="wJalr..." />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Role ARN <span className="text-muted-foreground">(optional)</span></Label>
+              <Input className="h-8 text-sm font-mono" value={form.eksRoleArn} onChange={(e) => setForm((p) => ({ ...p, eksRoleArn: e.target.value }))} placeholder="arn:aws:iam::123456789:role/..." />
+            </div>
+            <p className="text-[10px] text-muted-foreground">The portal presigns an STS GetCallerIdentity request to generate EKS bearer tokens. The IAM user/role must be mapped in the EKS cluster&apos;s access configuration.</p>
+          </div>
+        )}
 
-              <TabsContent value="overview" className="mt-4">
-                <div className="grid gap-4 md:grid-cols-3">
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardDescription>Nodes</CardDescription>
-                      <CardTitle className="text-2xl">{overview?.nodes ?? 0}</CardTitle>
-                    </CardHeader>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardDescription>Namespaces</CardDescription>
-                      <CardTitle className="text-2xl">{overview?.namespaces ?? 0}</CardTitle>
-                    </CardHeader>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardDescription>Workloads</CardDescription>
-                      <CardTitle className="text-2xl">{workloads.length}</CardTitle>
-                    </CardHeader>
-                  </Card>
+        {/* ── Test + Status ── */}
+        <div className="flex items-center gap-2 pt-1">
+          <Button variant="outline" size="sm" onClick={testConnection} disabled={formValidation === 'running'}>
+            {formValidation === 'running' ? 'Testing...' : 'Test Connection'}
+          </Button>
+          {formValidation === 'success' && <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"><CheckCircle2 className="h-3 w-3 mr-1" />Connected</Badge>}
+          {formValidation === 'error' && <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>}
+        </div>
+        {formError && <p className="text-xs text-destructive">{formError}</p>}
+      </div>
+    );
+  };
+
+  // ─── Render ─────────────────────────────────────────────────────────────
+
+  const hasCluster = clusters.length > 0;
+
+  return (
+    <div className="flex h-[calc(100vh-5rem)] overflow-hidden -m-6">
+      {/* ──── Left sidebar ──── */}
+      <div className="w-56 shrink-0 border-r flex flex-col bg-muted/30">
+        <div className="flex items-center justify-between px-3 py-2 border-b">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Clusters</span>
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={openCreate} title="Add cluster">
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {clusters.length === 0 ? (
+            <div className="px-3 py-6 text-center">
+              <Server className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+              <p className="text-xs text-muted-foreground">No clusters yet</p>
+              <Button variant="link" size="sm" className="text-xs mt-1 h-auto p-0" onClick={openCreate}>
+                Add your first cluster
+              </Button>
+            </div>
+          ) : (
+            clusters.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setSelectedId(c.id)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs border-b border-border/50 transition-colors ${selectedId === c.id ? 'bg-accent' : 'hover:bg-accent/50'}`}
+              >
+                <StatusDot status={c.status} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium truncate">{c.name}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    {c.provider} · {c.region || 'no region'}
+                    {c.authType !== 'standard' && <> · <span className="text-primary">{AUTH_TYPE_META[c.authType]?.label}</span></>}
+                  </p>
                 </div>
-              </TabsContent>
+                {selectedId === c.id && <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
+              </button>
+            ))
+          )}
+        </div>
 
-              <TabsContent value="nodes" className="mt-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>CPU</TableHead>
-                      <TableHead>Memory</TableHead>
-                      <TableHead>Pods</TableHead>
-                      <TableHead>Age</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {nodes.map((node) => (
-                      <TableRow key={node.name}>
-                        <TableCell className="font-medium">{node.name}</TableCell>
-                        <TableCell>{node.status}</TableCell>
-                        <TableCell>{node.cpu}</TableCell>
-                        <TableCell>{node.memory}</TableCell>
-                        <TableCell>{node.pods}</TableCell>
-                        <TableCell>{node.age}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TabsContent>
-
-              <TabsContent value="namespaces" className="mt-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Pods</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {namespaces.map((ns) => (
-                      <TableRow key={ns.name}>
-                        <TableCell className="font-medium">{ns.name}</TableCell>
-                        <TableCell>{ns.pods}</TableCell>
-                        <TableCell>{ns.status}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TabsContent>
-
-              <TabsContent value="workloads" className="mt-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Kind</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Namespace</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {workloads.map((workload) => (
-                      <TableRow key={`${workload.namespace}-${workload.name}`}>
-                        <TableCell className="font-medium">{workload.name}</TableCell>
-                        <TableCell>{workload.kind}</TableCell>
-                        <TableCell>{workload.status}</TableCell>
-                        <TableCell>{workload.namespace}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TabsContent>
-
-              <TabsContent value="services" className="mt-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Namespace</TableHead>
-                      <TableHead>Endpoints</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {services.map((service) => (
-                      <TableRow key={`${service.namespace}-${service.name}`}>
-                        <TableCell className="font-medium">{service.name}</TableCell>
-                        <TableCell>{service.type}</TableCell>
-                        <TableCell>{service.namespace}</TableCell>
-                        <TableCell>{service.ports}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TabsContent>
-
-              <TabsContent value="pods" className="mt-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Ready</TableHead>
-                      <TableHead>Restarts</TableHead>
-                      <TableHead>Namespace</TableHead>
-                      <TableHead>Logs</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pods.map((pod) => (
-                      <TableRow key={`${pod.namespace}-${pod.name}`}>
-                        <TableCell className="font-medium">{pod.name}</TableCell>
-                        <TableCell>{pod.status}</TableCell>
-                        <TableCell>{pod.ready}</TableCell>
-                        <TableCell>{pod.restarts}</TableCell>
-                        <TableCell>{pod.namespace}</TableCell>
-                        <TableCell>
-                          <Button variant="outline" size="sm" onClick={() => fetchPodLogs(pod)}>
-                            Logs
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TabsContent>
-
-              <TabsContent value="ingresses" className="mt-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Class</TableHead>
-                      <TableHead>Hosts</TableHead>
-                      <TableHead>Namespace</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {ingresses.map((ingress) => (
-                      <TableRow key={`${ingress.namespace}-${ingress.name}`}>
-                        <TableCell className="font-medium">{ingress.name}</TableCell>
-                        <TableCell>{ingress.className}</TableCell>
-                        <TableCell>{ingress.hosts}</TableCell>
-                        <TableCell>{ingress.namespace}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TabsContent>
-
-              <TabsContent value="crds" className="mt-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Kind</TableHead>
-                      <TableHead>Scope</TableHead>
-                      <TableHead>Version</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {crds.map((crd) => (
-                      <TableRow key={crd.name}>
-                        <TableCell className="font-medium">{crd.name}</TableCell>
-                        <TableCell>{crd.kind}</TableCell>
-                        <TableCell>{crd.scope}</TableCell>
-                        <TableCell>{crd.version}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+        {hasCluster && allNamespaces.length > 0 && (
+          <div className="border-t px-2 py-2 space-y-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1">Namespace</span>
+            <Select value={nsFilter} onValueChange={setNsFilter}>
+              <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="All namespaces" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All namespaces</SelectItem>
+                {allNamespaces.map((ns) => <SelectItem key={ns} value={ns}>{ns}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
-      <Dialog
-        open={Boolean(logPod)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setLogPod(null);
-            setLogs('');
-          }
-        }}
-      >
-        <DialogContent className="max-w-3xl">
+      {/* ──── Main content ──── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Cluster header */}
+        <div className="flex items-center justify-between px-4 py-2 border-b bg-card shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            {selectedCluster ? (
+              <>
+                <StatusDot status={selectedCluster.status} />
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold truncate">{selectedCluster.name}</h2>
+                  <p className="text-[10px] text-muted-foreground">
+                    {selectedCluster.provider} · {selectedCluster.region} · {selectedCluster.environment} · {overview?.version || '?'}
+                    {selectedCluster.authType !== 'standard' && <> · <span className="text-primary font-medium">{AUTH_TYPE_META[selectedCluster.authType]?.label}</span></>}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">Select or add a cluster</p>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {selectedCluster && (
+              <>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refreshClusterData()} title="Refresh"><RefreshCcw className="h-3.5 w-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(selectedCluster)} title="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteOpen(true)} title="Delete"><Trash2 className="h-3.5 w-3.5" /></Button>
+              </>
+            )}
+            <div className="flex items-center gap-1 ml-2 text-[10px] text-muted-foreground">
+              <Badge variant="outline" className="text-[10px] h-5 px-1.5">{overview?.nodes ?? 0} nodes</Badge>
+              <Badge variant="outline" className="text-[10px] h-5 px-1.5">{overview?.namespaces ?? 0} ns</Badge>
+              <Badge variant="outline" className="text-[10px] h-5 px-1.5">{overview?.pods ?? 0} pods</Badge>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs + filter */}
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b bg-muted/20 shrink-0 overflow-x-auto">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs whitespace-nowrap transition-colors ${activeTab === t.key ? 'bg-accent font-medium' : 'hover:bg-accent/50 text-muted-foreground'}`}
+            >
+              <t.icon className="h-3.5 w-3.5" />
+              {t.label}
+            </button>
+          ))}
+          <div className="flex-1" />
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+            <Input className="h-7 text-xs pl-7 w-48" placeholder="Filter..." value={filter} onChange={(e) => setFilter(e.target.value)} />
+          </div>
+        </div>
+
+        {/* Table content */}
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">Loading...</div>
+          ) : !selectedCluster ? (
+            <div className="flex flex-col items-center justify-center h-64 gap-3">
+              <Server className="h-12 w-12 text-muted-foreground/30" />
+              <p className="text-sm text-muted-foreground">Add a cluster to get started</p>
+              <Button size="sm" onClick={openCreate}><Plus className="h-4 w-4 mr-1" />Add Cluster</Button>
+            </div>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-muted/60 backdrop-blur z-10">
+                {activeTab === 'nodes' && (
+                  <tr className="border-b"><Th>Name</Th><Th>Status</Th><Th>Version</Th><Th>CPU</Th><Th>Memory</Th><Th>Pods</Th><Th>Age</Th></tr>
+                )}
+                {activeTab === 'namespaces' && (
+                  <tr className="border-b"><Th>Name</Th><Th>Pods</Th><Th>Status</Th></tr>
+                )}
+                {activeTab === 'workloads' && (
+                  <tr className="border-b"><Th>Name</Th><Th>Kind</Th><Th>Namespace</Th><Th>Status</Th></tr>
+                )}
+                {activeTab === 'services' && (
+                  <tr className="border-b"><Th>Name</Th><Th>Type</Th><Th>Namespace</Th><Th>Cluster IP</Th><Th>Ports</Th></tr>
+                )}
+                {activeTab === 'pods' && (
+                  <tr className="border-b"><Th>Name</Th><Th>Status</Th><Th>Ready</Th><Th>Restarts</Th><Th>Namespace</Th><Th>Age</Th><Th></Th></tr>
+                )}
+                {activeTab === 'ingresses' && (
+                  <tr className="border-b"><Th>Name</Th><Th>Class</Th><Th>Hosts</Th><Th>Namespace</Th></tr>
+                )}
+                {activeTab === 'crds' && (
+                  <tr className="border-b"><Th>Name</Th><Th>Kind</Th><Th>Scope</Th><Th>Version</Th></tr>
+                )}
+              </thead>
+              <tbody>
+                {activeTab === 'nodes' && filteredNodes.map((n) => (
+                  <Tr key={n.name}><Td className="font-medium">{n.name}</Td><Td><StatusDot status={n.status} /> {n.status}</Td><Td>{n.version}</Td><Td>{n.cpu}</Td><Td>{n.memory}</Td><Td>{n.pods}</Td><Td>{timeAgo(n.age)}</Td></Tr>
+                ))}
+                {activeTab === 'namespaces' && filteredNamespaces.map((n) => (
+                  <Tr key={n.name} className="cursor-pointer" onClick={() => { setNsFilter(n.name); setActiveTab('pods'); }}><Td className="font-medium">{n.name}</Td><Td>{n.pods}</Td><Td><StatusDot status={n.status} /> {n.status}</Td></Tr>
+                ))}
+                {activeTab === 'workloads' && filteredWorkloads.map((w) => (
+                  <Tr key={`${w.namespace}-${w.name}`}><Td className="font-medium">{w.name}</Td><Td><Badge variant="outline" className="text-[10px] h-4 px-1">{w.kind}</Badge></Td><Td>{w.namespace}</Td><Td><StatusDot status={w.status} /> {w.status}</Td></Tr>
+                ))}
+                {activeTab === 'services' && filteredServices.map((s) => (
+                  <Tr key={`${s.namespace}-${s.name}`}><Td className="font-medium">{s.name}</Td><Td><Badge variant="outline" className="text-[10px] h-4 px-1">{s.type}</Badge></Td><Td>{s.namespace}</Td><Td className="font-mono">{s.clusterIP}</Td><Td className="font-mono">{s.ports}</Td></Tr>
+                ))}
+                {activeTab === 'pods' && filteredPods.map((p) => (
+                  <Tr key={`${p.namespace}-${p.name}`}>
+                    <Td className="font-medium">{p.name}</Td>
+                    <Td><StatusDot status={p.status} /> {p.status}</Td>
+                    <Td>{p.ready}</Td>
+                    <Td className={p.restarts > 5 ? 'text-destructive font-medium' : ''}>{p.restarts}</Td>
+                    <Td>{p.namespace}</Td>
+                    <Td>{timeAgo(p.age)}</Td>
+                    <Td><button className="hover:text-primary" onClick={() => fetchPodLogs(p)} title="View logs"><Terminal className="h-3.5 w-3.5" /></button></Td>
+                  </Tr>
+                ))}
+                {activeTab === 'ingresses' && filteredIngresses.map((i) => (
+                  <Tr key={`${i.namespace}-${i.name}`}><Td className="font-medium">{i.name}</Td><Td>{i.className}</Td><Td className="font-mono">{i.hosts}</Td><Td>{i.namespace}</Td></Tr>
+                ))}
+                {activeTab === 'crds' && filteredCrds.map((c) => (
+                  <Tr key={c.name}><Td className="font-mono text-[10px]">{c.name}</Td><Td>{c.kind}</Td><Td>{c.scope}</Td><Td>{c.version}</Td></Tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* ──── Dialogs ──── */}
+
+      <Dialog open={createOpen} onOpenChange={(o) => { setCreateOpen(o); if (!o) resetForm(); }}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Pod Logs</DialogTitle>
-            <DialogDescription>
-              {logPod?.name} • {logPod?.namespace}
-            </DialogDescription>
+            <DialogTitle className="text-base">Add Cluster</DialogTitle>
+            <DialogDescription className="text-xs">Connect a Kubernetes cluster. Choose the auth method that matches your setup.</DialogDescription>
           </DialogHeader>
-          <div className="rounded-md border bg-muted/30 p-3 text-xs whitespace-pre-wrap max-h-[400px] overflow-auto">
-            {logs || 'No logs available.'}
+          <ClusterFormBody isEdit={false} />
+          <Button size="sm" onClick={() => handleSave(false)} disabled={savingCluster}>{savingCluster ? 'Saving...' : 'Save Cluster'}</Button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={(o) => { setEditOpen(o); if (!o) resetForm(); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base">Edit Cluster</DialogTitle>
+            <DialogDescription className="text-xs">Update metadata or credentials. Secret fields left blank will keep their current values.</DialogDescription>
+          </DialogHeader>
+          <ClusterFormBody isEdit={true} />
+          <Button size="sm" onClick={() => handleSave(true)} disabled={savingCluster}>{savingCluster ? 'Saving...' : 'Save Changes'}</Button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Delete Cluster</DialogTitle>
+            <DialogDescription className="text-xs">This removes the cluster from the portal. No Kubernetes resources will be deleted.</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="destructive" size="sm" onClick={handleDelete} disabled={savingCluster}>{savingCluster ? 'Deleting...' : 'Delete'}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(logPod)} onOpenChange={(o) => { if (!o) { setLogPod(null); setLogs(''); } }}>
+        <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-base font-mono">{logPod?.name}</DialogTitle>
+            <DialogDescription className="text-xs">{logPod?.namespace}</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto rounded border bg-black p-3">
+            <pre className="text-[11px] text-green-400 font-mono whitespace-pre-wrap">{logs || 'No logs.'}</pre>
           </div>
         </DialogContent>
       </Dialog>
     </div>
   );
+}
+
+// ─── Table primitives ─────────────────────────────────────────────────────────
+
+function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
+  return <th className={`text-left px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground ${className || ''}`}>{children}</th>;
+}
+
+function Td({ children, className }: { children?: React.ReactNode; className?: string }) {
+  return <td className={`px-3 py-1.5 ${className || ''}`}>{children}</td>;
+}
+
+function Tr({ children, className, onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) {
+  return <tr className={`border-b border-border/30 hover:bg-accent/30 transition-colors ${className || ''}`} onClick={onClick}>{children}</tr>;
 }
