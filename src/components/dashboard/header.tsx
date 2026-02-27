@@ -408,6 +408,9 @@ export function Header({ user }: HeaderProps) {
             <CommandItem onSelect={() => { setCommandOpen(false); router.push('/monitoring/grafana/alerts'); }}>
               Grafana Alerts
             </CommandItem>
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/monitoring/dora'); }}>
+              DORA Metrics
+            </CommandItem>
             <CommandItem onSelect={() => { setCommandOpen(false); router.push('/argocd'); }}>
               ArgoCD
             </CommandItem>

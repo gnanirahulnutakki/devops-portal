@@ -31,6 +31,7 @@ import {
   Plug,
   GitMerge,
   ChartNoAxesColumn,
+  BarChart3,
   BookOpen,
 } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
@@ -69,6 +70,7 @@ const navGroups: { id: string; title: string; items: NavItem[] }[] = [
       { title: 'Grafana · Dashboards', href: '/monitoring/grafana/dashboards', icon: Gauge, featureKey: 'monitoring' },
       { title: 'Grafana · Alerts', href: '/monitoring/grafana/alerts', icon: BellRing, featureKey: 'monitoring' },
       { title: 'Grafana · Insights', href: '/monitoring/grafana/insights', icon: ChartNoAxesColumn, featureKey: 'monitoring' },
+      { title: 'DORA Metrics', href: '/monitoring/dora', icon: BarChart3, featureKey: 'monitoring' },
       { title: 'Loki · Logs', href: '/monitoring/loki', icon: Logs, featureKey: 'monitoring' },
       { title: 'Uptime Kuma', href: '/uptime-kuma', icon: Activity, featureKey: 'uptimeKuma' },
     ],
