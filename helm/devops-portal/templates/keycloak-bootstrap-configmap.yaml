@@ -110,10 +110,10 @@ data:
     # -------------------------------------------------------------------------
     {{- range .Values.keycloakBootstrap.defaultUsers }}
     echo "==> Ensuring user '{{ .username }}' exists..."
-    USER_CHECK=$(curl -sf \
+    USER_RESPONSE=$(curl -sf \
       -H "Authorization: Bearer ${TOKEN}" \
-      "${KC_URL}/admin/realms/${REALM}/users?username={{ .username }}&exact=true" \
-      | grep -c "\"username\"" || true)
+      "${KC_URL}/admin/realms/${REALM}/users?username={{ .username }}&exact=true")
+    USER_CHECK=$(echo "$USER_RESPONSE" | grep -c "\"username\"" || true)
 
     if [ "$USER_CHECK" = "0" ]; then
       echo "    Creating user '{{ .username }}'..."
@@ -128,20 +128,38 @@ data:
           \"lastName\": \"{{ .lastName }}\",
           \"enabled\": true,
           \"emailVerified\": true,
-          \"requiredActions\": [],
-          \"credentials\": [{
-            \"type\": \"password\",
-            \"value\": \"${KC_DEFAULT_USER_PASSWORD}\",
-            \"temporary\": false
-          }]
+          \"requiredActions\": []
         }")
       if [ "$CREATE_STATUS" = "201" ] || [ "$CREATE_STATUS" = "409" ]; then
-        echo "    User '{{ .username }}' ready."
+        echo "    User '{{ .username }}' created."
       else
         echo "    WARNING: Unexpected status ${CREATE_STATUS} creating user '{{ .username }}'."
       fi
+      # Re-fetch to get user ID
+      USER_RESPONSE=$(curl -sf \
+        -H "Authorization: Bearer ${TOKEN}" \
+        "${KC_URL}/admin/realms/${REALM}/users?username={{ .username }}&exact=true")
+    fi
+
+    # Always ensure password is set (idempotent — works for new and existing users)
+    if [ -n "${KC_DEFAULT_USER_PASSWORD}" ]; then
+      USER_ID=$(echo "$USER_RESPONSE" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+      if [ -n "$USER_ID" ]; then
+        PW_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+          -X PUT "${KC_URL}/admin/realms/${REALM}/users/${USER_ID}/reset-password" \
+          -H "Authorization: Bearer ${TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "{\"type\":\"password\",\"value\":\"${KC_DEFAULT_USER_PASSWORD}\",\"temporary\":false}")
+        if [ "$PW_STATUS" = "204" ]; then
+          echo "    Password set for '{{ .username }}'."
+        else
+          echo "    WARNING: Password reset returned HTTP ${PW_STATUS} for '{{ .username }}'."
+        fi
+      else
+        echo "    WARNING: Could not determine user ID for '{{ .username }}'."
+      fi
     else
-      echo "    User '{{ .username }}' already exists, skipping."
+      echo "    WARNING: KC_DEFAULT_USER_PASSWORD is empty — skipping password for '{{ .username }}'."
     fi
     {{- end }}
 
