@@ -136,9 +136,14 @@ nodeSelector:
 # Init containers - wait for DB then run migrations automatically
 initContainers:
   waitForDb:
-    enabled: true   # Wait for postgres before migrate
+    enabled: true
+    timeoutSeconds: 120  # Fail after 2 min instead of hanging forever
   migrate:
-    enabled: true   # Run prisma migrate deploy on every start (idempotent)
+    enabled: true
+
+# Prometheus alerting rules (requires Prometheus Operator CRDs)
+prometheusRules:
+  enabled: true
 
 # Seed database with demo data
 jobs:

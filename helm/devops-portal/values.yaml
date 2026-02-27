@@ -277,6 +277,10 @@ postgresql:
     containerSecurityContext:
       runAsUser: 1001
       runAsNonRoot: true
+    # Pod Disruption Budget — prevents accidental eviction that causes EBS Multi-Attach errors
+    pdb:
+      create: true
+      minAvailable: 1
 
 # External database (if postgresql.enabled=false)
 externalDatabase:
@@ -461,15 +465,30 @@ serviceMonitor:
   relabelings: []
 
 # =============================================================================
+# Prometheus Rules (alerting)
+# =============================================================================
+prometheusRules:
+  enabled: false
+  labels: {}  # Extra labels for PrometheusRule (e.g., release: prometheus)
+
+# =============================================================================
 # Init Containers
 # =============================================================================
 initContainers:
-  # Wait for database to be ready
+  # Wait for database to be ready (with timeout to prevent infinite hang)
   waitForDb:
     enabled: true
     image: busybox:1.36
-    command: ["sh", "-c", "until nc -z $DB_HOST $DB_PORT; do echo waiting for database; sleep 2; done"]
-  
+    timeoutSeconds: 120  # Exit with error after this many seconds (triggers pod restart backoff)
+    command: ["sh", "-c", "DEADLINE=$(($(date +%s) + ${TIMEOUT:-120})); until nc -z $DB_HOST $DB_PORT; do if [ $(date +%s) -ge $DEADLINE ]; then echo 'ERROR: database not reachable after ${TIMEOUT:-120}s — giving up'; exit 1; fi; echo waiting for database...; sleep 2; done; echo 'database is ready'"]
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 50m
+        memory: 32Mi
+
   # Run database migrations
   migrate:
     enabled: true
@@ -477,6 +496,13 @@ initContainers:
     # prisma@6 is pinned because npx defaults to latest (v7 breaks schema.prisma url= syntax).
     # db push is idempotent: creates tables on fresh DB, no-op when schema matches.
     command: ["npx", "prisma@6.3.0", "db", "push", "--skip-generate", "--accept-data-loss"]
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
 
 # =============================================================================
 # Jobs

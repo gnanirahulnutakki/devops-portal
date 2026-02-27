@@ -1,0 +1,102 @@
+{{- if .Values.prometheusRules.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "devops-portal.fullname" . }}
+  labels:
+    {{- include "devops-portal.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRules.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: {{ include "devops-portal.fullname" . }}.infrastructure
+      rules:
+        # Pod stuck in Init for more than 10 minutes
+        - alert: DevOpsPortalPodStuckInInit
+          expr: |
+            kube_pod_status_phase{namespace="{{ .Release.Namespace }}", pod=~"{{ include "devops-portal.fullname" . }}.*", phase="Pending"} == 1
+            and on(pod, namespace) kube_pod_container_status_waiting_reason{reason="PodInitializing"} == 1
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "DevOps Portal pod {{ "{{ $labels.pod }}" }} stuck in Init"
+            description: "Pod {{ "{{ $labels.pod }}" }} in namespace {{ "{{ $labels.namespace }}" }} has been initializing for more than 10 minutes. Check init container logs."
+            runbook: "kubectl logs {{ "{{ $labels.pod }}" }} -n {{ "{{ $labels.namespace }}" }} -c wait-for-db"
+
+        # Pod in CrashLoopBackOff
+        - alert: DevOpsPortalCrashLoopBackOff
+          expr: |
+            kube_pod_container_status_waiting_reason{namespace="{{ .Release.Namespace }}", pod=~"{{ include "devops-portal.fullname" . }}.*", reason="CrashLoopBackOff"} == 1
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "DevOps Portal pod {{ "{{ $labels.pod }}" }} is crash-looping"
+            description: "Container {{ "{{ $labels.container }}" }} in pod {{ "{{ $labels.pod }}" }} has been in CrashLoopBackOff for more than 5 minutes."
+
+        # High restart count (more than 5 restarts in 30 minutes)
+        - alert: DevOpsPortalHighRestarts
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace="{{ .Release.Namespace }}", pod=~"{{ include "devops-portal.fullname" . }}.*"}[30m]) > 5
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "DevOps Portal pod {{ "{{ $labels.pod }}" }} restarting frequently"
+            description: "Container {{ "{{ $labels.container }}" }} has restarted {{ "{{ $value }}" }} times in the last 30 minutes."
+
+        # PVC stuck in Pending for more than 5 minutes
+        - alert: DevOpsPortalPVCPending
+          expr: |
+            kube_persistentvolumeclaim_status_phase{namespace="{{ .Release.Namespace }}", persistentvolumeclaim=~".*devops-portal.*", phase="Pending"} == 1
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "PVC {{ "{{ $labels.persistentvolumeclaim }}" }} stuck in Pending"
+            description: "PVC {{ "{{ $labels.persistentvolumeclaim }}" }} in namespace {{ "{{ $labels.namespace }}" }} has been Pending for more than 5 minutes. Check StorageClass availability and node scheduling."
+
+        # PostgreSQL pod not ready
+        - alert: DevOpsPortalPostgresDown
+          expr: |
+            kube_pod_status_ready{namespace="{{ .Release.Namespace }}", pod=~".*devops-portal.*postgres.*", condition="true"} == 0
+          for: 3m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "DevOps Portal PostgreSQL is down"
+            description: "PostgreSQL pod {{ "{{ $labels.pod }}" }} has been not-ready for more than 3 minutes. The portal cannot function without its database."
+
+    - name: {{ include "devops-portal.fullname" . }}.application
+      rules:
+        # Health endpoint returning unhealthy
+        - alert: DevOpsPortalUnhealthy
+          expr: |
+            probe_success{job="{{ include "devops-portal.fullname" . }}", namespace="{{ .Release.Namespace }}"} == 0
+            or up{job="{{ include "devops-portal.fullname" . }}", namespace="{{ .Release.Namespace }}"} == 0
+          for: 3m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "DevOps Portal health check failing"
+            description: "The /api/health endpoint has been unreachable or returning errors for more than 3 minutes."
+
+        # No ready replicas
+        - alert: DevOpsPortalNoReadyReplicas
+          expr: |
+            kube_deployment_status_replicas_available{namespace="{{ .Release.Namespace }}", deployment="{{ include "devops-portal.fullname" . }}"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "DevOps Portal has zero ready replicas"
+            description: "All replicas of the DevOps Portal deployment are down. Users cannot access the portal."
+{{- end }}
