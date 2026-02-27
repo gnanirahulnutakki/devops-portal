@@ -61,8 +61,8 @@ yarn-error.log
 .yarn/build-state.yml
 .yarn/install-state.gz
 
-# Helm
-helm/devops-portal/charts/
+# Helm - charts/ committed for ArgoCD compatibility
+# helm/devops-portal/charts/
 helm/devops-portal/scripts/sealed-secrets/
 
 # Prisma
