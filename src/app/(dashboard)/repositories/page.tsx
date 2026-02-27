@@ -1,13 +1,14 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useSession } from 'next-auth/react';
+import { useEffect, useMemo, useState } from 'react';
+import { useOrganizationStore } from '@/store/organization-store';
 import { useRepositories } from '@/hooks/use-github';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -30,14 +31,59 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 
+interface GitHubAccount {
+  id: string;
+  name: string;
+  enabled: boolean;
+  organization?: string;
+  hasToken: boolean;
+}
+
 export default function RepositoriesPage() {
   const [repoQuery, setRepoQuery] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('none');
-  const { data: session } = useSession();
-  const { data: repositories, isLoading, error, refetch } = useRepositories(1, 200);
+  const currentOrganization = useOrganizationStore((s) => s.currentOrganization);
+  const orgId = currentOrganization?.id;
+
+  // GitHub account selector state
+  const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<string | undefined>();
+  const [accountsLoading, setAccountsLoading] = useState(true);
+
+  const enabledAccounts = useMemo(() => accounts.filter((a) => a.enabled && a.hasToken), [accounts]);
+
+  // Fetch GitHub accounts on mount
+  useEffect(() => {
+    if (!orgId) return;
+    const oid = orgId;
+    let cancelled = false;
+    async function load() {
+      setAccountsLoading(true);
+      try {
+        const res = await fetch('/api/integrations/github/accounts', {
+          headers: { 'x-organization-id': oid },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok) {
+          const accts = data.data || [];
+          setAccounts(accts);
+          // Auto-select first enabled account
+          const firstEnabled = accts.find((a: GitHubAccount) => a.enabled && a.hasToken);
+          if (!selectedAccount && firstEnabled) setSelectedAccount(firstEnabled.id);
+        }
+      } finally {
+        if (!cancelled) setAccountsLoading(false);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { data: repositories, isLoading, error, refetch } = useRepositories(1, 200, undefined, selectedAccount);
 
   // Detect GitHub connection issues from the API error response
-  const isNotConnected = error?.message?.includes('not connected') || error?.message?.includes('not configured');
+  const isNotConnected = !selectedAccount && !accountsLoading && enabledAccounts.length === 0;
   const filteredRepos = useMemo(() => {
     if (!repositories) return [];
     const query = repoQuery.trim().toLowerCase();
@@ -76,17 +122,45 @@ export default function RepositoriesPage() {
           <AlertTitle>GitHub Not Connected</AlertTitle>
           <AlertDescription className="flex items-center justify-between">
             <span>
-              {session?.user?.hasGitHubConnection
-                ? 'GitHub integration is not configured. Contact your administrator.'
-                : 'Connect your GitHub account to browse repositories and pull requests.'}
+              No GitHub accounts configured. Add a GitHub account in Settings &gt; Configurations to browse repositories.
             </span>
-            {!session?.user?.hasGitHubConnection && (
-              <Button asChild size="sm" variant="outline" className="ml-4 shrink-0">
-                <Link href="/settings">Connect GitHub</Link>
-              </Button>
-            )}
+            <Button asChild size="sm" variant="outline" className="ml-4 shrink-0">
+              <Link href="/settings/configurations">Add GitHub Account</Link>
+            </Button>
           </AlertDescription>
         </Alert>
+      )}
+
+      {/* GitHub Account Selector */}
+      {enabledAccounts.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Github className="h-4 w-4" />
+              GitHub Account
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="max-w-sm space-y-2">
+              <Label>Account</Label>
+              <Select value={selectedAccount} onValueChange={(val) => {
+                setSelectedAccount(val);
+                setSelectedRepo('none');
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select GitHub account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {enabledAccounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name} {a.organization ? `(${a.organization})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Quick Stats */}
@@ -222,7 +296,7 @@ export default function RepositoriesPage() {
                         <Globe className="h-4 w-4 text-green-500" />
                       )}
                       <Link
-                        href={`/repositories/${encodeURIComponent(repo.fullName)}`}
+                        href={`/repositories/${encodeURIComponent(repo.fullName)}${selectedAccount ? `?credentialId=${selectedAccount}` : ''}`}
                         className="font-medium text-lg hover:underline"
                       >
                         {repo.name}
@@ -268,7 +342,7 @@ export default function RepositoriesPage() {
                       <Globe className="h-4 w-4 text-green-500" />
                     )}
                     <Link
-                      href={`/repositories/${encodeURIComponent(selectedRepoData.fullName)}`}
+                      href={`/repositories/${encodeURIComponent(selectedRepoData.fullName)}${selectedAccount ? `?credentialId=${selectedAccount}` : ''}`}
                       className="text-lg font-medium hover:underline"
                     >
                       {selectedRepoData.fullName}
@@ -336,8 +410,14 @@ export default function RepositoriesPage() {
           ) : (
             <div className="text-center py-12 text-gray-500">
               <GitBranch className="h-16 w-16 mx-auto mb-4 opacity-30" />
-              <p className="text-lg font-medium">Select a repository</p>
-              <p className="text-sm mt-1">Choose a repository or select All to list them</p>
+              <p className="text-lg font-medium">
+                {!selectedAccount ? 'Select a GitHub account above' : 'Select a repository'}
+              </p>
+              <p className="text-sm mt-1">
+                {!selectedAccount
+                  ? 'Choose a GitHub account to browse its repositories'
+                  : 'Choose a repository or select All to list them'}
+              </p>
             </div>
           )}
         </CardContent>

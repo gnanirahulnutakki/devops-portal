@@ -63,32 +63,35 @@ const api = ky.create({
 // Hooks
 // =============================================================================
 
-export function useRepositories(page = 1, pageSize = 20, search?: string) {
+export function useRepositories(page = 1, pageSize = 20, search?: string, credentialId?: string) {
   return useQuery({
-    queryKey: ['github', 'repositories', { page, pageSize, search }],
+    queryKey: ['github', 'repositories', { page, pageSize, search, credentialId }],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: String(pageSize),
       });
       if (search) params.set('search', search);
-      
+      if (credentialId) params.set('credentialId', credentialId);
+
       const response = await api.get(`github/repositories?${params}`).json<{
         data: Repository[];
       }>();
       return response.data ?? [];
     },
+    enabled: !!credentialId,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
 
-export function useBranches(repository?: string, filter?: string) {
+export function useBranches(repository?: string, filter?: string, credentialId?: string) {
   return useQuery({
-    queryKey: ['github', 'branches', repository, filter],
+    queryKey: ['github', 'branches', repository, filter, credentialId],
     queryFn: async () => {
       if (!repository) return [];
       const params = new URLSearchParams({ repository });
       if (filter) params.set('filter', filter);
+      if (credentialId) params.set('credentialId', credentialId);
       const response = await api.get(`github/branches?${params}`).json<{
         data: Branch[];
       }>();
@@ -101,19 +104,24 @@ export function useBranches(repository?: string, filter?: string) {
 
 export function usePullRequests(
   repository?: string,
-  state: 'open' | 'closed' | 'all' = 'open'
+  state: 'open' | 'closed' | 'all' = 'open',
+  credentialId?: string
 ) {
   return useQuery({
-    queryKey: ['github', 'pull-requests', { repository, state }],
+    queryKey: ['github', 'pull-requests', { repository, state, credentialId }],
     queryFn: async () => {
       const params = new URLSearchParams({ state });
       if (repository) params.set('repository', repository);
-      
+      if (credentialId) params.set('credentialId', credentialId);
+
       const response = await api.get(`github/pull-requests?${params}`).json<{
         data: PullRequest[];
       }>();
       return response.data ?? [];
     },
+    // When called with a specific repo (detail page), always run.
+    // When called without a repo (listing page), require credentialId.
+    enabled: !!repository || !!credentialId,
     staleTime: 1 * 60 * 1000, // 1 minute
   });
 }

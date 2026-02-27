@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useBranches, usePullRequests } from '@/hooks/use-github';
 import { useOrganizationStore } from '@/store/organization-store';
@@ -52,12 +52,14 @@ interface FileContent {
 export default function RepositoryDetailsPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const repoSegments = (params.repo as string[]) || [];
   const repository = decodeURIComponent(repoSegments.join('/'));
   const currentOrganization = useOrganizationStore((state) => state.currentOrganization);
+  const credentialId = searchParams.get('credentialId') || undefined;
 
-  const { data: branches, isLoading: branchesLoading } = useBranches(repository);
-  const { data: pullRequests, isLoading: prsLoading } = usePullRequests(repository);
+  const { data: branches, isLoading: branchesLoading } = useBranches(repository, undefined, credentialId);
+  const { data: pullRequests, isLoading: prsLoading } = usePullRequests(repository, 'open', credentialId);
 
   const openPRs = useMemo(
     () => (pullRequests ?? []).filter((pr) => pr.state === 'open'),

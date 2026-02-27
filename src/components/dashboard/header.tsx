@@ -398,21 +398,21 @@ export function Header({ user }: HeaderProps) {
         <CommandInput placeholder="Type a command or search..." />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
-          <CommandGroup heading="Navigation">
+          <CommandGroup heading="Launchpad">
             <CommandItem onSelect={() => { setCommandOpen(false); router.push('/'); }}>
               Dashboard
             </CommandItem>
-            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/monitoring/grafana/dashboards'); }}>
-              Grafana Dashboards
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/repositories'); }}>
+              Repositories
             </CommandItem>
-            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/monitoring/grafana/alerts'); }}>
-              Grafana Alerts
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/pull-requests'); }}>
+              Pull Requests
             </CommandItem>
-            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/scorecards'); }}>
-              Scorecards
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/github-actions'); }}>
+              GitHub Actions
             </CommandItem>
-            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/monitoring/dora'); }}>
-              DORA Metrics
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/deployments'); }}>
+              Deployments
             </CommandItem>
             <CommandItem onSelect={() => { setCommandOpen(false); router.push('/argocd'); }}>
               ArgoCD
@@ -420,21 +420,45 @@ export function Header({ user }: HeaderProps) {
             <CommandItem onSelect={() => { setCommandOpen(false); router.push('/clusters'); }}>
               Clusters
             </CommandItem>
-            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/settings/configurations'); }}>
-              Configurations
+          </CommandGroup>
+          <CommandGroup heading="Monitoring">
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/monitoring/grafana/dashboards'); }}>
+              Grafana Dashboards
             </CommandItem>
-            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/guides'); }}>
-              Guides
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/monitoring/grafana/alerts'); }}>
+              Alerts
+            </CommandItem>
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/scorecards'); }}>
+              Scorecards
+            </CommandItem>
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/monitoring/dora'); }}>
+              DORA Metrics
+            </CommandItem>
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/storage'); }}>
+              Log Browser
             </CommandItem>
           </CommandGroup>
-          <CommandGroup heading="Actions">
-            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/settings/configurations/grafana'); }}>
-              Add Grafana Account
+          <CommandGroup heading="Tools">
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/api-docs'); }}>
+              API Docs
             </CommandItem>
-            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/settings/configurations/argocd'); }}>
-              Add ArgoCD Account
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/helm'); }}>
+              Helm
             </CommandItem>
-            {/* Vulnerability scanning disabled via feature flag */}
+          </CommandGroup>
+          <CommandGroup heading="Settings">
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/settings'); }}>
+              Settings
+            </CommandItem>
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/settings?tab=integrations'); }}>
+              Integrations
+            </CommandItem>
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/settings?tab=team'); }}>
+              Team
+            </CommandItem>
+            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/settings?tab=organization'); }}>
+              Organization
+            </CommandItem>
           </CommandGroup>
         </CommandList>
       </CommandDialog>

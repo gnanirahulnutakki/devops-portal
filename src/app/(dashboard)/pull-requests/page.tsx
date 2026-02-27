@@ -1,6 +1,7 @@
 'use client';
 
 import { useBranches, usePullRequestFiles, usePullRequests, useRepositories, useUpdatePullRequest, useMergePullRequest } from '@/hooks/use-github';
+import { useOrganizationStore } from '@/store/organization-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,9 +28,18 @@ import {
   ChevronDown,
   ChevronUp,
   FileCode,
+  Github,
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useEffect, useMemo, useState } from 'react';
+
+interface GitHubAccount {
+  id: string;
+  name: string;
+  enabled: boolean;
+  organization?: string;
+  hasToken: boolean;
+}
 
 const getStateIcon = (state: string) => {
   switch (state) {
@@ -58,13 +68,47 @@ const getStateBadge = (state: string) => {
 };
 
 export default function PullRequestsPage() {
+  const currentOrganization = useOrganizationStore((s) => s.currentOrganization);
+  const orgId = currentOrganization?.id;
+
+  // GitHub account selector
+  const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<string | undefined>();
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const enabledAccounts = useMemo(() => accounts.filter((a) => a.enabled && a.hasToken), [accounts]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    let cancelled = false;
+    async function load() {
+      setAccountsLoading(true);
+      try {
+        const res = await fetch('/api/integrations/github/accounts', {
+          headers: { 'x-organization-id': orgId! },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok) {
+          const accts = data.data || [];
+          setAccounts(accts);
+          const firstEnabled = accts.find((a: GitHubAccount) => a.enabled && a.hasToken);
+          if (!selectedAccount && firstEnabled) setSelectedAccount(firstEnabled.id);
+        }
+      } finally {
+        if (!cancelled) setAccountsLoading(false);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [orgId]);
+
   const [repoSearch, setRepoSearch] = useState('');
   const [branchSearch, setBranchSearch] = useState('');
   const [selectedRepo, setSelectedRepo] = useState<string>('all');
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [prSearch, setPrSearch] = useState('');
 
-  const { data: repositories } = useRepositories(1, 200);
+  const { data: repositories } = useRepositories(1, 200, undefined, selectedAccount);
   const repoOptions = useMemo(() => {
     if (!repositories) return [];
     const filtered = repoSearch
@@ -92,9 +136,9 @@ export default function PullRequestsPage() {
   }, [selectedRepo]);
 
   const activeRepo = selectedRepo === 'all' ? undefined : selectedRepo;
-  const { data: branches } = useBranches(activeRepo, branchSearch || undefined);
+  const { data: branches } = useBranches(activeRepo, branchSearch || undefined, selectedAccount);
 
-  const { data: pullRequests, isLoading, error, refetch } = usePullRequests(activeRepo, 'all');
+  const { data: pullRequests, isLoading, error, refetch } = usePullRequests(activeRepo, 'all', selectedAccount);
   const { mutate: updatePr, isPending: updatingPr } = useUpdatePullRequest();
   const { mutate: mergePr, isPending: mergingPr } = useMergePullRequest();
 
@@ -158,10 +202,33 @@ export default function PullRequestsPage() {
             Review and manage pull requests across repositories
           </p>
         </div>
-        <Button onClick={() => refetch()} variant="outline" size="sm">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Github className="h-4 w-4 text-muted-foreground" />
+            {accountsLoading ? (
+              <Skeleton className="h-9 w-40" />
+            ) : enabledAccounts.length > 0 ? (
+              <Select value={selectedAccount || ''} onValueChange={setSelectedAccount}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Select account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {enabledAccounts.map((acct) => (
+                    <SelectItem key={acct.id} value={acct.id}>
+                      {acct.name}{acct.organization ? ` (${acct.organization})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <span className="text-sm text-muted-foreground">No GitHub accounts configured</span>
+            )}
+          </div>
+          <Button onClick={() => refetch()} variant="outline" size="sm">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Quick Stats */}

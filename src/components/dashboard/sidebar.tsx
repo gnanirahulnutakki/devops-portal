@@ -56,12 +56,16 @@ const topLevelItems: NavItem[] = [
 
 const navGroups: { id: string; title: string; items: NavItem[] }[] = [
   {
-    id: 'git',
-    title: 'Git',
+    id: 'launchpad',
+    title: 'Launchpad',
     items: [
       { title: 'Repositories', href: '/repositories', icon: FolderGit2, featureKey: 'repositories' },
       { title: 'Pull Requests', href: '/pull-requests', icon: GitPullRequest, featureKey: 'pullRequests' },
       { title: 'GitHub Actions', href: '/github-actions', icon: PlayCircle, featureKey: 'githubActions' },
+      { title: 'Deployments', href: '/deployments', icon: Rocket, featureKey: 'deployments' },
+      { title: 'ArgoCD', href: '/argocd', icon: GitBranch, featureKey: 'argocd' },
+      { title: 'Clusters', href: '/clusters', icon: Server, featureKey: 'clusters' },
+      { title: 'GitOps Studio', href: '/gitops-studio', icon: Pencil, adminOnly: true, featureKey: 'gitOpsStudio' },
     ],
   },
   {
@@ -69,37 +73,16 @@ const navGroups: { id: string; title: string; items: NavItem[] }[] = [
     title: 'Monitoring',
     items: [
       { title: 'Grafana · Dashboards', href: '/monitoring/grafana/dashboards', icon: Gauge, featureKey: 'monitoring' },
-      { title: 'Grafana · Alerts', href: '/monitoring/grafana/alerts', icon: BellRing, featureKey: 'monitoring' },
+      { title: 'Alerts', href: '/monitoring/grafana/alerts', icon: BellRing, featureKey: 'monitoring' },
       { title: 'Grafana · Insights', href: '/monitoring/grafana/insights', icon: ChartNoAxesColumn, featureKey: 'monitoring' },
+      { title: 'Prometheus', href: '/alerts', icon: Bell, featureKey: 'alerts' },
       { title: 'Scorecards', href: '/scorecards', icon: Award, featureKey: 'scorecards' },
       { title: 'DORA Metrics', href: '/monitoring/dora', icon: BarChart3, featureKey: 'monitoring' },
+      { title: 'Vulnerability', href: '/vulnerability', icon: ShieldCheck, featureKey: 'vulnerability' },
       { title: 'Loki · Logs', href: '/monitoring/loki', icon: Logs, featureKey: 'monitoring' },
+      { title: 'Log Browser', href: '/storage', icon: HardDrive, featureKey: 'storage' },
       { title: 'Uptime Kuma', href: '/uptime-kuma', icon: Activity, featureKey: 'uptimeKuma' },
     ],
-  },
-  {
-    id: 'gitops',
-    title: 'Gitops',
-    items: [
-      { title: 'Overview', href: '/gitops', icon: GitMerge },
-      { title: 'ArgoCD', href: '/argocd', icon: GitBranch, featureKey: 'argocd' },
-      { title: 'Clusters', href: '/clusters', icon: Server, featureKey: 'clusters' },
-      { title: 'Deployments', href: '/deployments', icon: Rocket, featureKey: 'deployments' },
-      { title: 'GitOps Studio', href: '/gitops-studio', icon: Pencil, adminOnly: true, featureKey: 'gitOpsStudio' },
-    ],
-  },
-  {
-    id: 'logging',
-    title: 'Logging',
-    items: [
-      { title: 'Alerts', href: '/alerts', icon: Bell, badge: '3', featureKey: 'alerts' },
-      { title: 'Vulnerability', href: '/vulnerability', icon: ShieldCheck, featureKey: 'vulnerability' },
-    ],
-  },
-  {
-    id: 'log-browser',
-    title: 'Log-Browser',
-    items: [{ title: 'Log Browser', href: '/storage', icon: HardDrive, featureKey: 'storage' }],
   },
   {
     id: 'tools',
@@ -115,11 +98,7 @@ const navGroups: { id: string; title: string; items: NavItem[] }[] = [
     id: 'settings',
     title: 'Settings',
     items: [
-      { title: 'Organizations', href: '/organizations', icon: Building2, featureKey: 'organizations' },
-      { title: 'Team', href: '/team', icon: Users, featureKey: 'team' },
-      { title: 'Configurations', href: '/settings/configurations', icon: Plug, featureKey: 'settings' },
       { title: 'Settings', href: '/settings', icon: Settings, featureKey: 'settings' },
-      { title: 'Guides', href: '/guides', icon: BookOpen },
     ],
   },
 ];

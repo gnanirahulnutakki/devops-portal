@@ -1,11 +1,21 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useOrganizationStore } from '@/store/organization-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, PlayCircle, Ban } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { RefreshCw, PlayCircle, Ban, Github } from 'lucide-react';
+
+interface GitHubAccount {
+  id: string;
+  name: string;
+  enabled: boolean;
+  organization?: string;
+  hasToken: boolean;
+}
 
 interface RepositoryItem {
   fullName: string;
@@ -32,6 +42,40 @@ interface WorkflowRun {
 }
 
 export default function GitHubActionsPage() {
+  const currentOrganization = useOrganizationStore((s) => s.currentOrganization);
+  const orgId = currentOrganization?.id;
+
+  // Account selector
+  const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<string>('');
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const enabledAccounts = useMemo(() => accounts.filter((a) => a.enabled && a.hasToken), [accounts]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    let cancelled = false;
+    async function load() {
+      setAccountsLoading(true);
+      try {
+        const res = await fetch('/api/integrations/github/accounts', {
+          headers: { 'x-organization-id': orgId! },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok) {
+          const accts = data.data || [];
+          setAccounts(accts);
+          const firstEnabled = accts.find((a: GitHubAccount) => a.enabled && a.hasToken);
+          if (firstEnabled) setSelectedAccount(firstEnabled.id);
+        }
+      } finally {
+        if (!cancelled) setAccountsLoading(false);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [orgId]);
+
   const [repositories, setRepositories] = useState<RepositoryItem[]>([]);
   const [branches, setBranches] = useState<BranchItem[]>([]);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
@@ -45,11 +89,14 @@ export default function GitHubActionsPage() {
   );
 
   const loadRepositories = async () => {
-    const res = await fetch('/api/github/repositories');
+    if (!selectedAccount) return;
+    const params = new URLSearchParams();
+    params.set('credentialId', selectedAccount);
+    const res = await fetch(`/api/github/repositories?${params}`);
     const data = await res.json();
     if (res.ok) {
       setRepositories(data.data || []);
-      if (!selectedRepo && data.data?.[0]) {
+      if (data.data?.[0]) {
         setSelectedRepo(data.data[0].fullName);
       }
     }
@@ -57,11 +104,13 @@ export default function GitHubActionsPage() {
 
   const loadBranches = async (repository: string) => {
     if (!repository) return;
-    const res = await fetch(`/api/github/branches?repository=${encodeURIComponent(repository)}`);
+    const params = new URLSearchParams({ repository });
+    if (selectedAccount) params.set('credentialId', selectedAccount);
+    const res = await fetch(`/api/github/branches?${params}`);
     const data = await res.json();
     if (res.ok) {
       setBranches(data.data || []);
-      if (!selectedBranch && data.data?.[0]) {
+      if (data.data?.[0]) {
         setSelectedBranch(data.data[0].name);
       }
     }
@@ -72,15 +121,23 @@ export default function GitHubActionsPage() {
     setLoading(true);
     const params = new URLSearchParams({ repository: selectedRepo });
     if (selectedBranch) params.set('branch', selectedBranch);
+    if (selectedAccount) params.set('credentialId', selectedAccount);
     const res = await fetch(`/api/github/actions/runs?${params.toString()}`);
     const data = await res.json();
     if (res.ok) setRuns(data.data || []);
     setLoading(false);
   };
 
+  // Reload repos when account changes
   useEffect(() => {
+    if (!selectedAccount) return;
+    setRepositories([]);
+    setSelectedRepo('');
+    setBranches([]);
+    setSelectedBranch('');
+    setRuns([]);
     loadRepositories();
-  }, []);
+  }, [selectedAccount]);
 
   useEffect(() => {
     if (!selectedRepo) return;
@@ -118,10 +175,33 @@ export default function GitHubActionsPage() {
             Monitor workflow runs and manage execution
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadRuns}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Github className="h-4 w-4 text-muted-foreground" />
+            {accountsLoading ? (
+              <Skeleton className="h-9 w-40" />
+            ) : enabledAccounts.length > 0 ? (
+              <Select value={selectedAccount} onValueChange={setSelectedAccount}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Select account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {enabledAccounts.map((acct) => (
+                    <SelectItem key={acct.id} value={acct.id}>
+                      {acct.name}{acct.organization ? ` (${acct.organization})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <span className="text-sm text-muted-foreground">No GitHub accounts configured</span>
+            )}
+          </div>
+          <Button variant="outline" size="sm" onClick={loadRuns}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <Card>

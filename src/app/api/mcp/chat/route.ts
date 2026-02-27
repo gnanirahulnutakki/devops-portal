@@ -1,11 +1,12 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
 import { searchKnowledge } from '@/lib/knowledge/portal-knowledge';
+import { chatWithLLM } from '@/lib/services/llm';
 
 const chatSchema = z.object({
   message: z.string().min(1).max(4000),
   context: z.string().max(2000).optional(),
-  preferredSource: z.enum(['auto', 'fastworkflow', 'mcp', 'knowledge']).optional(),
+  preferredSource: z.enum(['auto', 'fastworkflow', 'mcp', 'knowledge', 'llm']).optional(),
   mcpServerUrl: z.string().url().optional(),
 });
 
@@ -112,6 +113,7 @@ export const POST = withTenantApiHandler(
       ? `${validation.data.message}\n\nContext:\n${validation.data.context}`
       : validation.data.message;
 
+    // MCP server routing
     if (preferredSource === 'mcp') {
       if (!mcpServerUrl) {
         return errorResponse('MCP_NOT_CONFIGURED', 'MCP server URL is not configured', 400);
@@ -127,6 +129,27 @@ export const POST = withTenantApiHandler(
       return errorResponse('MCP_NO_RESPONSE', 'MCP server returned no response', 502);
     }
 
+    // Direct LLM routing
+    if (preferredSource === 'llm') {
+      const llmResponse = await chatWithLLM(
+        [{ role: 'user', content: enrichedMessage }],
+        ctx.tenant.organizationId,
+        ctx.db
+      );
+      if (llmResponse) {
+        return successResponse({
+          response: llmResponse,
+          source: 'llm',
+        });
+      }
+      return errorResponse(
+        'LLM_NOT_CONFIGURED',
+        'LLM is not configured. Add an LLM account in Settings > Integrations.',
+        400
+      );
+    }
+
+    // Fastworkflow routing
     if (preferredSource === 'fastworkflow' || preferredSource === 'auto') {
       if (fastworkflowEnabled && fastworkflowUrl) {
         try {
@@ -139,13 +162,29 @@ export const POST = withTenantApiHandler(
             });
           }
         } catch {
-          // Fall back to knowledge base
+          // Fall through to next source
         }
       } else if (preferredSource === 'fastworkflow') {
         return errorResponse('FASTWORKFLOW_NOT_CONFIGURED', 'Fastworkflow is not configured', 400);
       }
     }
 
+    // Auto mode: try LLM after fastworkflow
+    if (preferredSource === 'auto') {
+      const llmResponse = await chatWithLLM(
+        [{ role: 'user', content: enrichedMessage }],
+        ctx.tenant.organizationId,
+        ctx.db
+      );
+      if (llmResponse) {
+        return successResponse({
+          response: llmResponse,
+          source: 'llm',
+        });
+      }
+    }
+
+    // Knowledge base (explicit or fallback)
     if (preferredSource === 'knowledge' || preferredSource === 'auto') {
       const match = searchKnowledge(validation.data.message);
       if (match) {
@@ -158,6 +197,7 @@ export const POST = withTenantApiHandler(
       }
     }
 
+    // Final fallback
     const match = searchKnowledge(validation.data.message);
     if (match) {
       return successResponse({

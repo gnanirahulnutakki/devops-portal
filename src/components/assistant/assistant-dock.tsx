@@ -48,7 +48,8 @@ export function AssistantDock() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [settings, setSettings] = useState<any>(null);
-  const [routing, setRouting] = useState<"auto" | "knowledge" | "fastworkflow" | "mcp">("auto");
+  const [routing, setRouting] = useState<"auto" | "knowledge" | "fastworkflow" | "mcp" | "llm">("auto");
+  const [llmConfigured, setLlmConfigured] = useState<boolean | null>(null);
   const [mcpUrlOverride, setMcpUrlOverride] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -78,7 +79,10 @@ export function AssistantDock() {
         headers: { "x-organization-id": orgId },
       });
       const data = await res.json();
-      if (res.ok) setSettings(data.data || {});
+      if (res.ok) {
+        setSettings(data.data || {});
+        setLlmConfigured(!!data.data?.llm?.credentialId);
+      }
     };
     loadSettings();
   }, [orgId]);
@@ -166,12 +170,23 @@ export function AssistantDock() {
                   <SelectValue placeholder="Select routing" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">Auto (Fastworkflow → Knowledge)</SelectItem>
+                  <SelectItem value="auto">Auto (Fastworkflow → LLM → Knowledge)</SelectItem>
                   <SelectItem value="knowledge">Knowledge only</SelectItem>
                   <SelectItem value="fastworkflow">Fastworkflow only</SelectItem>
+                  <SelectItem value="llm">
+                    LLM{llmConfigured === false ? " (requires config)" : ""}
+                  </SelectItem>
                   <SelectItem value="mcp">MCP server</SelectItem>
                 </SelectContent>
               </Select>
+              {routing === "llm" && llmConfigured === false ? (
+                <a
+                  href="/settings?tab=integrations"
+                  className="text-xs text-primary underline"
+                >
+                  Configure LLM in Settings
+                </a>
+              ) : null}
               {routing === "mcp" ? (
                 <Input
                   className="h-8"

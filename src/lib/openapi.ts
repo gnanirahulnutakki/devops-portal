@@ -56,6 +56,8 @@ export const OPENAPI_SPEC = {
     { name: 'Metrics' },
     { name: 'MCP' },
     { name: 'Integrations' },
+    { name: 'Scorecards' },
+    { name: 'Security' },
   ],
   components: {
     securitySchemes: {
@@ -1634,6 +1636,164 @@ export const OPENAPI_SPEC = {
         requestBody: { required: false, content: { 'application/json': { schema: { type: 'object' } } } },
         responses: {
           200: { description: 'Auth response', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/scorecards': {
+      get: {
+        tags: ['Scorecards'],
+        summary: 'List scorecards',
+        description: 'Returns all scorecards for the organization with their checks and current scores.',
+        parameters: [organizationHeader],
+        responses: {
+          200: {
+            description: 'Array of scorecards',
+            content: { 'application/json': { schema: apiResponseSchema } },
+          },
+        },
+      },
+      post: {
+        tags: ['Scorecards'],
+        summary: 'Create scorecard',
+        description: 'Create a new scorecard with checks and thresholds.',
+        parameters: [organizationHeader],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string', example: 'Production Readiness' },
+                  description: { type: 'string' },
+                  checks: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string' },
+                        type: { type: 'string', enum: ['manual', 'automated'] },
+                        weight: { type: 'number' },
+                      },
+                    },
+                  },
+                },
+                required: ['name'],
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Created scorecard', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/scorecards/{id}': {
+      get: {
+        tags: ['Scorecards'],
+        summary: 'Get scorecard by ID',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Scorecard details', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      patch: {
+        tags: ['Scorecards'],
+        summary: 'Update scorecard',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { type: 'object' } } },
+        },
+        responses: {
+          200: { description: 'Updated scorecard', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      delete: {
+        tags: ['Scorecards'],
+        summary: 'Delete scorecard',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Deleted', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/scorecards/evaluate': {
+      post: {
+        tags: ['Scorecards'],
+        summary: 'Evaluate scorecards',
+        description: 'Trigger evaluation of all scorecard checks and compute scores.',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Evaluation results', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/scorecards/seed': {
+      post: {
+        tags: ['Scorecards'],
+        summary: 'Seed sample scorecards',
+        description: 'Create sample scorecards with pre-defined checks for demonstration purposes.',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Seeded scorecards', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/security/scans': {
+      get: {
+        tags: ['Security'],
+        summary: 'List security scans',
+        description: 'Returns all security scan records for the organization.',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Array of scans', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      post: {
+        tags: ['Security'],
+        summary: 'Create security scan',
+        description: 'Initiate a new security scan for a repository or image.',
+        parameters: [organizationHeader],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  target: { type: 'string', description: 'Repository or image to scan' },
+                  type: { type: 'string', enum: ['trivy', 'grype', 'custom'] },
+                },
+                required: ['target'],
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Scan initiated', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/security/scans/{id}': {
+      get: {
+        tags: ['Security'],
+        summary: 'Get scan details',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Scan details with findings', content: { 'application/json': { schema: apiResponseSchema } } },
         },
       },
     },
