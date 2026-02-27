@@ -572,6 +572,10 @@ keycloakBootstrap:
   # Client redirect URIs registered in Keycloak
   clientRedirectUris:
     - "http://localhost:3000/*"
+  # Hard deadline for the bootstrap Job (prevents ArgoCD sync from hanging forever)
+  activeDeadlineSeconds: 300
+  # How long the script waits for Keycloak to become reachable before giving up
+  waitTimeoutSeconds: 240
   # Default users to create (passwords stored in adminPasswordSecret under KEYCLOAK_DEFAULT_PASSWORD)
   # Users are created with requiredActions: [] so they can log in immediately.
   defaultUsers: []

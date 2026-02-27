@@ -15,6 +15,8 @@ metadata:
 spec:
   # Retry up to 3 times in case Keycloak isn't fully ready yet
   backoffLimit: 3
+  # Hard deadline — never let the hook block ArgoCD sync indefinitely
+  activeDeadlineSeconds: {{ .Values.keycloakBootstrap.activeDeadlineSeconds | default 300 }}
   # Clean up completed job after 10 minutes
   ttlSecondsAfterFinished: 600
   template:

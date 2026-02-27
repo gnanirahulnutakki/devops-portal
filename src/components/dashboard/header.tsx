@@ -428,9 +428,7 @@ export function Header({ user }: HeaderProps) {
             <CommandItem onSelect={() => { setCommandOpen(false); router.push('/settings/configurations/argocd'); }}>
               Add ArgoCD Account
             </CommandItem>
-            <CommandItem onSelect={() => { setCommandOpen(false); router.push('/vulnerability'); }}>
-              Run Security Scan
-            </CommandItem>
+            {/* Vulnerability scanning disabled via feature flag */}
           </CommandGroup>
         </CommandList>
       </CommandDialog>

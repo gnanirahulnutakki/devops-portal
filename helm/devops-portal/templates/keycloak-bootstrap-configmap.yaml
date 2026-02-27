@@ -22,8 +22,14 @@ data:
     ADMIN_USER="{{ .Values.keycloakBootstrap.adminUser }}"
     CLIENT_ID="{{ .Values.integrations.keycloak.existingSecret | default "devops-portal-keycloak" }}"
 
-    echo "==> Waiting for Keycloak to be ready..."
+    WAIT_TIMEOUT={{ .Values.keycloakBootstrap.waitTimeoutSeconds | default 240 }}
+    echo "==> Waiting for Keycloak to be ready (timeout: ${WAIT_TIMEOUT}s)..."
+    DEADLINE=$(($(date +%s) + WAIT_TIMEOUT))
     until curl -sf "${KC_URL}/realms/master" > /dev/null 2>&1; do
+      if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+        echo "ERROR: Keycloak not reachable after ${WAIT_TIMEOUT}s — giving up."
+        exit 1
+      fi
       echo "    Keycloak not ready, retrying in 5s..."
       sleep 5
     done

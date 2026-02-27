@@ -56,7 +56,7 @@ export function defaultFeaturePolicy(): FeaturePolicy {
     deployments: { enabled: true, minRole: 'USER' },
     uptimeKuma: { enabled: true, minRole: 'USER' },
     alerts: { enabled: true, minRole: 'USER' },
-    vulnerability: { enabled: true, minRole: 'USER' },
+    vulnerability: { enabled: false, minRole: 'USER' },
     storage: { enabled: true, minRole: 'USER' },
     helm: { enabled: true, minRole: 'READWRITE' },
     diagrams: { enabled: true, minRole: 'USER' },

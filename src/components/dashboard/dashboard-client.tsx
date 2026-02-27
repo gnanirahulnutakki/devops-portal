@@ -22,7 +22,6 @@ import {
   ArrowRight,
   Gauge,
   Plug,
-  Shield,
   BookOpen,
   Server,
 } from 'lucide-react';
@@ -89,12 +88,7 @@ const quickActions = [
     href: '/clusters',
     icon: Server,
   },
-  {
-    title: 'Security Scans',
-    description: 'Run Trivy scans on container images.',
-    href: '/vulnerability',
-    icon: Shield,
-  },
+  // Security Scans disabled via feature flag — re-enable in features.ts
   {
     title: 'All Configurations',
     description: 'Manage all integration accounts (Grafana, ArgoCD, GitHub, etc.).',
