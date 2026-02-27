@@ -110,8 +110,14 @@ async function getOrgAndCreds(request: NextRequest) {
 }
 
 async function proxy(request: NextRequest) {
+  const incomingPathname = new URL(request.url).pathname;
+  console.log(`[grafana-proxy] ${request.method} ${incomingPathname}`);
+
   const authz = await getOrgAndCreds(request);
-  if (authz instanceof NextResponse) return authz;
+  if (authz instanceof NextResponse) {
+    console.log(`[grafana-proxy] AUTH FAILED for ${incomingPathname}: status=${(authz as any).status}`);
+    return authz;
+  }
 
   const { creds } = authz;
   const baseUrl = creds.url.replace(/\/$/, '');
@@ -146,15 +152,25 @@ async function proxy(request: NextRequest) {
   const method = request.method.toUpperCase();
   const hasBody = !['GET', 'HEAD'].includes(method);
 
-  const upstreamRes = await fetch(upstreamUrl.toString(), {
-    method,
-    headers,
-    body: hasBody ? request.body : undefined,
-    redirect: 'manual',
-    // @ts-expect-error node fetch streaming
-    duplex: hasBody ? 'half' : undefined,
-    cache: 'no-store',
-  });
+  console.log(`[grafana-proxy] → upstream ${method} ${upstreamUrl.pathname}`);
+
+  let upstreamRes: Response;
+  try {
+    upstreamRes = await fetch(upstreamUrl.toString(), {
+      method,
+      headers,
+      body: hasBody ? request.body : undefined,
+      redirect: 'manual',
+      // @ts-expect-error node fetch streaming
+      duplex: hasBody ? 'half' : undefined,
+      cache: 'no-store',
+    });
+  } catch (err: any) {
+    console.error(`[grafana-proxy] FETCH ERROR for ${upstreamUrl.pathname}: ${err.message}`);
+    return NextResponse.json({ error: 'Upstream fetch failed', detail: err.message }, { status: 502 });
+  }
+
+  console.log(`[grafana-proxy] ← upstream ${upstreamRes.status} ${upstreamUrl.pathname} (${upstreamRes.headers.get('content-type') || 'unknown'})`);
 
   const resHeaders = new Headers(upstreamRes.headers);
   stripHopByHopHeaders(resHeaders);
