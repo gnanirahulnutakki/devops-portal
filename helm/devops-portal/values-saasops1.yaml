@@ -8,7 +8,7 @@ replicaCount: 1
 
 image:
   repository: rahulnutakki/devops-portal
-  tag: "v2-openapi-23"
+  tag: "v2-openapi-24"
   pullPolicy: Always
 
 config:
