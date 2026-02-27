@@ -1,17 +1,29 @@
 "use client";
 
 import useSWR from 'swr';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ExternalLink, RefreshCcw, Eye, AlertCircle, Loader2, FolderOpen, Pencil } from 'lucide-react';
+import {
+  ExternalLink,
+  RefreshCcw,
+  Eye,
+  AlertCircle,
+  Loader2,
+  FolderOpen,
+  Pencil,
+  ChevronDown,
+  ChevronRight,
+  Search,
+} from 'lucide-react';
 
 interface DashboardItem {
   id: number;
@@ -31,6 +43,11 @@ interface ApiResponse {
   };
 }
 
+interface FolderGroup {
+  folderTitle: string;
+  dashboards: DashboardItem[];
+}
+
 const fetcher = async (url: string): Promise<ApiResponse> => {
   const res = await fetch(url);
   const data = await res.json();
@@ -38,7 +55,6 @@ const fetcher = async (url: string): Promise<ApiResponse> => {
   return data;
 };
 
-// Loading skeleton component
 function DashboardSkeleton() {
   return (
     <Card className="animate-pulse">
@@ -54,7 +70,6 @@ function DashboardSkeleton() {
   );
 }
 
-// Error state component
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <Card className="border-destructive bg-destructive/5">
@@ -73,7 +88,6 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
   );
 }
 
-// Empty state component
 function EmptyState({ filtered }: { filtered: boolean }) {
   return (
     <Card className="col-span-full">
@@ -94,7 +108,6 @@ function EmptyState({ filtered }: { filtered: boolean }) {
   );
 }
 
-// Not configured state
 function NotConfiguredState() {
   return (
     <Card className="col-span-full border-warning bg-warning/5">
@@ -111,47 +124,243 @@ function NotConfiguredState() {
   );
 }
 
+function DashboardCard({
+  dash,
+  credentialId,
+  onPreview,
+  onTagClick,
+}: {
+  dash: DashboardItem;
+  credentialId?: string;
+  onPreview: (d: DashboardItem) => void;
+  onTagClick: (tag: string) => void;
+}) {
+  let portalUrl: string | null = null;
+  let portalEditUrl: string | null = null;
+  try {
+    const dashUrl = new URL(dash.url);
+    const p = new URL(`/grafana${dashUrl.pathname}`, window.location.origin);
+    dashUrl.searchParams.forEach((v, k) => p.searchParams.set(k, v));
+    if (credentialId) p.searchParams.set('credentialId', credentialId);
+    portalUrl = p.toString();
+
+    const e = new URL(p.toString());
+    e.searchParams.set('editview', 'dashboard');
+    portalEditUrl = e.toString();
+  } catch {
+    // Ignore; external link will still work
+  }
+
+  return (
+    <Card className="hover:border-primary transition-colors">
+      <CardContent className="p-4 flex flex-col gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-base font-semibold leading-tight truncate">{dash.title}</p>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Preview dashboard"
+              onClick={() => onPreview(dash)}
+            >
+              <Eye className="h-4 w-4" />
+            </Button>
+            {portalUrl ? (
+              <Button asChild size="icon" variant="ghost" aria-label="Open in portal" title="Open in portal">
+                <a href={portalUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </Button>
+            ) : null}
+            {portalEditUrl ? (
+              <Button asChild size="icon" variant="ghost" aria-label="Edit dashboard" title="Edit dashboard">
+                <a href={portalEditUrl} target="_blank" rel="noopener noreferrer">
+                  <Pencil className="h-4 w-4" />
+                </a>
+              </Button>
+            ) : null}
+            <Button asChild size="icon" variant="ghost" aria-label="Open in Grafana">
+              <a href={dash.url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            </Button>
+          </div>
+        </div>
+
+        {dash.tags && dash.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {dash.tags.slice(0, 5).map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground cursor-pointer hover:bg-muted/80"
+                onClick={() => onTagClick(tag)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && onTagClick(tag)}
+              >
+                {tag}
+              </span>
+            ))}
+            {dash.tags.length > 5 && (
+              <span className="text-xs text-muted-foreground">+{dash.tags.length - 5}</span>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FolderSection({
+  folder,
+  expanded,
+  onToggle,
+  credentialId,
+  onPreview,
+  onTagClick,
+}: {
+  folder: FolderGroup;
+  expanded: boolean;
+  onToggle: () => void;
+  credentialId?: string;
+  onPreview: (d: DashboardItem) => void;
+  onTagClick: (tag: string) => void;
+}) {
+  return (
+    <Card>
+      <button
+        onClick={onToggle}
+        className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-muted/50 transition-colors rounded-t-lg"
+      >
+        {expanded ? (
+          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        )}
+        <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+        <span className="font-semibold truncate">{folder.folderTitle}</span>
+        <Badge variant="secondary" className="ml-auto shrink-0">
+          {folder.dashboards.length} {folder.dashboards.length === 1 ? 'dashboard' : 'dashboards'}
+        </Badge>
+      </button>
+      {expanded && (
+        <CardContent className="p-4 pt-0 border-t">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 pt-4">
+            {folder.dashboards
+              .sort((a, b) => a.title.localeCompare(b.title))
+              .map((dash) => (
+                <DashboardCard
+                  key={dash.uid}
+                  dash={dash}
+                  credentialId={credentialId}
+                  onPreview={onPreview}
+                  onTagClick={onTagClick}
+                />
+              ))}
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 export function GrafanaDashboardList({ credentialId }: { credentialId?: string }) {
   const [filter, setFilter] = useState('');
   const [selected, setSelected] = useState<DashboardItem | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const query = credentialId ? `?credentialId=${encodeURIComponent(credentialId)}` : '';
   const { data, error, isLoading, mutate } = useSWR<ApiResponse>(
     `/api/monitoring/grafana/dashboards${query}`,
     fetcher,
     {
-    refreshInterval: 60_000, // refresh every minute
-    revalidateOnFocus: false,
+      refreshInterval: 60_000,
+      revalidateOnFocus: false,
     }
   );
 
-  const filtered = useMemo(() => {
+  const isNotConfigured = error?.message?.includes('not configured') ||
+    data?.error?.code === 'GRAFANA_NOT_CONFIGURED';
+
+  const filteredDashboards = useMemo(() => {
     const dashboards: DashboardItem[] = data?.data ?? [];
     if (!filter) return dashboards;
+    const q = filter.toLowerCase();
     return dashboards.filter((d) =>
-      d.title.toLowerCase().includes(filter.toLowerCase()) ||
-      d.folderTitle?.toLowerCase().includes(filter.toLowerCase()) ||
-      d.tags?.some((tag) => tag.toLowerCase().includes(filter.toLowerCase()))
+      d.title.toLowerCase().includes(q) ||
+      d.folderTitle?.toLowerCase().includes(q) ||
+      d.tags?.some((tag) => tag.toLowerCase().includes(q))
     );
   }, [data?.data, filter]);
 
-  // Check for specific error codes
-  const isNotConfigured = error?.message?.includes('not configured') || 
-    data?.error?.code === 'GRAFANA_NOT_CONFIGURED';
+  const folderGroups = useMemo(() => {
+    const folderMap = new Map<string, DashboardItem[]>();
+
+    for (const dash of filteredDashboards) {
+      const folderTitle = dash.folderTitle || 'General';
+      if (!folderMap.has(folderTitle)) {
+        folderMap.set(folderTitle, []);
+      }
+      folderMap.get(folderTitle)!.push(dash);
+    }
+
+    const groups: FolderGroup[] = [];
+    for (const [folderTitle, dashboards] of folderMap) {
+      groups.push({ folderTitle, dashboards });
+    }
+
+    groups.sort((a, b) => a.folderTitle.localeCompare(b.folderTitle));
+    return groups;
+  }, [filteredDashboards]);
+
+  const totalCount = data?.data?.length ?? 0;
+
+  const toggleFolder = useCallback((folderTitle: string) => {
+    setExpandedFolders((prev) => ({
+      ...prev,
+      [folderTitle]: !prev[folderTitle],
+    }));
+  }, []);
+
+  const isFolderExpanded = useCallback(
+    (folderTitle: string) => {
+      if (filter) return true;
+      return !!expandedFolders[folderTitle];
+    },
+    [filter, expandedFolders]
+  );
+
+  const handleTagClick = useCallback((tag: string) => {
+    setFilter(tag);
+  }, []);
 
   return (
     <div className="space-y-4">
+      {/* Stats */}
+      {!isLoading && !error && !isNotConfigured && (
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="secondary">{totalCount} dashboards</Badge>
+          <Badge variant="outline">{folderGroups.length} folders</Badge>
+        </div>
+      )}
+
+      {/* Search and Refresh */}
       <div className="flex items-center gap-2">
-        <Input
-          placeholder="Search dashboards by name, folder, or tag..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="max-w-sm"
-          disabled={isLoading || isNotConfigured}
-        />
-        <Button 
-          variant="outline" 
-          size="icon" 
-          onClick={() => mutate()} 
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search dashboards by name, folder, or tag..."
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="pl-10"
+            disabled={isLoading || isNotConfigured}
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => mutate()}
           disabled={isLoading}
           aria-label="Refresh dashboards"
         >
@@ -184,99 +393,25 @@ export function GrafanaDashboardList({ credentialId }: { credentialId?: string }
         </div>
       )}
 
-      {/* Dashboard grid */}
+      {/* Grouped Folder View */}
       {!isLoading && !error && !isNotConfigured && (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.length === 0 ? (
-            <EmptyState filtered={filter.length > 0} />
-          ) : (
-            filtered.map((dash) => {
-              let portalUrl: string | null = null;
-              let portalEditUrl: string | null = null;
-              try {
-                const dashUrl = new URL(dash.url);
-                const p = new URL(`/grafana${dashUrl.pathname}`, window.location.origin);
-                dashUrl.searchParams.forEach((v, k) => p.searchParams.set(k, v));
-                if (credentialId) p.searchParams.set('credentialId', credentialId);
-                portalUrl = p.toString();
-
-                const e = new URL(p.toString());
-                e.searchParams.set('editview', 'dashboard');
-                portalEditUrl = e.toString();
-              } catch {
-                // Ignore; external link will still work
-              }
-
-              return (
-              <Card key={dash.uid} className="hover:border-primary transition-colors">
-                <CardContent className="p-4 flex flex-col gap-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-sm text-muted-foreground truncate">{dash.folderTitle || 'Root'}</p>
-                      <p className="text-base font-semibold leading-tight truncate">{dash.title}</p>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Preview dashboard"
-                        onClick={() => setSelected(dash)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      {portalUrl ? (
-                        <Button asChild size="icon" variant="ghost" aria-label="Open in portal" title="Open in portal">
-                          <a href={portalUrl} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
-                        </Button>
-                      ) : null}
-                      {portalEditUrl ? (
-                        <Button
-                          asChild
-                          size="icon"
-                          variant="ghost"
-                          aria-label="Edit dashboard"
-                          title="Edit dashboard"
-                        >
-                          <a href={portalEditUrl} target="_blank" rel="noopener noreferrer">
-                            <Pencil className="h-4 w-4" />
-                          </a>
-                        </Button>
-                      ) : null}
-                      <Button asChild size="icon" variant="ghost" aria-label="Open in Grafana">
-                        <a href={dash.url} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </Button>
-                    </div>
-                  </div>
-
-                  {dash.tags && dash.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {dash.tags.slice(0, 5).map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground cursor-pointer hover:bg-muted/80"
-                          onClick={() => setFilter(tag)}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => e.key === 'Enter' && setFilter(tag)}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      {dash.tags.length > 5 && (
-                        <span className="text-xs text-muted-foreground">+{dash.tags.length - 5}</span>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-              );
-            })
-          )}
-        </div>
+        folderGroups.length === 0 ? (
+          <EmptyState filtered={filter.length > 0} />
+        ) : (
+          <div className="space-y-3">
+            {folderGroups.map((folder) => (
+              <FolderSection
+                key={folder.folderTitle}
+                folder={folder}
+                expanded={isFolderExpanded(folder.folderTitle)}
+                onToggle={() => toggleFolder(folder.folderTitle)}
+                credentialId={credentialId}
+                onPreview={setSelected}
+                onTagClick={handleTagClick}
+              />
+            ))}
+          </div>
+        )
       )}
 
       <GrafanaPreviewDialog
@@ -301,9 +436,7 @@ function GrafanaPreviewDialog({
 
   const dashUrl = new URL(dashboard.url);
   const proxyUrl = new URL(`/grafana${dashUrl.pathname}`, window.location.origin);
-  // Preserve Grafana query params (orgId, etc.)
   dashUrl.searchParams.forEach((v, k) => proxyUrl.searchParams.set(k, v));
-  // Ensure the proxy uses the selected Grafana credential when provided
   if (credentialId) proxyUrl.searchParams.set('credentialId', credentialId);
   const editUrl = new URL(proxyUrl.toString());
   editUrl.searchParams.set('editview', 'dashboard');
@@ -348,7 +481,6 @@ function GrafanaPreviewDialog({
           <iframe
             src={proxyUrl.toString()}
             className="h-full w-full"
-            // Grafana is a full SPA, needs scripts/forms/popups. Still keep it sandboxed.
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
             referrerPolicy="strict-origin-when-cross-origin"
             title={`Grafana: ${dashboard.title}`}

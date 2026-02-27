@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from 'swr';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +27,9 @@ import {
   XCircle,
   ExternalLink,
   Pencil,
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
 } from 'lucide-react';
 
 interface GrafanaAlert {
@@ -53,6 +56,13 @@ interface ApiResponse {
     code: string;
     message: string;
   };
+}
+
+interface FolderGroup {
+  folderTitle: string;
+  folderUid: string;
+  ruleGroups: Map<string, GrafanaAlert[]>;
+  stats: { total: number; alerting: number; normal: number; pending: number };
 }
 
 const fetcher = async (url: string): Promise<ApiResponse> => {
@@ -159,7 +169,6 @@ const stateIcons: Record<string, React.ReactNode> = {
   error: <XCircle className="h-3 w-3" />,
 };
 
-// Sort priority: alerting/error first, then pending, then normal/nodata
 const statePriority: Record<string, number> = {
   alerting: 0,
   error: 0,
@@ -183,8 +192,194 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
+function computeFolderStats(alerts: GrafanaAlert[]) {
+  return {
+    total: alerts.length,
+    alerting: alerts.filter((a) => a.state === 'alerting' || a.state === 'error').length,
+    normal: alerts.filter((a) => a.state === 'normal').length,
+    pending: alerts.filter((a) => a.state === 'pending').length,
+  };
+}
+
+function AlertRow({ alert, credentialId }: { alert: GrafanaAlert; credentialId?: string }) {
+  const portalUrl = `/grafana/alerting/grafana/${encodeURIComponent(alert.uid)}/view${credentialId ? `?credentialId=${encodeURIComponent(credentialId)}` : ''}`;
+  const portalEditUrl = `/grafana/alerting/grafana/${encodeURIComponent(alert.uid)}/edit${credentialId ? `?credentialId=${encodeURIComponent(credentialId)}` : ''}`;
+
+  return (
+    <TableRow
+      className={
+        alert.state === 'alerting' || alert.state === 'error'
+          ? 'bg-red-50/50 dark:bg-red-900/5'
+          : undefined
+      }
+    >
+      <TableCell>
+        <div className="min-w-0">
+          <p className="font-medium truncate">{alert.title}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {alert.condition || alert.uid}
+          </p>
+        </div>
+      </TableCell>
+      <TableCell>
+        <Badge
+          variant="outline"
+          className={stateColors[alert.state || 'nodata'] || stateColors.nodata}
+        >
+          {stateIcons[alert.state || 'nodata'] || stateIcons.nodata}
+          <span className="ml-1 capitalize">{alert.state || 'Unknown'}</span>
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            asChild
+            aria-label="Open alert in portal"
+            title="Open in portal"
+          >
+            <a href={portalUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            asChild
+            aria-label="Edit alert"
+            title="Edit alert"
+          >
+            <a href={portalEditUrl} target="_blank" rel="noopener noreferrer">
+              <Pencil className="h-4 w-4" />
+            </a>
+          </Button>
+        </div>
+      </TableCell>
+      <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
+        {alert.updated ? (
+          <span title={new Date(alert.updated).toLocaleString()}>
+            {timeAgo(alert.updated)}
+          </span>
+        ) : (
+          '-'
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function RuleGroupSection({
+  groupName,
+  alerts,
+  credentialId,
+}: {
+  groupName: string;
+  alerts: GrafanaAlert[];
+  credentialId?: string;
+}) {
+  const sorted = [...alerts].sort((a, b) => {
+    const pa = statePriority[a.state || 'nodata'] ?? 2;
+    const pb = statePriority[b.state || 'nodata'] ?? 2;
+    if (pa !== pb) return pa - pb;
+    return a.title.localeCompare(b.title);
+  });
+
+  return (
+    <div className="mb-4 last:mb-0">
+      <div className="flex items-center gap-2 px-4 py-2 bg-muted/30 border-b">
+        <span className="text-sm font-medium text-muted-foreground">
+          {groupName}
+        </span>
+        <Badge variant="secondary" className="text-xs">
+          {alerts.length}
+        </Badge>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Alert</TableHead>
+            <TableHead>State</TableHead>
+            <TableHead>Open</TableHead>
+            <TableHead className="text-right">Updated</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {sorted.map((alert) => (
+            <AlertRow key={alert.uid} alert={alert} credentialId={credentialId} />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function FolderCard({
+  folder,
+  expanded,
+  onToggle,
+  credentialId,
+}: {
+  folder: FolderGroup;
+  expanded: boolean;
+  onToggle: () => void;
+  credentialId?: string;
+}) {
+  const sortedGroups = [...folder.ruleGroups.entries()].sort(([a], [b]) =>
+    a.localeCompare(b)
+  );
+
+  return (
+    <Card>
+      <button
+        onClick={onToggle}
+        className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-muted/50 transition-colors rounded-t-lg"
+      >
+        {expanded ? (
+          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        )}
+        <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+        <span className="font-semibold truncate">{folder.folderTitle}</span>
+        <Badge variant="secondary" className="ml-auto shrink-0">
+          {folder.stats.total} {folder.stats.total === 1 ? 'rule' : 'rules'}
+        </Badge>
+        {folder.stats.alerting > 0 && (
+          <Badge variant="destructive" className="shrink-0">
+            {folder.stats.alerting} alerting
+          </Badge>
+        )}
+        {folder.stats.normal > 0 && (
+          <Badge variant="outline" className={`shrink-0 ${stateColors.normal}`}>
+            {folder.stats.normal} normal
+          </Badge>
+        )}
+        {folder.stats.pending > 0 && (
+          <Badge variant="outline" className={`shrink-0 ${stateColors.pending}`}>
+            {folder.stats.pending} pending
+          </Badge>
+        )}
+      </button>
+      {expanded && (
+        <CardContent className="p-0 border-t">
+          {sortedGroups.map(([groupName, alerts]) => (
+            <RuleGroupSection
+              key={groupName}
+              groupName={groupName}
+              alerts={alerts}
+              credentialId={credentialId}
+            />
+          ))}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 export function GrafanaAlertList({ credentialId }: { credentialId?: string }) {
   const [filter, setFilter] = useState('');
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const query = credentialId ? `?credentialId=${encodeURIComponent(credentialId)}` : '';
   const { data, error, isLoading, mutate } = useSWR<ApiResponse>(
     `/api/monitoring/grafana/alerts${query}`,
@@ -197,34 +392,82 @@ export function GrafanaAlertList({ credentialId }: { credentialId?: string }) {
 
   const alertingNotEnabled = data?.warning?.includes('not be enabled');
 
-  const alerts = useMemo(() => {
-    let rawAlerts: GrafanaAlert[] = data?.data ?? [];
-    if (filter) {
-      const q = filter.toLowerCase();
-      rawAlerts = rawAlerts.filter(
-        (alert: GrafanaAlert) =>
-          alert.title.toLowerCase().includes(q) ||
-          alert.ruleGroup?.toLowerCase().includes(q) ||
-          alert.folderTitle?.toLowerCase().includes(q)
-      );
-    }
-    // Sort by severity: alerting/error first, then pending, then normal
-    return [...rawAlerts].sort((a, b) => {
-      const pa = statePriority[a.state || 'nodata'] ?? 2;
-      const pb = statePriority[b.state || 'nodata'] ?? 2;
-      return pa - pb;
-    });
+  const filteredAlerts = useMemo(() => {
+    const rawAlerts: GrafanaAlert[] = data?.data ?? [];
+    if (!filter) return rawAlerts;
+    const q = filter.toLowerCase();
+    return rawAlerts.filter(
+      (alert) =>
+        alert.title.toLowerCase().includes(q) ||
+        alert.ruleGroup?.toLowerCase().includes(q) ||
+        alert.folderTitle?.toLowerCase().includes(q)
+    );
   }, [data?.data, filter]);
+
+  const folderGroups = useMemo(() => {
+    const folderMap = new Map<string, { folderUid: string; ruleGroups: Map<string, GrafanaAlert[]> }>();
+
+    for (const alert of filteredAlerts) {
+      const folderTitle = alert.folderTitle || 'General';
+      const folderUid = alert.folderUid || '';
+      const ruleGroup = alert.ruleGroup || 'Default';
+
+      if (!folderMap.has(folderTitle)) {
+        folderMap.set(folderTitle, { folderUid, ruleGroups: new Map() });
+      }
+      const folder = folderMap.get(folderTitle)!;
+      if (!folder.ruleGroups.has(ruleGroup)) {
+        folder.ruleGroups.set(ruleGroup, []);
+      }
+      folder.ruleGroups.get(ruleGroup)!.push(alert);
+    }
+
+    const groups: FolderGroup[] = [];
+    for (const [folderTitle, { folderUid, ruleGroups }] of folderMap) {
+      const allAlerts = [...ruleGroups.values()].flat();
+      groups.push({
+        folderTitle,
+        folderUid,
+        ruleGroups,
+        stats: computeFolderStats(allAlerts),
+      });
+    }
+
+    // Sort: folders with alerting rules first, then alphabetical
+    groups.sort((a, b) => {
+      if (a.stats.alerting > 0 && b.stats.alerting === 0) return -1;
+      if (a.stats.alerting === 0 && b.stats.alerting > 0) return 1;
+      return a.folderTitle.localeCompare(b.folderTitle);
+    });
+
+    return groups;
+  }, [filteredAlerts]);
 
   const stats = useMemo(() => {
     const all: GrafanaAlert[] = data?.data ?? [];
     return {
       total: all.length,
-      alerting: all.filter((a: GrafanaAlert) => a.state === 'alerting').length,
-      normal: all.filter((a: GrafanaAlert) => a.state === 'normal').length,
-      pending: all.filter((a: GrafanaAlert) => a.state === 'pending').length,
+      alerting: all.filter((a) => a.state === 'alerting').length,
+      normal: all.filter((a) => a.state === 'normal').length,
+      pending: all.filter((a) => a.state === 'pending').length,
     };
   }, [data?.data]);
+
+  const toggleFolder = useCallback((folderTitle: string) => {
+    setExpandedFolders((prev) => ({
+      ...prev,
+      [folderTitle]: !prev[folderTitle],
+    }));
+  }, []);
+
+  // When searching, auto-expand all folders that have matches
+  const isFolderExpanded = useCallback(
+    (folderTitle: string) => {
+      if (filter) return true;
+      return !!expandedFolders[folderTitle];
+    },
+    [filter, expandedFolders]
+  );
 
   if (isLoading) {
     return <AlertSkeleton />;
@@ -238,7 +481,7 @@ export function GrafanaAlertList({ credentialId }: { credentialId?: string }) {
     return <NotConfiguredState />;
   }
 
-  if (alertingNotEnabled && alerts.length === 0) {
+  if (alertingNotEnabled && filteredAlerts.length === 0 && !filter) {
     return <AlertingNotEnabledState />;
   }
 
@@ -287,110 +530,20 @@ export function GrafanaAlertList({ credentialId }: { credentialId?: string }) {
         </Button>
       </div>
 
-      {/* Alert Table */}
-      {alerts.length === 0 ? (
+      {/* Grouped Folder View */}
+      {folderGroups.length === 0 ? (
         <EmptyState filtered={filter.length > 0} />
       ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Alert</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Rule Group</TableHead>
-                <TableHead>Folder</TableHead>
-                <TableHead>Open</TableHead>
-                <TableHead className="text-right">Updated</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {alerts.map((alert: GrafanaAlert) => {
-                const p = new URL(
-                  `/grafana/alerting/grafana/${encodeURIComponent(alert.uid)}/view`,
-                  window.location.origin
-                );
-                if (credentialId) p.searchParams.set('credentialId', credentialId);
-                const portalUrl = p.toString();
-
-                const e = new URL(
-                  `/grafana/alerting/grafana/${encodeURIComponent(alert.uid)}/edit`,
-                  window.location.origin
-                );
-                if (credentialId) e.searchParams.set('credentialId', credentialId);
-                const portalEditUrl = e.toString();
-
-                return (
-                <TableRow
-                  key={alert.uid}
-                  className={
-                    alert.state === 'alerting' || alert.state === 'error'
-                      ? 'bg-red-50/50 dark:bg-red-900/5'
-                      : undefined
-                  }
-                >
-                  <TableCell>
-                    <div className="min-w-0">
-                      <p className="font-medium truncate">{alert.title}</p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {alert.condition || alert.uid}
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={stateColors[alert.state || 'nodata'] || stateColors.nodata}
-                    >
-                      {stateIcons[alert.state || 'nodata'] || stateIcons.nodata}
-                      <span className="ml-1 capitalize">{alert.state || 'Unknown'}</span>
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {alert.ruleGroup || '-'}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {alert.folderTitle || '-'}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        asChild
-                        aria-label="Open alert in portal"
-                        title="Open in portal"
-                      >
-                        <a href={portalUrl} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        asChild
-                        aria-label="Edit alert"
-                        title="Edit alert"
-                      >
-                        <a href={portalEditUrl} target="_blank" rel="noopener noreferrer">
-                          <Pencil className="h-4 w-4" />
-                        </a>
-                      </Button>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
-                    {alert.updated ? (
-                      <span title={new Date(alert.updated).toLocaleString()}>
-                        {timeAgo(alert.updated)}
-                      </span>
-                    ) : (
-                      '-'
-                    )}
-                  </TableCell>
-                </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+        <div className="space-y-3">
+          {folderGroups.map((folder) => (
+            <FolderCard
+              key={folder.folderTitle}
+              folder={folder}
+              expanded={isFolderExpanded(folder.folderTitle)}
+              onToggle={() => toggleFolder(folder.folderTitle)}
+              credentialId={credentialId}
+            />
+          ))}
         </div>
       )}
     </div>
