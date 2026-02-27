@@ -204,27 +204,36 @@ export const POST = withTenantApiHandler(
         db: ctx.db,
       };
 
-      const result = await chatWithOllamaTools(
-        [{ role: 'user', content: enrichedMessage }],
-        tools,
-        (name, args) => executeTool(name, args, toolCtx),
-        { systemPrompt, ollamaUrl, model: ollamaModel }
-      );
+      try {
+        const result = await chatWithOllamaTools(
+          [{ role: 'user', content: enrichedMessage }],
+          tools,
+          (name, args) => executeTool(name, args, toolCtx),
+          { systemPrompt, ollamaUrl, model: ollamaModel }
+        );
 
-      if (result.text) {
-        // Map tool names to provider badges
-        const toolBadges = [...new Set(result.toolsUsed.map((t) => TOOL_PROVIDERS[t]).filter(Boolean))];
-        return successResponse({
-          response: result.text,
-          source: 'ollama',
-          tools_used: toolBadges,
-        });
+        if (result.text) {
+          // Map tool names to provider badges
+          const toolBadges = [...new Set(result.toolsUsed.map((t) => TOOL_PROVIDERS[t]).filter(Boolean))];
+          return successResponse({
+            response: result.text,
+            source: 'ollama',
+            tools_used: toolBadges,
+          });
+        }
+        return errorResponse(
+          'TOOLS_FAILED',
+          'Tool-calling failed. Ollama may be unreachable or the model does not support function calling.',
+          502
+        );
+      } catch (error) {
+        logger.error({ error: (error as Error).message }, 'Tool-calling route error');
+        return errorResponse(
+          'TOOLS_ERROR',
+          `Tool-calling error: ${(error as Error).message}`,
+          500
+        );
       }
-      return errorResponse(
-        'TOOLS_FAILED',
-        'Tool-calling failed. Ollama may be unreachable or the model does not support function calling.',
-        502
-      );
     }
 
     // Direct LLM routing

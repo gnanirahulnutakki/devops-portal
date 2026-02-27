@@ -108,7 +108,17 @@ const handlers: Record<string, ToolHandler> = {
     if (!github) {
       return { success: false, error: 'GitHub is not configured. Connect GitHub in Settings > Integrations.' };
     }
-    const repos = await github.listRepositories(args.filter as string | undefined);
+    // Try org repos first, fall back to user repos (personal accounts)
+    let repos;
+    try {
+      repos = await github.listRepositories(args.filter as string | undefined);
+    } catch {
+      repos = await github.getUserRepositories({ sort: 'updated', perPage: 100 });
+      if (args.filter) {
+        const filter = (args.filter as string).toLowerCase();
+        repos = repos.filter((r) => r.fullName.toLowerCase().includes(filter));
+      }
+    }
     const summary = repos.slice(0, 30).map((r) => ({
       name: r.fullName,
       private: r.private,
