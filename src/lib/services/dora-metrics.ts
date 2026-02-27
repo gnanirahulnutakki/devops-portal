@@ -13,7 +13,8 @@
  *   - Deployment model in DB (sync/health status changes)
  */
 
-import { PrismaClient, SyncStatus, HealthStatus } from '@prisma/client';
+import { HealthStatus } from '@prisma/client';
+import type { TenantPrismaClient } from '@/lib/prisma-tenant';
 import { listApplications, getApplicationHistory } from './argocd';
 import type { ArgoCDApplication, ArgoCDHistory } from '@/lib/integrations/argocd';
 
@@ -142,7 +143,7 @@ function dayKey(date: Date): string {
 
 export async function computeDoraMetrics(
   organizationId: string,
-  db: PrismaClient,
+  db: TenantPrismaClient,
   options: { days?: number } = {},
 ): Promise<DoraMetrics> {
   const days = options.days || 30;
