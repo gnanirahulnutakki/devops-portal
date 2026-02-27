@@ -206,42 +206,39 @@ async function proxy(request: NextRequest) {
   resHeaders.delete('content-security-policy');
   resHeaders.delete('content-security-policy-report-only');
 
+  // Node.js fetch (undici) transparently decompresses response bodies but
+  // keeps the original Content-Encoding/Content-Length headers. We must
+  // strip them for ALL responses so the browser doesn't try to decompress
+  // already-decompressed data or expect a stale length.
+  resHeaders.delete('content-encoding');
+  resHeaders.delete('content-length');
+
   const contentType = upstreamRes.headers.get('content-type') || '';
+
+  // --- HTML rewrite (base href, appSubUrl) ---
   if (contentType.includes('text/html')) {
     const text = await upstreamRes.text();
     const rewritten = rewriteGrafanaHtml(text);
-
-    // When we call .text(), the body is decompressed. We must strip
-    // Content-Encoding/Content-Length so the browser doesn't try to
-    // decompress already-decompressed data or expect a stale length.
-    resHeaders.delete('content-encoding');
-    resHeaders.delete('content-length');
-
     resHeaders.set('content-type', contentType);
     resHeaders.set('cache-control', 'no-store');
-
-    console.log(`[grafana-proxy] HTML rewrite: ${rewritten.length} chars, base-href rewritten=${rewritten.includes('/grafana/')}`);
-
+    console.log(`[grafana-proxy] HTML rewrite: ${rewritten.length} chars`);
     return new NextResponse(rewritten, { status: upstreamRes.status, headers: resHeaders });
   }
 
-  // Rewrite /bootdata JSON so the SPA uses our proxy prefix for all URLs.
+  // --- Bootdata JSON rewrite (appSubUrl, appUrl) ---
   const isBootData = upstreamPath === '/bootdata' || upstreamPath.startsWith('/bootdata/');
   if (isBootData && contentType.includes('application/json')) {
     const json = await upstreamRes.text();
     const portalOrigin = new URL(request.url).origin;
     const rewritten = rewriteBootData(json, portalOrigin);
-
-    resHeaders.delete('content-encoding');
-    resHeaders.delete('content-length');
     resHeaders.set('cache-control', 'no-store');
-
-    console.log(`[grafana-proxy] bootdata rewrite: appSubUrl→${GRAFANA_PROXY_PREFIX}, appUrl→${portalOrigin}${GRAFANA_PROXY_PREFIX}/`);
-
+    console.log(`[grafana-proxy] bootdata rewrite: appSubUrl→${GRAFANA_PROXY_PREFIX}`);
     return new NextResponse(rewritten, { status: upstreamRes.status, headers: resHeaders });
   }
 
-  return new NextResponse(upstreamRes.body, { status: upstreamRes.status, headers: resHeaders });
+  // --- All other responses: read body as arrayBuffer to get decompressed bytes ---
+  const body = await upstreamRes.arrayBuffer();
+  return new NextResponse(body, { status: upstreamRes.status, headers: resHeaders });
 }
 
 export async function GET(request: NextRequest) {
