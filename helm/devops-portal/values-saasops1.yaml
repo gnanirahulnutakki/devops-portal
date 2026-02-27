@@ -8,7 +8,7 @@ replicaCount: 1
 
 image:
   repository: rahulnutakki/devops-portal
-  tag: "v2-scorecards"
+  tag: "v2-ux-overhaul"
   pullPolicy: Always
 
 config:
