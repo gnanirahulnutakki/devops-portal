@@ -170,7 +170,7 @@ async function proxy(request: NextRequest) {
     return NextResponse.json({ error: 'Upstream fetch failed', detail: err.message }, { status: 502 });
   }
 
-  console.log(`[grafana-proxy] ← upstream ${upstreamRes.status} ${upstreamUrl.pathname} (${upstreamRes.headers.get('content-type') || 'unknown'})`);
+  console.log(`[grafana-proxy] ← upstream ${upstreamRes.status} ${upstreamUrl.pathname} (${upstreamRes.headers.get('content-type') || 'unknown'}) content-encoding=${upstreamRes.headers.get('content-encoding') || 'none'}`);
 
   const resHeaders = new Headers(upstreamRes.headers);
   stripHopByHopHeaders(resHeaders);
@@ -191,8 +191,18 @@ async function proxy(request: NextRequest) {
   if (contentType.includes('text/html')) {
     const text = await upstreamRes.text();
     const rewritten = rewriteGrafanaHtml(text);
+
+    // When we call .text(), the body is decompressed. We must strip
+    // Content-Encoding/Content-Length so the browser doesn't try to
+    // decompress already-decompressed data or expect a stale length.
+    resHeaders.delete('content-encoding');
+    resHeaders.delete('content-length');
+
     resHeaders.set('content-type', contentType);
     resHeaders.set('cache-control', 'no-store');
+
+    console.log(`[grafana-proxy] HTML rewrite: ${rewritten.length} chars, base-href rewritten=${rewritten.includes('/grafana/')}`);
+
     return new NextResponse(rewritten, { status: upstreamRes.status, headers: resHeaders });
   }
 
