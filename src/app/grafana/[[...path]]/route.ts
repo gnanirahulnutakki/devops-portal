@@ -37,6 +37,25 @@ function rewriteLocationHeader(location: string, baseUrl: string) {
   }
 }
 
+/**
+ * Rewrite Grafana /bootdata JSON so the SPA thinks it's hosted under /grafana.
+ * Without this, appUrl points to the upstream Grafana origin and appSubUrl is
+ * empty, causing the SPA to make root-relative API calls and origin checks fail.
+ */
+function rewriteBootData(json: string, portalOrigin: string): string {
+  try {
+    const data = JSON.parse(json);
+    if (data.settings) {
+      data.settings.appSubUrl = GRAFANA_PROXY_PREFIX;
+      data.settings.appUrl = `${portalOrigin}${GRAFANA_PROXY_PREFIX}/`;
+    }
+    return JSON.stringify(data);
+  } catch {
+    // If JSON parse fails, return as-is
+    return json;
+  }
+}
+
 function rewriteGrafanaHtml(html: string) {
   // Make Grafana behave as if it's hosted under /grafana.
   // This keeps all subsequent SPA navigation and API calls routed through this proxy.
@@ -202,6 +221,22 @@ async function proxy(request: NextRequest) {
     resHeaders.set('cache-control', 'no-store');
 
     console.log(`[grafana-proxy] HTML rewrite: ${rewritten.length} chars, base-href rewritten=${rewritten.includes('/grafana/')}`);
+
+    return new NextResponse(rewritten, { status: upstreamRes.status, headers: resHeaders });
+  }
+
+  // Rewrite /bootdata JSON so the SPA uses our proxy prefix for all URLs.
+  const isBootData = upstreamPath === '/bootdata' || upstreamPath.startsWith('/bootdata/');
+  if (isBootData && contentType.includes('application/json')) {
+    const json = await upstreamRes.text();
+    const portalOrigin = new URL(request.url).origin;
+    const rewritten = rewriteBootData(json, portalOrigin);
+
+    resHeaders.delete('content-encoding');
+    resHeaders.delete('content-length');
+    resHeaders.set('cache-control', 'no-store');
+
+    console.log(`[grafana-proxy] bootdata rewrite: appSubUrl→${GRAFANA_PROXY_PREFIX}, appUrl→${portalOrigin}${GRAFANA_PROXY_PREFIX}/`);
 
     return new NextResponse(rewritten, { status: upstreamRes.status, headers: resHeaders });
   }
