@@ -58,12 +58,14 @@ export async function middleware(request: NextRequest) {
   // ---------------------------------------------------------------------------
   // Grafana-in-portal support
   // ---------------------------------------------------------------------------
-  // Grafana often emits root-absolute URLs like `/public/build/...` and `/api/...`.
-  // When embedded under `/grafana/*`, those requests would otherwise hit the portal
-  // (and our `/api/*` org header enforcement), resulting in a blank UI.
+  // Grafana's SPA emits root-absolute URLs (`/public/...`, `/api/...`,
+  // `/bootdata`, etc.).  When embedded under `/grafana/*`, those requests hit
+  // the portal router instead of the Grafana reverse-proxy.
   //
-  // If the request originates from a `/grafana/*` page (Referer), rewrite common
-  // Grafana root paths to `/grafana/*` so the reverse-proxy can handle them.
+  // Strategy: if the Referer is a `/grafana/...` page, rewrite ALL requests
+  // to `/grafana/*` EXCEPT paths that clearly belong to the portal itself.
+  // This blacklist approach is resilient to new Grafana paths (e.g. v13's
+  // `/bootdata`) without requiring constant whitelist maintenance.
   const referer = request.headers.get('referer') || '';
   // Only match requests originating from the embedded Grafana UI (/grafana/...),
   // NOT from portal pages that happen to contain "grafana" in their path
@@ -73,25 +75,28 @@ export async function middleware(request: NextRequest) {
   })();
   const fromGrafana = refererPath === '/grafana' || refererPath.startsWith('/grafana/');
   if (fromGrafana && !pathname.startsWith('/grafana')) {
-    const grafanaRootPrefixes = [
-      '/public/',
-      '/build/',
-      '/api/',
-      '/d/',
-      '/dashboards/',
-      '/explore',
-      '/alerting',
-      '/datasources',
-      '/connections',
-      '/org',
-      '/profile',
-      '/plugins',
-      '/avatar/',
-      '/img/',
-      '/render/',
+    // Paths that belong to the portal — never rewrite these to Grafana.
+    const portalPrefixes = [
+      '/_next/',         // Next.js static assets & HMR
+      '/api/auth/',      // NextAuth endpoints
+      '/login',          // Portal login page
+      '/auth/',          // Auth callback pages
+      '/select-organization',
+      '/dashboard',      // Portal dashboard
+      '/settings/',      // Portal settings pages
+      '/environments/',  // Portal environments
+      '/clusters/',      // Portal clusters
+      '/deployments/',   // Portal deployments
+      '/security/',      // Portal security pages
+      '/docs/',          // Portal docs
+      '/favicon.ico',
     ];
 
-    if (grafanaRootPrefixes.some((p) => pathname === p || pathname.startsWith(p))) {
+    const isPortalPath = portalPrefixes.some(
+      (p) => pathname === p || pathname.startsWith(p)
+    );
+
+    if (!isPortalPath) {
       const url = request.nextUrl.clone();
       url.pathname = `/grafana${pathname}`;
       return NextResponse.rewrite(url);
