@@ -13,18 +13,32 @@ const nextConfig: NextConfig = {
 
   // Security headers
   async headers() {
+    const commonSecurityHeaders = [
+      { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'X-XSS-Protection', value: '1; mode=block' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
+      { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()' },
+    ];
+
     return [
+      // Grafana proxy routes: relaxed CSP so the Grafana SPA can load its own
+      // assets, workers, and WebSocket connections.  The proxy already strips
+      // upstream CSP headers, so we only need a permissive portal-side policy.
       {
-        source: '/(.*)',
+        source: '/grafana/:path*',
         headers: [
-          // Allow the portal to iframe its own content (Grafana render previews, etc.)
-          // while still blocking external sites from framing it (via CSP frame-ancestors 'self').
-          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-XSS-Protection', value: '1; mode=block' },
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
-          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()' },
+          ...commonSecurityHeaders,
+          // No CSP — let Grafana manage its own content security.
+          // Auth is enforced by the proxy route handler (session + org membership).
+        ],
+      },
+      // All other routes: strict CSP for the portal application.
+      {
+        source: '/((?!grafana/).*)',
+        headers: [
+          ...commonSecurityHeaders,
           {
             key: 'Content-Security-Policy',
             value: [
@@ -33,10 +47,8 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https: blob:",
               "font-src 'self' data:",
-              // connect-src: APIs that can be called from client-side
               `connect-src 'self' https://api.github.com https://*.githubusercontent.com https://*.diagrams.net https://*.draw.io ${process.env.GRAFANA_URL ?? ''} ${process.env.ARGOCD_URL ?? ''}`.trim(),
               "frame-src 'self' https://app.diagrams.net https://embed.diagrams.net https://viewer.diagrams.net",
-              // Block external framing, but allow same-origin iframes we rely on (render previews)
               "frame-ancestors 'self'",
               "base-uri 'self'",
               "form-action 'self'",
