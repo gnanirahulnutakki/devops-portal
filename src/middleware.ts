@@ -65,7 +65,13 @@ export async function middleware(request: NextRequest) {
   // If the request originates from a `/grafana/*` page (Referer), rewrite common
   // Grafana root paths to `/grafana/*` so the reverse-proxy can handle them.
   const referer = request.headers.get('referer') || '';
-  const fromGrafana = referer.includes('/grafana');
+  // Only match requests originating from the embedded Grafana UI (/grafana/...),
+  // NOT from portal pages that happen to contain "grafana" in their path
+  // (e.g. /settings/configurations/grafana).
+  const refererPath = (() => {
+    try { return new URL(referer).pathname; } catch { return ''; }
+  })();
+  const fromGrafana = refererPath === '/grafana' || refererPath.startsWith('/grafana/');
   if (fromGrafana && !pathname.startsWith('/grafana')) {
     const grafanaRootPrefixes = [
       '/public/',

@@ -473,7 +473,10 @@ initContainers:
   # Run database migrations
   migrate:
     enabled: true
-    command: ["npx", "prisma", "migrate", "deploy"]
+    # Use db push (pinned v6) so it works on both fresh and existing DBs.
+    # prisma@6 is pinned because npx defaults to latest (v7 breaks schema.prisma url= syntax).
+    # db push is idempotent: creates tables on fresh DB, no-op when schema matches.
+    command: ["npx", "prisma@6.3.0", "db", "push", "--skip-generate", "--accept-data-loss"]
 
 # =============================================================================
 # Jobs
@@ -525,6 +528,31 @@ trivyOperator:
   enabled: false
   rbac:
     create: true
+
+# =============================================================================
+# Keycloak Realm Bootstrap (post-install/upgrade hook)
+# Idempotently ensures realm, client, and users exist after a DB wipe.
+# =============================================================================
+keycloakBootstrap:
+  # Set to true in environment-specific values files (e.g. values-saasops1.yaml)
+  enabled: false
+  # Internal cluster URL for Keycloak (no TLS needed for in-cluster calls)
+  keycloakInternalUrl: "http://keycloak:8080/keycloak"
+  realm: "devops-portal"
+  adminUser: "admin"
+  # Secret holding the Keycloak master-realm admin password
+  adminPasswordSecret: ""
+  adminPasswordKey: "KEYCLOAK_ADMIN_PASSWORD"
+  # Client redirect URIs registered in Keycloak
+  clientRedirectUris:
+    - "http://localhost:3000/*"
+  # Default users to create (passwords stored in adminPasswordSecret under KEYCLOAK_DEFAULT_PASSWORD)
+  # Users are created with requiredActions: [] so they can log in immediately.
+  defaultUsers: []
+  # - username: "admin"
+  #   email: "admin@example.com"
+  #   firstName: "Admin"
+  #   lastName: "Admin"
 
 # =============================================================================
 # Mailpit (dev SMTP sink for Keycloak verification emails)
