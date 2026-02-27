@@ -1,5 +1,6 @@
 import { getCredentials, LlmCredentials } from '@/lib/services/integration-credentials';
 import { logger } from '@/lib/logger';
+import type { ToolDefinition } from '@/lib/tools';
 
 // Accept any Prisma-like client (including tenant extensions)
 interface PrismaLike {
@@ -9,8 +10,24 @@ interface PrismaLike {
 }
 
 interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+}
+
+interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface ToolChatResult {
+  text: string | null;
+  toolsUsed: string[];
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are the DevOps Portal assistant. You help with Kubernetes, ArgoCD, Grafana, GitHub, Helm, and deployment questions. Be concise and actionable. When providing commands, use code blocks.`;
@@ -168,4 +185,120 @@ export async function chatWithOllama(
     logger.error({ error: (error as Error).message }, 'Ollama call failed');
     return null;
   }
+}
+
+/**
+ * Ollama chat with tool-calling (function calling) support.
+ *
+ * Flow:
+ *   1. Send messages + tool schemas to Ollama
+ *   2. If Ollama returns tool_calls, execute each via the callback
+ *   3. Append tool results as role:'tool' messages
+ *   4. Call Ollama again for the final natural-language answer
+ *   5. Repeat up to maxRounds to prevent infinite loops
+ */
+export async function chatWithOllamaTools(
+  messages: ChatMessage[],
+  tools: ToolDefinition[],
+  executeToolFn: (name: string, args: Record<string, unknown>) => Promise<string>,
+  options?: {
+    systemPrompt?: string;
+    ollamaUrl?: string;
+    model?: string;
+    maxRounds?: number;
+  }
+): Promise<ToolChatResult> {
+  const baseUrl = options?.ollamaUrl || process.env.OLLAMA_URL || 'http://ollama:11434/v1';
+  const model = options?.model || DEFAULT_MODELS.ollama;
+  const maxRounds = options?.maxRounds ?? 3;
+
+  const conversationMessages: any[] = [
+    { role: 'system', content: options?.systemPrompt || DEFAULT_SYSTEM_PROMPT },
+    ...messages,
+  ];
+
+  const toolsUsed: string[] = [];
+
+  for (let round = 0; round < maxRounds; round++) {
+    try {
+      const body: Record<string, unknown> = {
+        model,
+        messages: conversationMessages,
+        max_tokens: 2048,
+        temperature: 0.7,
+      };
+
+      // Only include tools on the first round or when there are tools available
+      if (tools.length > 0) {
+        body.tools = tools;
+        body.tool_choice = 'auto';
+      }
+
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error({ status: response.status, body: errorText }, 'Ollama tools API error');
+        return { text: null, toolsUsed };
+      }
+
+      const data = await response.json();
+      const choice = data.choices?.[0];
+      if (!choice) {
+        return { text: null, toolsUsed };
+      }
+
+      const message = choice.message;
+
+      // If no tool calls, we have our final answer
+      if (!message.tool_calls || message.tool_calls.length === 0) {
+        return { text: message.content || null, toolsUsed };
+      }
+
+      // Append the assistant message with tool_calls to conversation
+      conversationMessages.push({
+        role: 'assistant',
+        content: message.content || '',
+        tool_calls: message.tool_calls,
+      });
+
+      // Execute each tool call
+      for (const toolCall of message.tool_calls) {
+        const fnName = toolCall.function?.name;
+        if (!fnName) continue;
+
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(toolCall.function.arguments || '{}');
+        } catch {
+          args = {};
+        }
+
+        logger.info({ tool: fnName, args }, 'Executing tool call');
+        toolsUsed.push(fnName);
+
+        const result = await executeToolFn(fnName, args);
+
+        // Append tool result for the next round
+        conversationMessages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: result,
+        });
+      }
+
+      // Continue to next round — Ollama will now see the tool results
+    } catch (error) {
+      logger.error({ error: (error as Error).message, round }, 'Ollama tool-calling round failed');
+      return { text: null, toolsUsed };
+    }
+  }
+
+  // If we exhausted all rounds, return whatever we have
+  logger.warn({ maxRounds }, 'Tool-calling reached max rounds');
+  return { text: 'I was unable to complete the request within the allowed number of steps.', toolsUsed };
 }

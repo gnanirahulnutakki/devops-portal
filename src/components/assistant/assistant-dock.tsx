@@ -15,6 +15,7 @@ interface ChatMessage {
   text: string;
   source?: string;
   links?: string[];
+  toolsUsed?: string[];
 }
 
 const pageLabels: Record<string, string> = {
@@ -49,7 +50,7 @@ export function AssistantDock() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [settings, setSettings] = useState<any>(null);
-  const [routing, setRouting] = useState<"auto" | "knowledge" | "fastworkflow" | "mcp" | "llm" | "ollama">("auto");
+  const [routing, setRouting] = useState<"auto" | "knowledge" | "fastworkflow" | "mcp" | "llm" | "ollama" | "tools">("auto");
   const [llmConfigured, setLlmConfigured] = useState<boolean | null>(null);
   const [mcpUrlOverride, setMcpUrlOverride] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
@@ -136,6 +137,7 @@ export function AssistantDock() {
         text: data?.data?.response || "No response",
         source: data?.data?.source,
         links: data?.data?.links || [],
+        toolsUsed: data?.data?.tools_used || [],
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
@@ -216,6 +218,7 @@ export function AssistantDock() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="auto">Auto (Fastworkflow → Ollama → LLM → Knowledge)</SelectItem>
+                      <SelectItem value="tools">Tools (Ollama + live data)</SelectItem>
                       <SelectItem value="ollama">Ollama (local)</SelectItem>
                       <SelectItem value="knowledge">Knowledge only</SelectItem>
                       <SelectItem value="fastworkflow">Fastworkflow only</SelectItem>
@@ -258,9 +261,16 @@ export function AssistantDock() {
                     }`}
                   >
                     <p>{message.text}</p>
-                    {message.role === "assistant" && message.source ? (
-                      <div className="mt-2 flex items-center gap-2">
-                        <Badge variant="outline">{message.source}</Badge>
+                    {message.role === "assistant" && (message.source || message.toolsUsed?.length) ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {message.source ? (
+                          <Badge variant="outline">{message.source}</Badge>
+                        ) : null}
+                        {message.toolsUsed?.map((tool) => (
+                          <Badge key={tool} variant="secondary" className="text-[10px]">
+                            {tool}
+                          </Badge>
+                        ))}
                         {message.links?.length ? (
                           <a
                             href={message.links[0]}

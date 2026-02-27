@@ -1,12 +1,15 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
 import { searchKnowledge } from '@/lib/knowledge/portal-knowledge';
-import { chatWithLLM, chatWithOllama } from '@/lib/services/llm';
+import { chatWithLLM, chatWithOllama, chatWithOllamaTools } from '@/lib/services/llm';
+import { getAvailableTools, TOOL_PROVIDERS, executeTool, buildToolSystemPrompt } from '@/lib/tools';
+import { isGrafanaConfigured } from '@/lib/services/grafana';
+import { logger } from '@/lib/logger';
 
 const chatSchema = z.object({
   message: z.string().min(1).max(4000),
   context: z.string().max(2000).optional(),
-  preferredSource: z.enum(['auto', 'fastworkflow', 'mcp', 'knowledge', 'llm', 'ollama']).optional(),
+  preferredSource: z.enum(['auto', 'fastworkflow', 'mcp', 'knowledge', 'llm', 'ollama', 'tools']).optional(),
   mcpServerUrl: z.string().url().optional(),
 });
 
@@ -147,6 +150,79 @@ export const POST = withTenantApiHandler(
       return errorResponse(
         'OLLAMA_UNAVAILABLE',
         'Ollama is not reachable. Check that Ollama is deployed in the cluster.',
+        502
+      );
+    }
+
+    // Tool-calling mode: Ollama + live data tools
+    if (preferredSource === 'tools') {
+      const ollamaUrl = (settings.ollama?.url as string) || process.env.OLLAMA_URL;
+      const ollamaModel = settings.ollama?.model as string | undefined;
+
+      // Detect which providers are configured
+      const configuredProviders = new Set<string>();
+      try {
+        // ArgoCD — check if credentials/settings exist
+        const argoSettings = settings.argocd || {};
+        if (argoSettings.credentialId || settings.argocdUrl) {
+          configuredProviders.add('argocd');
+        }
+        // Also try the integration credentials table
+        const argoCreds = await ctx.db.integrationCredential.findFirst({
+          where: { organizationId: ctx.tenant.organizationId, provider: 'ARGOCD' },
+          select: { id: true },
+        });
+        if (argoCreds) configuredProviders.add('argocd');
+      } catch { /* not configured */ }
+
+      try {
+        const grafanaReady = await isGrafanaConfigured(ctx.tenant.organizationId);
+        if (grafanaReady) configuredProviders.add('grafana');
+      } catch { /* not configured */ }
+
+      try {
+        const ghCreds = await ctx.db.integrationCredential.findFirst({
+          where: { organizationId: ctx.tenant.organizationId, provider: 'GITHUB' },
+          select: { id: true },
+        });
+        if (ghCreds || process.env.GITHUB_TOKEN) configuredProviders.add('github');
+      } catch { /* not configured */ }
+
+      try {
+        const clusters = await ctx.db.cluster.count({
+          where: { organizationId: ctx.tenant.organizationId },
+        });
+        if (clusters > 0) configuredProviders.add('kubernetes');
+      } catch { /* not configured */ }
+
+      const tools = getAvailableTools(configuredProviders);
+      const systemPrompt = buildToolSystemPrompt(configuredProviders);
+
+      const toolCtx = {
+        orgId: ctx.tenant.organizationId,
+        userId: ctx.tenant.userId,
+        db: ctx.db,
+      };
+
+      const result = await chatWithOllamaTools(
+        [{ role: 'user', content: enrichedMessage }],
+        tools,
+        (name, args) => executeTool(name, args, toolCtx),
+        { systemPrompt, ollamaUrl, model: ollamaModel }
+      );
+
+      if (result.text) {
+        // Map tool names to provider badges
+        const toolBadges = [...new Set(result.toolsUsed.map((t) => TOOL_PROVIDERS[t]).filter(Boolean))];
+        return successResponse({
+          response: result.text,
+          source: 'ollama',
+          tools_used: toolBadges,
+        });
+      }
+      return errorResponse(
+        'TOOLS_FAILED',
+        'Tool-calling failed. Ollama may be unreachable or the model does not support function calling.',
         502
       );
     }
