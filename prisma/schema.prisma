@@ -39,7 +39,9 @@ model Organization {
   alertRules     AlertRule[]
   integrationCredentials IntegrationCredential[]
   securityScans  SecurityScan[]
-  
+  scorecards     Scorecard[]
+  scorecardResults ScorecardResult[]
+
   @@map("organizations")
 }
 
@@ -520,4 +522,120 @@ model SecurityScan {
   @@index([organizationId, createdAt])
   @@index([organizationId, status])
   @@map("security_scans")
+}
+
+// =============================================================================
+// Service Scorecards (Maturity Tracking)
+// =============================================================================
+
+enum ScorecardLevel {
+  BASIC
+  BRONZE
+  SILVER
+  GOLD
+}
+
+enum RuleStatus {
+  PASS
+  WARN
+  FAIL
+}
+
+enum RuleCategory {
+  RELIABILITY
+  SECURITY
+  OBSERVABILITY
+  DELIVERY
+  OWNERSHIP
+}
+
+enum CheckSource {
+  ARGOCD
+  DORA
+  GRAFANA
+  GITHUB
+  SECURITY
+  CUSTOM
+}
+
+model Scorecard {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  projectFilter String?  // Optional ArgoCD project filter
+  enabled       Boolean  @default(true)
+
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  rules   ScorecardRule[]
+  results ScorecardResult[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@map("scorecards")
+}
+
+model ScorecardRule {
+  id            String       @id @default(cuid())
+  name          String
+  description   String?
+  category      RuleCategory
+  source        CheckSource
+  level         ScorecardLevel
+
+  // Rule configuration (source-specific)
+  config        Json         @default("{}")
+  warnThreshold Json?        // Optional WARN threshold
+
+  sortOrder     Int          @default(0)
+  enabled       Boolean      @default(true)
+  weight        Int          @default(1)
+
+  // Parent scorecard
+  scorecardId   String
+  scorecard     Scorecard    @relation(fields: [scorecardId], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([scorecardId])
+  @@map("scorecard_rules")
+}
+
+model ScorecardResult {
+  id             String         @id @default(cuid())
+
+  // What was evaluated
+  scorecardId    String
+  scorecard      Scorecard      @relation(fields: [scorecardId], references: [id], onDelete: Cascade)
+  appName        String
+  appNamespace   String         @default("")
+  appProject     String         @default("")
+
+  // Computed results
+  level          ScorecardLevel
+  score          Json           // { total, passed, warned, failed }
+  ruleResults    Json           // [{ ruleId, ruleName, status, message, detail }]
+
+  evaluatedAt    DateTime       @default(now())
+
+  // Organization scope
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([scorecardId, appName, appNamespace, organizationId])
+  @@index([organizationId])
+  @@index([scorecardId])
+  @@map("scorecard_results")
 }
