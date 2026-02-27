@@ -8,7 +8,7 @@ replicaCount: 1
 
 image:
   repository: rahulnutakki/devops-portal
-  tag: "v2-ux-overhaul"
+  tag: "v2-llm-stack"
   pullPolicy: Always
 
 config:
@@ -193,3 +193,8 @@ extraEnv:
   # Security scan jobs default namespace (where portal runs)
   - name: SECURITY_SCAN_NAMESPACE
     value: "duploservices-saasops1"
+  # Self-hosted LLM stack (Ollama + OpenWebUI)
+  - name: OLLAMA_URL
+    value: "http://ollama.duploservices-saasops1.svc.cluster.local:11434/v1"
+  - name: OPENWEBUI_URL
+    value: "http://openwebui-open-webui.duploservices-saasops1.svc.cluster.local:80"
