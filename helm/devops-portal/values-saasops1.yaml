@@ -35,7 +35,7 @@ ingress:
 
 # Enable Trivy Operator for runtime vulnerability reports
 trivyOperator:
-  enabled: true
+  enabled: false
 
 # Mailpit: capture Keycloak verification emails in dev
 mailpit:
