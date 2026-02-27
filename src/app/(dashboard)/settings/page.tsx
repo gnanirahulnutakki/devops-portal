@@ -893,6 +893,85 @@ export default function SettingsPage() {
             </Card>
           </div>
 
+          {/* Ollama + OpenWebUI */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Plug className="h-5 w-5" />
+                  Ollama (Local LLM)
+                </CardTitle>
+                <CardDescription>Self-hosted LLM running in the cluster</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="font-medium">Enable Ollama</p>
+                    <p className="text-sm text-muted-foreground">Use local LLM in the auto-routing chain</p>
+                  </div>
+                  <Switch
+                    checked={draft?.ollama?.enabled ?? true}
+                    onCheckedChange={(checked) =>
+                      setDraft((prev: any) => ({ ...prev, ollama: { ...prev?.ollama, enabled: checked } }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Ollama URL</Label>
+                  <Input
+                    placeholder="http://ollama:11434/v1"
+                    value={draft?.ollama?.url || ''}
+                    onChange={(e) => setDraft((prev: any) => ({ ...prev, ollama: { ...prev?.ollama, url: e.target.value } }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Leave blank for default in-cluster URL</p>
+                </div>
+                <div className="space-y-1">
+                  <Label>Model</Label>
+                  <Input
+                    placeholder="qwen2.5:3b"
+                    value={draft?.ollama?.model || ''}
+                    onChange={(e) => setDraft((prev: any) => ({ ...prev, ollama: { ...prev?.ollama, model: e.target.value } }))}
+                  />
+                </div>
+                <Button onClick={() => updateSettings(draft)} disabled={saving}>Save Ollama Settings</Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Plug className="h-5 w-5" />
+                  OpenWebUI
+                </CardTitle>
+                <CardDescription>Full-featured chat UI for the local LLM</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="font-medium">Enable OpenWebUI</p>
+                    <p className="text-sm text-muted-foreground">Show full UI toggle in the assistant dock</p>
+                  </div>
+                  <Switch
+                    checked={draft?.openwebui?.enabled ?? true}
+                    onCheckedChange={(checked) =>
+                      setDraft((prev: any) => ({ ...prev, openwebui: { ...prev?.openwebui, enabled: checked } }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>OpenWebUI URL</Label>
+                  <Input
+                    placeholder="/openwebui"
+                    value={draft?.openwebui?.url || ''}
+                    onChange={(e) => setDraft((prev: any) => ({ ...prev, openwebui: { ...prev?.openwebui, url: e.target.value } }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Leave blank for default (proxied via /openwebui)</p>
+                </div>
+                <Button onClick={() => updateSettings(draft)} disabled={saving}>Save OpenWebUI Settings</Button>
+              </CardContent>
+            </Card>
+          </div>
+
           {/* Feature Access Control */}
           <Card>
             <CardHeader>

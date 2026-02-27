@@ -1,12 +1,12 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
 import { searchKnowledge } from '@/lib/knowledge/portal-knowledge';
-import { chatWithLLM } from '@/lib/services/llm';
+import { chatWithLLM, chatWithOllama } from '@/lib/services/llm';
 
 const chatSchema = z.object({
   message: z.string().min(1).max(4000),
   context: z.string().max(2000).optional(),
-  preferredSource: z.enum(['auto', 'fastworkflow', 'mcp', 'knowledge', 'llm']).optional(),
+  preferredSource: z.enum(['auto', 'fastworkflow', 'mcp', 'knowledge', 'llm', 'ollama']).optional(),
   mcpServerUrl: z.string().url().optional(),
 });
 
@@ -129,6 +129,28 @@ export const POST = withTenantApiHandler(
       return errorResponse('MCP_NO_RESPONSE', 'MCP server returned no response', 502);
     }
 
+    // Direct Ollama routing (in-cluster, no credentials needed)
+    if (preferredSource === 'ollama') {
+      const ollamaUrl = (settings.ollama?.url as string) || process.env.OLLAMA_URL;
+      const ollamaModel = settings.ollama?.model as string | undefined;
+      const ollamaResponse = await chatWithOllama(
+        [{ role: 'user', content: enrichedMessage }],
+        ollamaUrl,
+        ollamaModel
+      );
+      if (ollamaResponse) {
+        return successResponse({
+          response: ollamaResponse,
+          source: 'ollama',
+        });
+      }
+      return errorResponse(
+        'OLLAMA_UNAVAILABLE',
+        'Ollama is not reachable. Check that Ollama is deployed in the cluster.',
+        502
+      );
+    }
+
     // Direct LLM routing
     if (preferredSource === 'llm') {
       const llmResponse = await chatWithLLM(
@@ -169,8 +191,31 @@ export const POST = withTenantApiHandler(
       }
     }
 
-    // Auto mode: try LLM after fastworkflow
+    // Auto mode: try Ollama (in-cluster) → cloud LLM after fastworkflow
     if (preferredSource === 'auto') {
+      // Try Ollama first if it's configured/available
+      const ollamaEnabled = settings.ollama?.enabled !== false;
+      if (ollamaEnabled) {
+        const ollamaUrl = (settings.ollama?.url as string) || process.env.OLLAMA_URL;
+        const ollamaModel = settings.ollama?.model as string | undefined;
+        try {
+          const ollamaResponse = await chatWithOllama(
+            [{ role: 'user', content: enrichedMessage }],
+            ollamaUrl,
+            ollamaModel
+          );
+          if (ollamaResponse) {
+            return successResponse({
+              response: ollamaResponse,
+              source: 'ollama',
+            });
+          }
+        } catch {
+          // Fall through to cloud LLM
+        }
+      }
+
+      // Fall back to cloud LLM
       const llmResponse = await chatWithLLM(
         [{ role: 'user', content: enrichedMessage }],
         ctx.tenant.organizationId,

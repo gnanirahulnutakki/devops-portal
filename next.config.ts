@@ -34,9 +34,17 @@ const nextConfig: NextConfig = {
           // Auth is enforced by the proxy route handler (session + org membership).
         ],
       },
+      // OpenWebUI proxy routes: relaxed CSP so the OpenWebUI SPA can load its own assets.
+      {
+        source: '/openwebui/:path*',
+        headers: [
+          ...commonSecurityHeaders,
+          // No CSP — let OpenWebUI manage its own content security.
+        ],
+      },
       // All other routes: strict CSP for the portal application.
       {
-        source: '/((?!grafana/).*)',
+        source: '/((?!grafana/|openwebui/).*)',
         headers: [
           ...commonSecurityHeaders,
           {
@@ -55,6 +63,17 @@ const nextConfig: NextConfig = {
             ].join('; '),
           },
         ],
+      },
+    ];
+  },
+
+  // Rewrites — proxy OpenWebUI (ClusterIP) through Next.js
+  async rewrites() {
+    const openWebUIUrl = process.env.OPENWEBUI_URL || 'http://open-webui:80';
+    return [
+      {
+        source: '/openwebui/:path*',
+        destination: `${openWebUIUrl}/:path*`,
       },
     ];
   },
@@ -94,6 +113,8 @@ const nextConfig: NextConfig = {
   env: {
     GRAFANA_URL: process.env.GRAFANA_URL,
     GRAFANA_API_KEY: process.env.GRAFANA_API_KEY,
+    OLLAMA_URL: process.env.OLLAMA_URL,
+    OPENWEBUI_URL: process.env.OPENWEBUI_URL,
   },
 };
 

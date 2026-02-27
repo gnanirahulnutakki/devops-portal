@@ -1,0 +1,64 @@
+# OpenWebUI Helm values for self-hosted LLM stack
+# Chart: open-webui/open-webui (https://helm.openwebui.com/)
+# Deploy: helm install openwebui open-webui/open-webui -n duploservices-saasops1 -f openwebui-values.yaml
+
+# Disable built-in Ollama (we deployed our own)
+ollama:
+  enabled: false
+
+# Point to our Ollama service
+ollamaUrls:
+  - "http://ollama.duploservices-saasops1.svc.cluster.local:11434"
+
+# Disable pipelines — not needed for basic chat
+pipelines:
+  enabled: false
+
+# Persistence for chat history
+persistence:
+  enabled: true
+  size: 5Gi
+
+# Service - ClusterIP only (accessed via portal proxy or port-forward)
+service:
+  type: ClusterIP
+  port: 80
+
+# WebSocket/Redis configuration — ensure Redis lands on the right node
+websocket:
+  enabled: true
+  manager: redis
+  nodeSelector:
+    tenantname: duploservices-saasops1
+
+# Disable auth for internal access (portal handles auth via Keycloak)
+# Disable RAG/embedding to reduce memory footprint and startup time
+extraEnvVars:
+  - name: WEBUI_AUTH
+    value: "false"
+  - name: ENABLE_SIGNUP
+    value: "false"
+  - name: DEFAULT_MODELS
+    value: "qwen2.5:3b"
+  - name: WEBUI_URL
+    value: "https://devops-portal.dev01.radiantlogic.io/openwebui"
+  - name: RAG_EMBEDDING_ENGINE
+    value: ""
+  - name: ENABLE_RAG_WEB_SEARCH
+    value: "false"
+  - name: ENABLE_RAG_LOCAL_WEB_FETCH
+    value: "false"
+
+ingress:
+  enabled: false           # No public access — portal proxies via next.js rewrites
+
+nodeSelector:
+  tenantname: duploservices-saasops1
+
+resources:
+  requests:
+    cpu: "200m"
+    memory: "1Gi"
+  limits:
+    cpu: "1"
+    memory: "2Gi"

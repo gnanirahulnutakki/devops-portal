@@ -19,12 +19,14 @@ const DEFAULT_MODELS: Record<string, string> = {
   openai: 'gpt-4o',
   anthropic: 'claude-sonnet-4-20250514',
   gemini: 'gemini-2.0-flash',
+  ollama: 'qwen2.5:3b',
 };
 
 const DEFAULT_BASE_URLS: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com/v1',
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  ollama: process.env.OLLAMA_URL || 'http://ollama:11434/v1',
 };
 
 /**
@@ -95,7 +97,10 @@ export async function chatWithLLM(
     }
 
     // OpenAI-compatible endpoint (works with OpenAI, local models, Gemini via OpenAI compat)
-    headers['Authorization'] = `Bearer ${creds.apiKey}`;
+    // Ollama doesn't need auth — skip the header for local providers
+    if (provider !== 'ollama') {
+      headers['Authorization'] = `Bearer ${creds.apiKey}`;
+    }
 
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -118,6 +123,49 @@ export async function chatWithLLM(
     return data.choices?.[0]?.message?.content || null;
   } catch (error) {
     logger.error({ error: (error as Error).message, provider }, 'LLM call failed');
+    return null;
+  }
+}
+
+/**
+ * Direct Ollama chat — bypasses credential lookup.
+ * Used when the chat route explicitly targets Ollama (in-cluster, no API key needed).
+ */
+export async function chatWithOllama(
+  messages: ChatMessage[],
+  ollamaUrl?: string,
+  model?: string
+): Promise<string | null> {
+  const baseUrl = ollamaUrl || process.env.OLLAMA_URL || 'http://ollama:11434/v1';
+  const ollamaModel = model || DEFAULT_MODELS.ollama;
+
+  const fullMessages: ChatMessage[] = [
+    { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
+    ...messages,
+  ];
+
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: ollamaModel,
+        messages: fullMessages,
+        max_tokens: 2048,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({ status: response.status, body: errorText }, 'Ollama API error');
+      return null;
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Ollama call failed');
     return null;
   }
 }
