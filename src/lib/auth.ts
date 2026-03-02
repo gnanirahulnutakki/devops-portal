@@ -22,16 +22,24 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  // Support legacy SHA-256 hashes during migration
+  // Support legacy SHA-256 hashes during migration — auto-upgrade to bcrypt on match
   if (hash.length === 64 && /^[a-f0-9]+$/.test(hash)) {
     const crypto = await import('crypto');
     const sha256Hash = crypto.createHash('sha256').update(password).digest('hex');
     if (sha256Hash === hash) {
-      logger.warn('Legacy SHA-256 password detected - consider re-hashing');
+      logger.warn('Legacy SHA-256 password matched — will be upgraded to bcrypt by caller');
       return true;
     }
   }
   return bcrypt.compare(password, hash);
+}
+
+/**
+ * Check if a hash is a legacy SHA-256 (needs upgrade to bcrypt).
+ * Callers should re-hash the password after successful login.
+ */
+export function isLegacySha256Hash(hash: string): boolean {
+  return hash.length === 64 && /^[a-f0-9]+$/.test(hash);
 }
 
 // =============================================================================
@@ -156,7 +164,6 @@ export const authConfig: NextAuthConfig = {
             GoogleProvider({
               clientId: process.env.GOOGLE_CLIENT_ID,
               clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-              allowDangerousEmailAccountLinking: true,
               authorization: {
                 params: {
                   scope: 'openid email profile',
@@ -174,7 +181,6 @@ export const authConfig: NextAuthConfig = {
               issuer: process.env.AZURE_AD_TENANT_ID
                 ? `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/v2.0`
                 : undefined,
-              allowDangerousEmailAccountLinking: true,
               authorization: {
                 params: {
                   scope: 'openid email profile',
@@ -189,7 +195,6 @@ export const authConfig: NextAuthConfig = {
             GitHubProvider({
               clientId: process.env.GITHUB_CLIENT_ID,
               clientSecret: process.env.GITHUB_CLIENT_SECRET,
-              allowDangerousEmailAccountLinking: true,
               async profile(profile, tokens) {
                 let email = profile.email as string | null | undefined;
                 if (!email && tokens.access_token) {

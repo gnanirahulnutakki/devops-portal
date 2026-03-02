@@ -40,6 +40,18 @@ const startTime = Date.now();
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const verbose = url.searchParams.get('verbose') === 'true';
+
+  // Verbose mode leaks infrastructure details — require auth in production
+  if (verbose && process.env.NODE_ENV === 'production') {
+    const authHeader = request.headers.get('authorization');
+    const healthToken = process.env.HEALTH_AUTH_TOKEN || process.env.METRICS_AUTH_TOKEN;
+    if (healthToken && authHeader !== `Bearer ${healthToken}`) {
+      return NextResponse.json(
+        { error: 'Verbose health check requires authorization' },
+        { status: 401 }
+      );
+    }
+  }
   
   const checks: Record<string, HealthCheck> = {};
   

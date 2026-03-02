@@ -6,6 +6,39 @@ import { getAvailableTools, TOOL_PROVIDERS, executeTool, buildToolSystemPrompt }
 import { isGrafanaConfigured } from '@/lib/services/grafana';
 import { logger } from '@/lib/logger';
 
+/**
+ * Validate that a URL does not target internal/private network addresses (SSRF protection).
+ */
+function isExternalUrl(urlString: string): boolean {
+  try {
+    const parsed = new URL(urlString);
+    const hostname = parsed.hostname.toLowerCase();
+    // Block private/internal ranges
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      hostname === '0.0.0.0' ||
+      hostname.endsWith('.local') ||
+      hostname.endsWith('.internal') ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('172.') ||
+      hostname.startsWith('192.168.') ||
+      hostname === 'metadata.google.internal' ||
+      hostname === '169.254.169.254' // cloud metadata
+    ) {
+      return false;
+    }
+    // Block non-http(s) schemes
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const chatSchema = z.object({
   message: z.string().min(1).max(4000),
   context: z.string().max(2000).optional(),
@@ -120,6 +153,10 @@ export const POST = withTenantApiHandler(
     if (preferredSource === 'mcp') {
       if (!mcpServerUrl) {
         return errorResponse('MCP_NOT_CONFIGURED', 'MCP server URL is not configured', 400);
+      }
+      // SSRF protection: block requests to internal/private network addresses
+      if (!isExternalUrl(mcpServerUrl)) {
+        return errorResponse('MCP_INVALID_URL', 'MCP server URL must be an external HTTPS/HTTP endpoint', 400);
       }
       const result = await callMcpServer(mcpServerUrl, enrichedMessage);
       if (result) {

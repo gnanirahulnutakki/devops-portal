@@ -20,7 +20,7 @@ export default function DiagramsPage() {
     (msg: Record<string, unknown>) => {
       iframeRef.current?.contentWindow?.postMessage(
         JSON.stringify(msg),
-        "*"
+        "https://embed.diagrams.net"
       );
     },
     []

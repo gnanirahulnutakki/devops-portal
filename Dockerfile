@@ -25,12 +25,12 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Build arguments for build-time env
+# NOTE: DATABASE_URL is needed at build time for Prisma generate only.
+# NEXTAUTH_SECRET should NOT be baked into the image — pass at runtime instead.
 ARG DATABASE_URL
-ARG NEXTAUTH_SECRET
 ARG NEXTAUTH_URL
 
 ENV DATABASE_URL=${DATABASE_URL}
-ENV NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
 ENV NEXTAUTH_URL=${NEXTAUTH_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production

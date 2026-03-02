@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   // Fix Next workspace-root inference when multiple lockfiles exist.
   outputFileTracingRoot: path.join(__dirname),
+  // Don't expose framework in response headers
+  poweredByHeader: false,
   
   // PPR requires Next.js canary - enable when ready
   // experimental: {
@@ -110,9 +112,10 @@ const nextConfig: NextConfig = {
     },
   },
 
+  // NOTE: Values in `env` are inlined into client JS bundles at build time.
+  // NEVER put secrets (API keys, tokens, passwords) here.
+  // Server-only env vars should be accessed via process.env in server code only.
   env: {
-    GRAFANA_URL: process.env.GRAFANA_URL,
-    GRAFANA_API_KEY: process.env.GRAFANA_API_KEY,
     OLLAMA_URL: process.env.OLLAMA_URL,
     OPENWEBUI_URL: process.env.OPENWEBUI_URL,
   },

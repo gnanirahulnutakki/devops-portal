@@ -57,7 +57,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
     "date-fns": "^4.1.0",
-    "fast-xml-parser": "^5.3.4",
+    "fast-xml-parser": "^5.4.1",
     "ioredis": "^5.4.1",
     "ky": "^1.7.3",
     "lucide-react": "^0.469.0",

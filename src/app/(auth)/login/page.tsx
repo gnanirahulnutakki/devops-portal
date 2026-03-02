@@ -20,7 +20,9 @@ function LoginContent() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
+  // Prevent open redirect: only allow relative paths as callback URLs
+  const rawCallback = searchParams.get('callbackUrl') || '/dashboard';
+  const callbackUrl = rawCallback.startsWith('/') && !rawCallback.startsWith('//') ? rawCallback : '/dashboard';
   const authError = searchParams.get('error');
   const [popupRef, setPopupRef] = useState<Window | null>(null);
 

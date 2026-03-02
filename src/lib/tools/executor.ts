@@ -263,21 +263,46 @@ const handlers: Record<string, ToolHandler> = {
 };
 
 /**
+ * Tools that perform write/destructive operations.
+ * These are blocked from automatic LLM execution to prevent unintended mutations.
+ * The LLM will be told the tool requires user confirmation instead.
+ */
+const DESTRUCTIVE_TOOLS = new Set(['sync_argocd_app']);
+
+/**
  * Execute a tool by name with the given arguments.
  * Returns a JSON string suitable for feeding back to the LLM.
+ *
+ * Destructive tools are blocked unless `allowDestructive` is true.
+ * This prevents the LLM from triggering production changes without user consent.
  */
 export async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
-  ctx: ToolContext
+  ctx: ToolContext,
+  options?: { allowDestructive?: boolean }
 ): Promise<string> {
   const handler = handlers[toolName];
   if (!handler) {
     return JSON.stringify({ success: false, error: `Unknown tool: ${toolName}` });
   }
 
+  // Block destructive tools unless explicitly allowed
+  if (DESTRUCTIVE_TOOLS.has(toolName) && !options?.allowDestructive) {
+    logger.warn({ tool: toolName, args }, 'Blocked destructive tool call from LLM');
+    return JSON.stringify({
+      success: false,
+      error: `Tool "${toolName}" requires user confirmation. Please ask the user to confirm this action before proceeding.`,
+      requiresConfirmation: true,
+      action: toolName,
+      args,
+    });
+  }
+
   try {
     const result = await handler(args, ctx);
+    // Sanitize args for logging — log keys only, not values
+    logger.info({ tool: toolName, argKeys: Object.keys(args) }, 'Tool executed');
     return JSON.stringify(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Tool execution failed';

@@ -278,7 +278,7 @@ export async function chatWithOllamaTools(
           args = {};
         }
 
-        logger.info({ tool: fnName, args }, 'Executing tool call');
+        logger.info({ tool: fnName, argKeys: Object.keys(args) }, 'Executing tool call');
         toolsUsed.push(fnName);
 
         const result = await executeToolFn(fnName, args);

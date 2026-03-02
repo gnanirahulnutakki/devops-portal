@@ -15,22 +15,25 @@ import { getMetricsText, getMetricsContentType } from '@/lib/metrics';
  * - Scraped by Prometheus at regular intervals (15s default)
  */
 export async function GET(request: Request) {
-  // Optional: Check for metrics authorization token
+  // Metrics auth: require bearer token in production. IP-based checks are
+  // spoofable via X-Forwarded-For so we never rely on them for security.
   const authHeader = request.headers.get('authorization');
   const metricsToken = process.env.METRICS_AUTH_TOKEN;
-  
-  if (metricsToken && authHeader !== `Bearer ${metricsToken}`) {
-    // Check if request is from localhost/internal
-    const forwarded = request.headers.get('x-forwarded-for');
-    const ip = forwarded?.split(',')[0]?.trim();
-    const isInternal = !ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('10.') || ip.startsWith('172.') || ip.startsWith('192.168.');
-    
-    if (!isInternal) {
+
+  if (metricsToken) {
+    if (authHeader !== `Bearer ${metricsToken}`) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    // In production, METRICS_AUTH_TOKEN should always be set.
+    // Without it, reject all requests to prevent unauthenticated access.
+    return NextResponse.json(
+      { error: 'Metrics endpoint not configured. Set METRICS_AUTH_TOKEN.' },
+      { status: 503 }
+    );
   }
 
   try {
