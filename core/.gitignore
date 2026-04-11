@@ -1,0 +1,14 @@
+bin/
+*.exe
+*.test
+*.prof
+.DS_Store
+.idea/
+.vscode/
+vendor/
+
+# MVP demo transient logs
+/tmp/gateway.log
+/tmp/agent.log
+/tmp/gateway.pid
+/tmp/agent.pid
