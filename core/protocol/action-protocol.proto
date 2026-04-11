@@ -1,5 +1,36 @@
 syntax = "proto3";
 
+// =============================================================================
+// DEPRECATION NOTICE — 2026-04-11 post-3-reviewer synthesis
+//
+// This v0.1 draft has 5 LOAD-BEARING ISSUES flagged by the reviewer pass.
+// DO NOT BUILD Go code against this proto until it is rewritten.
+//
+// Known issues (all to be fixed before v0.1 freeze):
+//   1. OperationRequest uses google.protobuf.Struct for params — type-unsafe.
+//      Must be replaced with schema-addressed opaque payload (schema_uri +
+//      payload_digest + bytes) per revised D1. See docs/schema-distribution.md
+//   2. In-band Heartbeat contradicts DR-008 (K8s Lease). Rename to
+//      StreamKeepalive; make Lease authoritative per revised D2.
+//   3. AgentHello is referenced but not defined, and has no protocol_version
+//      or supported_features fields. Required before v0.1 per D3.
+//   4. AuditEvent is in AgentEnvelope.oneof — agent-authored audit is a trust
+//      inversion. Gateway must be sole author per revised D5. Remove from
+//      AgentEnvelope; synthesize from OperationAck/Progress/Result.
+//   5. No backpressure / flow control on the bidir stream. Simple max-
+//      concurrent-ops semaphore + bounded queues + payload caps per revised D4.
+//      Windowed flow tokens deferred to v0.2+.
+//
+// Also missing (must land before wire freeze):
+//   - CredentialReference envelope (D8 revised — see docs/credential-references.md)
+//   - Concurrency / conflict semantics (D14 — see docs/concurrency-semantics.md)
+//   - Schema distribution mechanism (D16 — see docs/schema-distribution.md)
+//
+// This file is kept in the tree for historical reference. It will be replaced
+// wholesale by the synthesis-approved v0.1 spec after the trust model is
+// locked (critical path steps 1–5 in PROJECT.md).
+// =============================================================================
+
 package tbd_project_name.action.v0;
 
 option go_package = "github.com/TBD_PROJECT_NAME/go/action/v0;actionv0";

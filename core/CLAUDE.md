@@ -4,12 +4,14 @@
 
 ## Current state (snapshot, update as it changes)
 
-**Last updated**: 2026-04-11 post-MVP
-**MVP status**: ✅ compiles and runs end-to-end (gateway + agent + k8s-get-pods adapter + client CLI)
-**v0.1 status**: proto drafted (has 5 known issues), reference implementation not yet written
+**Last updated**: 2026-04-11 post-3-reviewer synthesis
+**MVP status**: ✅ compiles and runs end-to-end (committed at `281fdea`, verified against real cluster `rlqa-usw2-dev01`)
+**v0.1 status**: architecture freeze in progress. 23-decision list (14 original + 9 new). Critical path per codex: steps 1–5 must close before any gRPC/proto v0.1 code. 5 new design docs landed 2026-04-11: `credential-references.md`, `concurrency-semantics.md`, `network-topology.md`, `schema-distribution.md`, `threat-model.md`.
+**Retracted**: D6 (K8s-native), D4 (flow tokens), D7 ("JetStream required"), D8 (adapter-pluggable trivia), D9 (wait until M4), D10 (3-channel split), D13 (private repo). See PROJECT.md for replacements.
 **Branch**: `feature/core-protocol` in worktree at `~/.claude/worktrees/devops-portal-core-protocol`
+**Timeline**: **deferred** per codex's "AI parallelism is irrelevant to the hard part" pushback. Rebaseline after architecture is frozen.
 
-For the full project narrative, read `PROJECT.md` in this directory.
+For the full project narrative and the 23-decision list, read `PROJECT.md` in this directory.
 
 ## Before you touch anything
 
