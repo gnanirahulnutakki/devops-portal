@@ -9,8 +9,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/TBD_PROJECT_NAME/core/protocol/mvp"
 )
 
+// main registers this process with the gateway and loops: poll for work, execute, submit results.
 func main() {
 	gateway := flag.String("gateway", "http://localhost:8080", "gateway base URL")
 	agentName := flag.String("agent-name", "local-agent", "agent name for registration")
@@ -74,8 +77,13 @@ func main() {
 	}
 }
 
+// register POSTs to the gateway and returns the assigned agent ID.
 func register(ctx context.Context, client *http.Client, gateway, agentName string) (string, error) {
-	body, _ := json.Marshal(mvp.RegisterRequest{AgentName: agentName})
+	body, err := json.Marshal(mvp.RegisterRequest{AgentName: agentName})
+	if err != nil {
+		log.Printf("register: json.Marshal: %v", err)
+		return "", err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, gateway+"/register", bytes.NewReader(body))
 	if err != nil {
 		return "", err
@@ -98,9 +106,18 @@ func register(ctx context.Context, client *http.Client, gateway, agentName strin
 	return rr.AgentID, nil
 }
 
+// poll GETs the next command for this agent, or nil if none (e.g. 204).
 func poll(ctx context.Context, client *http.Client, gateway, agentName string) (*mvp.Command, error) {
-	url := fmt.Sprintf("%s/poll?agent_name=%s", gateway, agentName)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	base, err := url.Parse(strings.TrimRight(gateway, "/"))
+	if err != nil {
+		return nil, err
+	}
+	pollURL := base.JoinPath("poll")
+	q := url.Values{}
+	q.Set("agent_name", agentName)
+	pollURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pollURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +142,7 @@ func poll(ctx context.Context, client *http.Client, gateway, agentName string) (
 	return &cmd, nil
 }
 
+// execute runs the dispatcher for the command and builds a Result.
 func execute(ctx context.Context, disp *dispatcher.Dispatcher, cmd *mvp.Command) *mvp.Result {
 	data, err := disp.Execute(ctx, cmd.AdapterName, cmd.Params)
 	r := &mvp.Result{OperationID: cmd.OperationID}
@@ -137,8 +155,13 @@ func execute(ctx context.Context, disp *dispatcher.Dispatcher, cmd *mvp.Command)
 	return r
 }
 
+// submitResult POSTs the execution result to the gateway.
 func submitResult(ctx context.Context, client *http.Client, gateway string, result *mvp.Result) error {
-	body, _ := json.Marshal(result)
+	body, err := json.Marshal(result)
+	if err != nil {
+		log.Printf("submit-result: json.Marshal: %v", err)
+		return err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, gateway+"/submit-result", bytes.NewReader(body))
 	if err != nil {
 		return err

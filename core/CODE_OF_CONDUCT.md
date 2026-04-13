@@ -44,7 +44,7 @@ This Code of Conduct applies to all project spaces, including but not limited to
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project's Code of Conduct committee at:
 
-- **Email**: `conduct@TBD_PROJECT_NAME.dev` *(to be established at name clearance)*
+- **Email**: `89947795+gnanirahulnutakki@users.noreply.github.com` *(interim — will move to `conduct@<project>.dev` at name clearance)*
 - **Escalation**: for complaints about a committee member, contact the [CNCF Code of Conduct Committee](https://www.cncf.io/conduct/) directly
 
 All reports will be reviewed and investigated and will result in a response that is deemed necessary and appropriate to the circumstances. The project team is obligated to maintain confidentiality with regard to the reporter of an incident.

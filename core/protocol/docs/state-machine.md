@@ -23,7 +23,7 @@ State diagram:
                  |UNKNOWN |
                  +--------+
 
-`ACCEPTED` is the first durable state. The gateway MUST not emit `ACCEPTED` until it has committed the operation to durable storage using an inbox/outbox pattern over NATS JetStream. “Durable” here means a process crash, pod eviction, or control-plane restart cannot silently lose the operation. If the gateway crashes after persistence but before replying to the caller, the recovered gateway MUST either replay the request from the durable log or explicitly roll it back. Silent loss is forbidden.
+`ACCEPTED` is the first durable state. The gateway MUST not emit `ACCEPTED` until it has committed the operation to durable storage using a pluggable `DurableQueue` implementation (see D7 — reference implementations include SQLite-backed WAL and NATS JetStream). “Durable” here means a process crash, pod eviction, or control-plane restart cannot silently lose the operation. If the gateway crashes after persistence but before replying to the caller, the recovered gateway MUST either replay the request from the durable log or explicitly roll it back. Silent loss is forbidden.
 
 `RUNNING` starts only after the agent has received the request, evaluated local policy, and acknowledged execution. `SUCCEEDED`, `FAILED`, and `CANCELLED` are terminal. `UNKNOWN` is also terminal per DR-005. It is not a transient “waiting” state; it is the explicit statement that the system no longer has enough evidence to claim success, failure, or cancellation.
 

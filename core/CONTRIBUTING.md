@@ -102,10 +102,10 @@ buf lint
 buf format
 ```
 
-For protocol changes, also:
+For protocol changes, also run the conformance tests once the conformance suite exists (planned for M1):
 
 ```
-go test ./conformance/...
+go test ./conformance/...   # when available
 ```
 
 ### 5. Open a PR

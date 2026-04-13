@@ -13,8 +13,8 @@ This is the minimum-viable demonstration that the protocol shape works: a centra
 | Identity | agent name, in-memory | CSR + join token + mTLS + rotation (DR-006) |
 | Policy | none (allow-all) | OPA/CEL dual placement (DR-002) |
 | Audit | stdout log | OTLP sink + redaction (DR-004) |
-| Durability | in-memory map | NATS JetStream inbox/outbox (DR-005) |
-| Adapters | `k8s-get-pods` only | full read + policy-gated write set |
+| Durability | in-memory map | pluggable DurableQueue (DR-005 / D7) |
+| Adapters | `k8s-get-pods` only | read-only adapter set (D12) |
 | TLS / auth | none, localhost only | mTLS mandatory |
 | Cluster scope | laptop (whatever kubeconfig points at) | multi-cluster fleet |
 

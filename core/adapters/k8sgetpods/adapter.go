@@ -13,9 +13,10 @@ import (
 )
 
 // GetPods lists pods in a namespace and returns the PodList as JSON bytes.
+// ctx is passed to the Kubernetes API client for cancellation and deadlines.
 // If kubeconfig is empty, it falls back to $KUBECONFIG and then ~/.kube/config.
 // If namespace is empty, client-go lists pods from all namespaces.
-func GetPods(kubeconfig string, namespace string) ([]byte, error) {
+func GetPods(ctx context.Context, kubeconfig string, namespace string) ([]byte, error) {
 	if kubeconfig == "" {
 		kubeconfig = os.Getenv("KUBECONFIG")
 	}
@@ -37,7 +38,7 @@ func GetPods(kubeconfig string, namespace string) ([]byte, error) {
 		return nil, fmt.Errorf("k8s-get-pods: %w", err)
 	}
 
-	pods, err := clientset.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
+	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("k8s-get-pods: %w", err)
 	}

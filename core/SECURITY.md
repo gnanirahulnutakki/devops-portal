@@ -6,7 +6,7 @@
 
 If you believe you have found a security vulnerability in TBD_PROJECT_NAME, please report it privately to:
 
-- **Email**: `security@TBD_PROJECT_NAME.dev` *(to be established at name clearance)*
+- **Email**: `89947795+gnanirahulnutakki@users.noreply.github.com` *(interim — will move to `security@<project>.dev` at name clearance)*
 - **GitHub private advisory**: use the repository's "Security" tab → "Report a vulnerability"
 
 Please include as much of the following as possible:

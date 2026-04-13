@@ -38,20 +38,25 @@ core/
 ├── CODE_OF_CONDUCT.md             # CNCF community CoC
 ├── go.mod                         # single module for the whole core tree
 ├── protocol/
-│   ├── action-protocol.proto      # THE wire spec (v0.1 draft)
+│   ├── action-protocol.proto      # v0.1 wire spec DRAFT (deprecated, to be rewritten)
 │   ├── buf.yaml                   # buf lint config
 │   ├── buf.gen.yaml               # buf codegen config
-│   ├── v0/                        # generated Go types (after buf generate)
 │   └── docs/
 │       ├── state-machine.md       # operation lifecycle spec
 │       ├── identity-lifecycle.md  # CSR + join + rotation + revocation
 │       ├── policy-placement.md    # dual OPA/CEL, central + local
 │       ├── audit-storage.md       # OTLP + object store, NOT CRDs
-│       └── upstream-first-rule.md # project/product separation
+│       ├── upstream-first-rule.md # project/product separation
+│       ├── credential-references.md   # D8: credential envelope
+│       ├── concurrency-semantics.md   # D14: conflicts + locking
+│       ├── network-topology.md        # D15: mTLS + proxy matrix
+│       ├── schema-distribution.md     # D16: schema URIs + versioning
+│       ├── threat-model.md            # D20: STRIDE threat model
+│       └── why-not-ocm.md            # architectural justification vs OCM
 ├── gateway/                       # reference Go gateway
 ├── agent/                         # reference Go agent
 ├── adapters/                      # minimal reference adapters
-└── conformance/                   # conformance test suite
+└── conformance/                   # planned — not yet implemented
 ```
 
 ## Design constraints (hard rules)

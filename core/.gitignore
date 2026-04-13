@@ -6,6 +6,9 @@ bin/
 .idea/
 .vscode/
 vendor/
+.gocache/
+Library/
+go/
 
 # MVP demo transient logs
 /tmp/gateway.log

@@ -1,3 +1,4 @@
+// Package main runs the HTTP gateway for the MVP protocol: listens, serves routes, and shuts down on SIGINT/SIGTERM.
 package main
 
 import (
@@ -21,8 +22,12 @@ func main() {
 
 	srv := server.New()
 	httpSrv := &http.Server{
-		Addr:    *addr,
-		Handler: srv.Handler(),
+		Addr:              *addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      90 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
