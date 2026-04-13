@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: protocol-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: protocol-agent-view
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: protocol-agent
+    namespace: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: protocol-agent
+  labels:
+    app: protocol-agent
+    component: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: protocol-agent
+  template:
+    metadata:
+      labels:
+        app: protocol-agent
+        component: agent
+    spec:
+      serviceAccountName: protocol-agent
+      containers:
+        - name: agent
+          image: ghcr.io/gnanirahulnutakki/action-protocol-agent:latest
+          args:
+            - "-gateway"
+            - "http://protocol-gateway:8080"
+            - "-agent-name"
+            - "rlqa-usw2-dev01"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi

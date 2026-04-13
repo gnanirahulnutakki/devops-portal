@@ -9,26 +9,35 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 // GetPods lists pods in a namespace and returns the PodList as JSON bytes.
 // ctx is passed to the Kubernetes API client for cancellation and deadlines.
-// If kubeconfig is empty, it falls back to $KUBECONFIG and then ~/.kube/config.
+// If kubeconfig is empty, it tries $KUBECONFIG, then ~/.kube/config, then
+// in-cluster config (for running inside a K8s pod).
 // If namespace is empty, client-go lists pods from all namespaces.
 func GetPods(ctx context.Context, kubeconfig string, namespace string) ([]byte, error) {
 	if kubeconfig == "" {
 		kubeconfig = os.Getenv("KUBECONFIG")
 	}
 	if kubeconfig == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("k8s-get-pods: %w", err)
+		home, _ := os.UserHomeDir()
+		candidate := filepath.Join(home, ".kube", "config")
+		if _, err := os.Stat(candidate); err == nil {
+			kubeconfig = candidate
 		}
-		kubeconfig = filepath.Join(home, ".kube", "config")
 	}
 
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	var config *rest.Config
+	var err error
+	if kubeconfig != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	} else {
+		// In-cluster config when running inside a K8s pod
+		config, err = rest.InClusterConfig()
+	}
 	if err != nil {
 		return nil, fmt.Errorf("k8s-get-pods: %w", err)
 	}

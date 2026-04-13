@@ -1,6 +1,6 @@
 module github.com/TBD_PROJECT_NAME/core
 
-go 1.25.8
+go 1.25.0
 
 require (
 	k8s.io/apimachinery v0.35.3

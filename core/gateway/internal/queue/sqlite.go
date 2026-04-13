@@ -257,7 +257,7 @@ INSERT INTO operations (
 	q.dequeueSelectStmt, err = q.db.Prepare(`
 SELECT id, agent_id, adapter_name, params, status, result, created_at, updated_at, expires_at
 FROM operations
-WHERE agent_id = ? AND status = ? AND expires_at > ?
+WHERE agent_id = ? AND status = ? AND (expires_at = '0001-01-01T00:00:00Z' OR expires_at > ?)
 ORDER BY created_at ASC, id ASC
 LIMIT 1
 `)

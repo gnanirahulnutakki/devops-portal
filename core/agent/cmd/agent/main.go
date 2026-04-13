@@ -32,7 +32,7 @@ func main() {
 
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	agentID, err := register(ctx, client, *gateway, *agentName)
+	agentID, agentToken, err := register(ctx, client, *gateway, *agentName)
 	if err != nil {
 		log.Fatalf("registration failed: %v", err)
 	}
@@ -49,7 +49,7 @@ func main() {
 		default:
 		}
 
-		cmd, err := poll(ctx, client, *gateway, *agentName)
+		cmd, err := poll(ctx, client, *gateway, agentID, agentToken)
 		if err != nil {
 			log.Printf("poll error: %v; retrying in %s", err, backoff)
 			select {
@@ -71,56 +71,57 @@ func main() {
 		log.Printf("executing op=%s adapter=%s", cmd.OperationID, cmd.AdapterName)
 		result := execute(ctx, disp, cmd)
 
-		if err := submitResult(ctx, client, *gateway, result); err != nil {
+		if err := submitResult(ctx, client, *gateway, agentToken, result); err != nil {
 			log.Printf("submit-result failed for op=%s: %v", cmd.OperationID, err)
 		}
 	}
 }
 
-// register POSTs to the gateway and returns the assigned agent ID.
-func register(ctx context.Context, client *http.Client, gateway, agentName string) (string, error) {
+// register POSTs to the gateway and returns the assigned agent ID and auth token.
+func register(ctx context.Context, client *http.Client, gateway, agentName string) (string, string, error) {
 	body, err := json.Marshal(mvp.RegisterRequest{AgentName: agentName})
 	if err != nil {
 		log.Printf("register: json.Marshal: %v", err)
-		return "", err
+		return "", "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, gateway+"/register", bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("register returned %d", resp.StatusCode)
+		return "", "", fmt.Errorf("register returned %d", resp.StatusCode)
 	}
 	var rr mvp.RegisterResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rr); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return rr.AgentID, nil
+	return rr.AgentID, rr.AgentToken, nil
 }
 
-// poll GETs the next command for this agent, or nil if none (e.g. 204).
-func poll(ctx context.Context, client *http.Client, gateway, agentName string) (*mvp.Command, error) {
+// poll GETs the next command for this agent using agent_id + auth token.
+func poll(ctx context.Context, client *http.Client, gateway, agentID, agentToken string) (*mvp.Command, error) {
 	base, err := url.Parse(strings.TrimRight(gateway, "/"))
 	if err != nil {
 		return nil, err
 	}
 	pollURL := base.JoinPath("poll")
 	q := url.Values{}
-	q.Set("agent_name", agentName)
+	q.Set("agent_id", agentID)
 	pollURL.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pollURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("X-Agent-Token", agentToken)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -155,8 +156,8 @@ func execute(ctx context.Context, disp *dispatcher.Dispatcher, cmd *mvp.Command)
 	return r
 }
 
-// submitResult POSTs the execution result to the gateway.
-func submitResult(ctx context.Context, client *http.Client, gateway string, result *mvp.Result) error {
+// submitResult POSTs the execution result to the gateway with auth token.
+func submitResult(ctx context.Context, client *http.Client, gateway, agentToken string, result *mvp.Result) error {
 	body, err := json.Marshal(result)
 	if err != nil {
 		log.Printf("submit-result: json.Marshal: %v", err)
@@ -167,6 +168,7 @@ func submitResult(ctx context.Context, client *http.Client, gateway string, resu
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Agent-Token", agentToken)
 
 	resp, err := client.Do(req)
 	if err != nil {

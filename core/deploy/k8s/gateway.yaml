@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: protocol-gateway
+  labels:
+    app: protocol-gateway
+    component: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: protocol-gateway
+  template:
+    metadata:
+      labels:
+        app: protocol-gateway
+        component: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: ghcr.io/gnanirahulnutakki/action-protocol-gateway:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          args:
+            - "-addr"
+            - "0.0.0.0:8080"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: protocol-gateway
+  labels:
+    app: protocol-gateway
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: protocol-gateway
