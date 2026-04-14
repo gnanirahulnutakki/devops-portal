@@ -1,0 +1,64 @@
+---
+# Agent deployed in a REMOTE cluster, dialing out to the gateway's public LoadBalancer.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: protocol-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: protocol-agent-view
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: protocol-agent
+    namespace: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: protocol-agent
+  labels:
+    app: protocol-agent
+    component: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: protocol-agent
+  template:
+    metadata:
+      labels:
+        app: protocol-agent
+        component: agent
+    spec:
+      serviceAccountName: protocol-agent
+      containers:
+        - name: agent
+          image: ghcr.io/gnanirahulnutakki/action-protocol-agent:latest
+          # PROTOCOL_GATEWAY_URL = the public NLB DNS of the gateway in the OTHER cluster.
+          # CHANGE THIS to the actual LoadBalancer hostname after gateway deployment.
+          args:
+            - "-gateway"
+            - "$(PROTOCOL_GATEWAY_URL)"
+            - "-agent-name"
+            - "$(AGENT_NAME)"
+          env:
+            - name: PROTOCOL_GATEWAY_URL
+              value: "http://REPLACE_WITH_GATEWAY_NLB_DNS:8080"
+            - name: AGENT_NAME
+              valueFrom:
+                fieldRef:
+                  # Use the cluster identifier — operator should patch this per deployment
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi

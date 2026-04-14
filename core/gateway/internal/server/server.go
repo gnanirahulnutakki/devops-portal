@@ -2,10 +2,12 @@ package server
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,21 +47,29 @@ type operationRecord struct {
 	ExpiresAt   time.Time
 }
 
+// Server is the in-memory MVP gateway implementation.
 type Server struct {
-	mu               sync.RWMutex
-	agentsByID       map[string]*agentRecord
-	agentNameToID    map[string]string
-	pending          map[string]chan mvp.Result
-	operations       map[string]*operationRecord
-	pollWait         time.Duration
+	mu                 sync.RWMutex
+	agentsByID         map[string]*agentRecord
+	agentNameToID      map[string]string
+	pending            map[string]chan mvp.Result
+	operations         map[string]*operationRecord
+	pollWait           time.Duration
 	executeWaitTimeout time.Duration
-	agentTTL         time.Duration
-	evictionInterval time.Duration
-	operationTTL     time.Duration
+	agentTTL           time.Duration
+	evictionInterval   time.Duration
+	operationTTL       time.Duration
+	ExecuteToken       string
 }
 
-// New creates a new in-memory MVP gateway server.
+// New creates a new server in dev mode with execute auth disabled.
 func New() *Server {
+	return NewWithToken("")
+}
+
+// NewWithToken creates a new server with optional bearer-token auth for
+// /execute and /result.
+func NewWithToken(token string) *Server {
 	s := &Server{
 		agentsByID:         make(map[string]*agentRecord),
 		agentNameToID:      make(map[string]string),
@@ -70,7 +80,15 @@ func New() *Server {
 		agentTTL:           defaultAgentTTL,
 		evictionInterval:   defaultEvictionEvery,
 		operationTTL:       defaultOperationTTL,
+		ExecuteToken:       token,
 	}
+
+	if token == "" {
+		log.Printf("execute auth: DISABLED — dev mode only")
+	} else {
+		log.Printf("execute auth: bearer token required")
+	}
+
 	go s.startEviction()
 	return s
 }
@@ -188,7 +206,6 @@ func (s *Server) handlePoll(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	case <-r.Context().Done():
 		log.Printf("poll-cancelled agent_id=%s", agentID)
-		return
 	}
 }
 
@@ -225,7 +242,6 @@ func (s *Server) handleSubmitResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if time.Now().After(op.ExpiresAt) {
-		op.Status = expiredStatus
 		delete(s.operations, res.OperationID)
 		delete(s.pending, res.OperationID)
 		s.mu.Unlock()
@@ -270,6 +286,14 @@ func (s *Server) handleSubmitResult(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
+	// Auth is intentionally checked before method dispatch so unauthenticated
+	// callers do not learn endpoint semantics.
+	if s.ExecuteToken != "" && !validateBearerToken(r, s.ExecuteToken) {
+		log.Printf("execute-unauthorized remote=%s", r.RemoteAddr)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -359,11 +383,18 @@ func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
 		})
 	case <-r.Context().Done():
 		log.Printf("execute-cancelled operation_id=%s", opID)
-		return
 	}
 }
 
 func (s *Server) handleGetResult(w http.ResponseWriter, r *http.Request) {
+	// Auth is intentionally checked before method dispatch so unauthenticated
+	// callers do not learn endpoint semantics.
+	if s.ExecuteToken != "" && !validateBearerToken(r, s.ExecuteToken) {
+		log.Printf("result-unauthorized remote=%s", r.RemoteAddr)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -383,7 +414,6 @@ func (s *Server) handleGetResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if time.Now().After(op.ExpiresAt) {
-		op.Status = expiredStatus
 		delete(s.operations, operationID)
 		delete(s.pending, operationID)
 		s.mu.Unlock()
@@ -439,7 +469,6 @@ func (s *Server) pruneExpiredOperations(now time.Time) {
 
 	for operationID, op := range s.operations {
 		if now.After(op.ExpiresAt) {
-			op.Status = expiredStatus
 			delete(s.operations, operationID)
 			delete(s.pending, operationID)
 			log.Printf("operation-expired operation_id=%s", operationID)
@@ -454,6 +483,21 @@ func (s *Server) agentHasPendingOperationLocked(agentID string) bool {
 		}
 	}
 	return false
+}
+
+func validateBearerToken(r *http.Request, expected string) bool {
+	if expected == "" {
+		return true
+	}
+
+	const prefix = "Bearer "
+	header := r.Header.Get("Authorization")
+	if !strings.HasPrefix(header, prefix) {
+		return false
+	}
+
+	provided := strings.TrimSpace(strings.TrimPrefix(header, prefix))
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

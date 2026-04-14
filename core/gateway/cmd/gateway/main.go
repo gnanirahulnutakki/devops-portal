@@ -1,4 +1,3 @@
-// Package main runs the HTTP gateway for the MVP protocol: listens, serves routes, and shuts down on SIGINT/SIGTERM.
 package main
 
 import (
@@ -6,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -17,17 +17,15 @@ func main() {
 	addr := flag.String("addr", "localhost:8080", "listen address")
 	flag.Parse()
 
+	executeToken := os.Getenv("EXECUTE_TOKEN")
+	srv := server.NewWithToken(executeToken)
+
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	srv := server.New()
 	httpSrv := &http.Server{
-		Addr:              *addr,
-		Handler:           srv.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      90 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		Addr:    *addr,
+		Handler: srv.Handler(),
 	}
 
 	go func() {

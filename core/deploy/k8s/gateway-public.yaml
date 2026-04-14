@@ -1,0 +1,103 @@
+---
+# Public-facing gateway with LoadBalancer + bearer-token auth.
+# For multi-cluster deployment where agents in other clusters dial in.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: protocol-gateway-secrets
+type: Opaque
+stringData:
+  # CHANGE THIS before deploying. Used for client → gateway auth on /execute.
+  # Generate with: openssl rand -hex 32
+  execute-token: "REPLACE_ME_WITH_OPENSSL_RAND_HEX_32"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: protocol-gateway
+  labels:
+    app: protocol-gateway
+    component: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: protocol-gateway
+  template:
+    metadata:
+      labels:
+        app: protocol-gateway
+        component: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: ghcr.io/gnanirahulnutakki/action-protocol-gateway:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          args:
+            - "-addr"
+            - "0.0.0.0:8080"
+          env:
+            - name: EXECUTE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: protocol-gateway-secrets
+                  key: execute-token
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+---
+# LoadBalancer for cross-cluster agent-to-gateway connections.
+# Duplo clusters auto-provision an ALB/NLB for type=LoadBalancer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: protocol-gateway-public
+  labels:
+    app: protocol-gateway
+  annotations:
+    # Duplo + AWS hint: external NLB
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: protocol-gateway
+---
+# Internal ClusterIP for in-cluster portal → gateway calls.
+apiVersion: v1
+kind: Service
+metadata:
+  name: protocol-gateway
+  labels:
+    app: protocol-gateway
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: protocol-gateway
