@@ -1,6 +1,6 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
-import { saveCredentials } from '@/lib/services/integration-credentials';
+import { saveCredentials, parseExpiresAt } from '@/lib/services/integration-credentials';
 import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/encryption';
 
@@ -8,6 +8,7 @@ const createGitHubAccountSchema = z.object({
   name: z.string().min(2).max(100),
   token: z.string().min(10),
   organization: z.string().optional(),
+  expiresAt: z.union([z.string().datetime(), z.string().date(), z.null()]).optional(),
 });
 
 export const GET = withTenantApiHandler(
@@ -23,6 +24,10 @@ export const GET = withTenantApiHandler(
           lastUsedAt: true,
           lastErrorAt: true,
           lastError: true,
+          expiresAt: true,
+          rotatedAt: true,
+          healthStatus: true,
+          lastHealthCheckAt: true,
           createdAt: true,
           updatedAt: true,
           credentials: true,
@@ -59,13 +64,14 @@ export const POST = withTenantApiHandler(
     const validation = await validateRequest(request, createGitHubAccountSchema);
     if ('error' in validation) return validation.error;
 
-    const { name, token, organization } = validation.data;
+    const { name, token, organization, expiresAt } = validation.data;
     const result = await saveCredentials(
       ctx.tenant.organizationId,
       'GITHUB',
       { token, organization },
       name,
-      ctx.tenant.userId
+      ctx.tenant.userId,
+      parseExpiresAt(expiresAt)
     );
 
     if (!result.success) {

@@ -1,6 +1,6 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
-import { saveCredentials } from '@/lib/services/integration-credentials';
+import { saveCredentials, parseExpiresAt } from '@/lib/services/integration-credentials';
 import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/encryption';
 
@@ -10,6 +10,7 @@ const createSupabaseAccountSchema = z
     url: z.string().url(),
     anonKey: z.string().min(10).optional(),
     serviceRoleKey: z.string().min(10).optional(),
+    expiresAt: z.union([z.string().datetime(), z.string().date(), z.null()]).optional(),
   })
   .refine((data) => data.anonKey || data.serviceRoleKey, {
     message: 'anonKey or serviceRoleKey is required',
@@ -29,6 +30,10 @@ export const GET = withTenantApiHandler(
           lastUsedAt: true,
           lastErrorAt: true,
           lastError: true,
+          expiresAt: true,
+          rotatedAt: true,
+          healthStatus: true,
+          lastHealthCheckAt: true,
           createdAt: true,
           updatedAt: true,
           credentials: true,
@@ -69,14 +74,15 @@ export const POST = withTenantApiHandler(
     const validation = await validateRequest(request, createSupabaseAccountSchema);
     if ('error' in validation) return validation.error;
 
-    const { name, url, anonKey, serviceRoleKey } = validation.data;
+    const { name, url, anonKey, serviceRoleKey, expiresAt } = validation.data;
 
     const result = await saveCredentials(
       ctx.tenant.organizationId,
       'SUPABASE',
       { url, anonKey, serviceRoleKey },
       name,
-      ctx.tenant.userId
+      ctx.tenant.userId,
+      parseExpiresAt(expiresAt)
     );
 
     if (!result.success) {

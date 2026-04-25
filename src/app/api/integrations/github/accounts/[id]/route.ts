@@ -1,12 +1,13 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
-import { deleteCredentialById, updateCredentialById } from '@/lib/services/integration-credentials';
+import { deleteCredentialById, updateCredentialById, parseExpiresAt } from '@/lib/services/integration-credentials';
 
 const updateSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   enabled: z.boolean().optional(),
   token: z.string().min(10).optional(),
   organization: z.string().optional(),
+  expiresAt: z.union([z.string().datetime(), z.string().date(), z.null()]).optional(),
 });
 
 export const PATCH = withTenantApiHandler(
@@ -17,7 +18,7 @@ export const PATCH = withTenantApiHandler(
     const validation = await validateRequest(request, updateSchema);
     if ('error' in validation) return validation.error;
 
-    const { name, enabled, token, organization } = validation.data;
+    const { name, enabled, token, organization, expiresAt } = validation.data;
     const credentialsPatch =
       token || typeof organization === 'string'
         ? ({ ...(token ? { token } : {}), ...(typeof organization === 'string' ? { organization } : {}) } as any)
@@ -26,6 +27,7 @@ export const PATCH = withTenantApiHandler(
     const result = await updateCredentialById(ctx.tenant.organizationId, 'GITHUB', id, {
       name,
       enabled,
+      expiresAt: parseExpiresAt(expiresAt),
       credentialsPatch,
     });
     if (!result.success) {
