@@ -1,6 +1,7 @@
 'use client';
 
 import { use } from 'react';
+import Link from 'next/link';
 import { ClusterResourceTable } from '@/components/dashboard/cluster-resource-table';
 import { Badge } from '@/components/ui/badge';
 
@@ -28,7 +29,18 @@ export default function PodsPage({ params }: { params: Promise<{ id: string }> }
       resource="pods"
       title="Pods"
       columns={[
-        { key: 'name', label: 'Name', render: (p) => <span className="font-medium">{p.name}</span> },
+        {
+          key: 'name',
+          label: 'Name',
+          render: (p) => (
+            <Link
+              href={`/clusters/${id}/pods/${encodeURIComponent(p.name)}?namespace=${encodeURIComponent(p.namespace)}`}
+              className="font-medium hover:underline"
+            >
+              {p.name}
+            </Link>
+          ),
+        },
         { key: 'namespace', label: 'Namespace', render: (p) => <Badge variant="secondary">{p.namespace}</Badge> },
         { key: 'status', label: 'Status', render: (p) => <Badge variant={STATUS_VARIANT(p.status)}>{p.status}</Badge> },
         { key: 'ready', label: 'Ready', render: (p) => p.ready ?? '—' },
