@@ -1797,5 +1797,356 @@ export const OPENAPI_SPEC = {
         },
       },
     },
+    '/api/security/scans/{id}/download': {
+      get: {
+        tags: ['Security'],
+        summary: 'Download scan report',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Scan report file' },
+        },
+      },
+    },
+    '/api/security/cluster/trivy/reports': {
+      get: {
+        tags: ['Security'],
+        summary: 'List Trivy operator reports from cluster',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Trivy report list', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/security/code-scanning/alerts': {
+      get: {
+        tags: ['Security'],
+        summary: 'GitHub code-scanning alerts',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Alert list', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/security/dependabot/alerts': {
+      get: {
+        tags: ['Security'],
+        summary: 'GitHub Dependabot alerts',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Alert list', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/security/vanta/vulnerabilities': {
+      get: {
+        tags: ['Security'],
+        summary: 'Vanta vulnerability reports',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Vulnerability list', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/auth/connections': {
+      get: {
+        tags: ['Auth'],
+        summary: 'List OAuth connections for current user',
+        responses: {
+          200: { description: 'Connection list', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      delete: {
+        tags: ['Auth'],
+        summary: 'Disconnect an OAuth provider',
+        parameters: [
+          { name: 'provider', in: 'query', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Disconnected', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/features': {
+      get: {
+        tags: ['Organizations'],
+        summary: 'Resolved feature policy for current user/org',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Feature policy', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/notifications': {
+      get: {
+        tags: ['Organizations'],
+        summary: 'List notifications for current user',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Notification list', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/organizations/{id}': {
+      patch: {
+        tags: ['Organizations'],
+        summary: 'Update an organization',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Updated', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      delete: {
+        tags: ['Organizations'],
+        summary: 'Delete an organization',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Deleted', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/monitoring/dora': {
+      get: {
+        tags: ['Monitoring'],
+        summary: 'DORA metrics (deployment frequency, lead time, change-failure rate, MTTR)',
+        parameters: [
+          organizationHeader,
+          { name: 'days', in: 'query', required: false, schema: { type: 'integer' } },
+        ],
+        responses: {
+          200: { description: 'DORA metrics', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/monitoring/grafana/insights': {
+      get: {
+        tags: ['Grafana'],
+        summary: 'Aggregated alert + dashboard insights from Grafana',
+        parameters: [
+          organizationHeader,
+          { name: 'credentialId', in: 'query', required: false, schema: { type: 'string' } },
+          { name: 'range', in: 'query', required: false, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Grafana insights', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/scorecards/results': {
+      get: {
+        tags: ['Scorecards'],
+        summary: 'List scorecard evaluation results',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Scorecard results', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/integrations/argocd/accounts': {
+      get: {
+        tags: ['Integrations'],
+        summary: 'List ArgoCD account credentials for current org',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'ArgoCD accounts', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      post: {
+        tags: ['Integrations'],
+        summary: 'Create an ArgoCD account credential',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Created', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/integrations/argocd/accounts/{id}': {
+      patch: {
+        tags: ['Integrations'],
+        summary: 'Update an ArgoCD account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Updated', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      delete: {
+        tags: ['Integrations'],
+        summary: 'Delete an ArgoCD account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Deleted', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/integrations/github/accounts/{id}': {
+      patch: {
+        tags: ['Integrations'],
+        summary: 'Update a GitHub account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Updated', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      delete: {
+        tags: ['Integrations'],
+        summary: 'Delete a GitHub account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Deleted', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/integrations/grafana/accounts/{id}': {
+      patch: {
+        tags: ['Integrations'],
+        summary: 'Update a Grafana account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Updated', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      delete: {
+        tags: ['Integrations'],
+        summary: 'Delete a Grafana account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Deleted', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/integrations/llm/accounts/{id}': {
+      patch: {
+        tags: ['Integrations'],
+        summary: 'Update an LLM account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Updated', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      delete: {
+        tags: ['Integrations'],
+        summary: 'Delete an LLM account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Deleted', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/integrations/supabase/accounts/{id}': {
+      patch: {
+        tags: ['Integrations'],
+        summary: 'Update a Supabase account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Updated', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      delete: {
+        tags: ['Integrations'],
+        summary: 'Delete a Supabase account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Deleted', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/integrations/uptime-kuma/accounts/{id}': {
+      patch: {
+        tags: ['Integrations'],
+        summary: 'Update an Uptime Kuma account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Updated', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+      delete: {
+        tags: ['Integrations'],
+        summary: 'Delete an Uptime Kuma account credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Deleted', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/integrations/credentials/health': {
+      get: {
+        tags: ['Integrations'],
+        summary: 'Aggregated credential health summary for current org',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'Credential health', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/integrations/credentials/expiring': {
+      get: {
+        tags: ['Integrations'],
+        summary: 'List credentials expiring within N days',
+        parameters: [
+          organizationHeader,
+          { name: 'days', in: 'query', required: false, schema: { type: 'integer' } },
+        ],
+        responses: {
+          200: { description: 'Expiring credential list', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/integrations/credentials/{id}/check': {
+      post: {
+        tags: ['Integrations'],
+        summary: 'On-demand health probe for a single credential',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Probe result', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
   },
 };
