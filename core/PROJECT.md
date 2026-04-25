@@ -177,3 +177,42 @@ The MVP is NOT v0.1. The v0.1 implementation uses gRPC + protobuf + mTLS + OPA/C
 - **Lead maintainer**: Gnani Rahul ([`gnanirahulnutakki`](https://github.com/gnanirahulnutakki))
 - **External co-maintainer**: seeking — cultivation plan starts M1
 - **Affiliation**: RadiantLogic (the protocol is vendor-neutral; RadiantLogic is the initial contributor)
+
+## M1 Execution Plan (added 2026-04-24)
+
+M1 is the milestone at which `core/` becomes a public, standalone project. This plan distills the critical-path work into concrete deliverables and their acceptance criteria. See `../docs/superpowers/specs/2026-04-24-devops-portal-stabilization-design.md` Section 5 for the containing plan that situates M1 alongside portal stabilization work.
+
+### M1 deliverables
+
+| # | Deliverable | Acceptance criteria | Owner |
+|---|---|---|---|
+| M1.1 | Ratify D11 (no `kubectl exec` in protocol) + D12 (read-only v1) in a design-doc PR against this repo | PR lands with both decisions moved from `Proposed` to `Ratified` status in this file's decision table; short justification added under each | Lead maintainer |
+| M1.2 | Name clearance | One candidate from `{opspact, beacon, verdict, kap, convoke, parley, signet, attest, conduit}` passes a US trademark and npm-package search; atomic rename commit prepared (not yet landed) | Lead maintainer |
+| M1.3 | Public-repo extraction | Subtree-split `core/` to `gnanirahulnutakki/action-protocol-mvp` preserving commit history; extraction script committed to `core/deploy/` | Lead maintainer |
+| M1.4 | External CA backends — cert-manager + Vault | `CAProvider` interface has working implementations for both; unit tests cover happy path + rotation; AWS PCA deferred to M2 | Lead maintainer |
+| M1.5 | `DurableQueue` SQLite crash-safety | SQLite-backed queue passes a crash-test harness: kill gateway mid-dispatch, restart, verify no lost or double-dispatched jobs | Lead maintainer |
+| M1.6 | Wire v0.1 freeze proposal | One proto PR covering D1 (schema-addressed payload), D3 (version negotiation), D2 (heartbeat rename). Includes migration notes from MVP HTTP+JSON | Lead maintainer |
+| M1.7 | Public office hours cadence established | Calendar invite published (weekly, 30 min); first meeting held even if empty | Lead maintainer |
+
+### Not M1 (explicit deferrals)
+
+- v0.1 gRPC implementation — blocked on M1.6 freeze.
+- Agent evidence channel hash-chain signing — M2.
+- Conformance suite — M2+.
+- Multi-tenancy / blast-radius model D17 — M1–M2 boundary, can slip.
+- AWS PCA `CAProvider` backend — M2.
+
+### Public-repo readiness gate (must pass before M1.3 merges)
+
+- [ ] Trademark + npm-name clearance for chosen candidate (M1.2)
+- [ ] `core/MAINTAINERS.md` either has a confirmed co-maintainer or documents an explicit one-maintainer-with-cultivation-plan posture
+- [ ] CNCF TAG Contributor Strategy review request drafted (issue on their tracker, even if not yet acted on)
+- [ ] One-more-pass review of `MAINTAINERS.md` + `GOVERNANCE.md` + `SECURITY.md` + `CONTRIBUTING.md` + `CODE_OF_CONDUCT.md` for CNCF conformance
+- [ ] CLOMonitor dry-run against the prepared public repo returns green on license, security, and community checks
+
+### Cross-references
+
+- Critical path steps 1–5: see `## Critical path` above in this file
+- CNCF vendor-neutrality justification: `core/protocol/docs/why-not-ocm.md`
+- Extraction boundary rationale: DR-010 (2026-04-11), this file
+- M1 outreach plan (OCM, Karmada, KubeStellar, Fleet): `## External co-maintainer cultivation plan → Phase 2`
