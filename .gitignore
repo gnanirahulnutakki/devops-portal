@@ -38,6 +38,9 @@ out/
 
 # Logs - Keep them local
 logs/
+# Exception: API route directories named `logs/` are source code, not log output
+!src/app/api/**/logs/
+!src/app/api/**/logs/**
 *.log
 npm-debug.log*
 yarn-debug.log*
