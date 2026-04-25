@@ -6,7 +6,7 @@ the **MCP-for-Clusters** gap explicitly named by [CNCF TOC initiative #1746](htt
 ("Cloud-Native Foundations for Distributed Agentic Systems"). v0.1 wire freeze
 unchanged; only the application framing and donation target are sharper.
 
-**Working name placeholder**: literal string `TBD_PROJECT_NAME` everywhere until a trademark-cleared name lands in an atomic rename commit. Candidates to research: `opspact`, `beacon`, `verdict`, `kap`, `convoke`, `parley`, `signet`, `attest`, `conduit`. **Dead**: `clusterops` (ReactiveOps trademark Reg. No. 6015193).
+**Working name selected (2026-04-25)**: `opspact`. Full elimination + verification rationale in [`core/protocol/docs/m1.2-name-decision.md`](protocol/docs/m1.2-name-decision.md). Source-tree placeholder remains `TBD_PROJECT_NAME` until the M1.3 atomic rename commit lands. **Dead**: `clusterops` (ReactiveOps trademark Reg. No. 6015193). **Eliminated**: conduit (Meroxa), convoke/parley/verdict (PyPI taken), beacon (overloaded), signet/attest (Sigstore-adjacent semantics), kap (too short).
 
 ## What this project is
 
@@ -218,8 +218,8 @@ M1 is the milestone at which `core/` becomes a public, standalone project. This 
 | # | Deliverable | Acceptance criteria | Owner |
 |---|---|---|---|
 | M1.1 | Ratify D11 (no `kubectl exec` in protocol) + D12 (read-only v1) in a design-doc PR against this repo | PR lands with both decisions moved from `Proposed` to `Ratified` status in this file's decision table; short justification added under each | Lead maintainer |
-| M1.2 | Name clearance | One candidate from `{opspact, beacon, verdict, kap, convoke, parley, signet, attest, conduit}` passes a US trademark and npm-package search; atomic rename commit prepared (not yet landed) | Lead maintainer |
-| M1.3 | Public-repo extraction | Subtree-split `core/` to `gnanirahulnutakki/action-protocol-mvp` preserving commit history; extraction script committed to `core/deploy/` | Lead maintainer |
+| M1.2 | Name clearance | **DONE 2026-04-25** — `opspact` selected by elimination across PyPI/npm/GitHub/CNCF/USPTO public search. Decision in `protocol/docs/m1.2-name-decision.md`. Formal paid IP search deferred until before product launch. Atomic rename commit pending in M1.3 | Lead maintainer |
+| M1.3 | Public-repo extraction | Subtree-split `core/` to `<vendor-neutral-org>/opspact` (org-name TBD) preserving commit history; extraction script committed to `core/deploy/`; atomic `TBD_PROJECT_NAME` → `opspact` rename in the same PR | Lead maintainer |
 | M1.4 | External CA backends — cert-manager + Vault | `CAProvider` interface has working implementations for both; unit tests cover happy path + rotation; AWS PCA deferred to M2 | Lead maintainer |
 | M1.5 | `DurableQueue` SQLite crash-safety | SQLite-backed queue passes a crash-test harness: kill gateway mid-dispatch, restart, verify no lost or double-dispatched jobs | Lead maintainer |
 | M1.6 | Wire v0.1 freeze proposal | One proto PR covering D1 (schema-addressed payload), D3 (version negotiation), D2 (heartbeat rename). Includes migration notes from MVP HTTP+JSON | Lead maintainer |
