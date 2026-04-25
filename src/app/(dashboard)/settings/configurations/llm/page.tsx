@@ -26,6 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Pencil, Plus, Trash2, RefreshCcw } from 'lucide-react';
 import { OrgBanner } from '@/components/dashboard/org-banner';
+import { CredentialExpiryField } from '@/components/dashboard/credential-expiry-field';
 
 type LlmAccount = {
   id: string;
@@ -36,6 +37,7 @@ type LlmAccount = {
   model?: string;
   hasApiKey?: boolean;
   lastError?: string | null;
+  expiresAt?: string | null;
 };
 
 export default function LlmConfigurationsPage() {
@@ -51,20 +53,26 @@ export default function LlmConfigurationsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [active, setActive] = useState<LlmAccount | null>(null);
 
-  const [createForm, setCreateForm] = useState({
+  const [createForm, setCreateForm] = useState<{
+    name: string; provider: string; apiKey: string; baseUrl: string; model: string; expiresAt: string | null;
+  }>({
     name: '',
     provider: 'openai',
     apiKey: '',
     baseUrl: '',
     model: '',
+    expiresAt: null,
   });
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<{
+    name: string; provider: string; apiKey: string; baseUrl: string; model: string; enabled: boolean; expiresAt: string | null;
+  }>({
     name: '',
     provider: 'openai',
     apiKey: '',
     baseUrl: '',
     model: '',
     enabled: true,
+    expiresAt: null,
   });
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -98,6 +106,7 @@ export default function LlmConfigurationsPage() {
       baseUrl: a.baseUrl || '',
       model: a.model || '',
       enabled: a.enabled,
+      expiresAt: a.expiresAt ?? null,
     });
     setEditOpen(true);
   };
@@ -122,13 +131,14 @@ export default function LlmConfigurationsPage() {
           apiKey: createForm.apiKey,
           baseUrl: createForm.baseUrl || undefined,
           model: createForm.model || undefined,
+          expiresAt: createForm.expiresAt,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error?.message || `Failed (HTTP ${res.status})`);
       toast.success('LLM account created.');
       setCreateOpen(false);
-      setCreateForm({ name: '', provider: 'openai', apiKey: '', baseUrl: '', model: '' });
+      setCreateForm({ name: '', provider: 'openai', apiKey: '', baseUrl: '', model: '', expiresAt: null });
       await loadAccounts();
     } catch (e: any) {
       toast.error(e?.message || 'Failed to create LLM account');
@@ -149,6 +159,7 @@ export default function LlmConfigurationsPage() {
         provider: editForm.provider,
         baseUrl: editForm.baseUrl || undefined,
         model: editForm.model || undefined,
+        expiresAt: editForm.expiresAt,
       };
       if (editForm.apiKey) payload.apiKey = editForm.apiKey;
 
@@ -338,6 +349,11 @@ export default function LlmConfigurationsPage() {
               <Label>Model (optional)</Label>
               <Input value={createForm.model} onChange={(e) => setCreateForm((p) => ({ ...p, model: e.target.value }))} placeholder="gpt-4o-mini" />
             </div>
+            <CredentialExpiryField
+              id="llm-create-expiry"
+              value={createForm.expiresAt}
+              onChange={(v) => setCreateForm((p) => ({ ...p, expiresAt: v }))}
+            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -383,6 +399,11 @@ export default function LlmConfigurationsPage() {
               </div>
               <Switch checked={editForm.enabled} onCheckedChange={(v) => setEditForm((p) => ({ ...p, enabled: v }))} />
             </div>
+            <CredentialExpiryField
+              id="llm-edit-expiry"
+              value={editForm.expiresAt}
+              onChange={(v) => setEditForm((p) => ({ ...p, expiresAt: v }))}
+            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setEditOpen(false)}>

@@ -16,14 +16,10 @@ import { getRedis } from './redis';
 // =============================================================================
 
 function getConnection() {
-  // Check if Redis is configured
-  const redis = getRedis();
-  if (!redis) return null;
-  
-  return {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
-  };
+  // Reuse the shared ioredis client configured from REDIS_URL in src/lib/redis.ts.
+  // Avoids drift where the worker tries localhost:6379 while the rest of the app
+  // talks to whatever REDIS_URL points at.
+  return getRedis();
 }
 
 // =============================================================================

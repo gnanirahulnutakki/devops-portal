@@ -1,6 +1,6 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
-import { deleteCredentialById, updateCredentialById } from '@/lib/services/integration-credentials';
+import { deleteCredentialById, updateCredentialById, parseExpiresAt } from '@/lib/services/integration-credentials';
 
 const updateSchema = z.object({
   name: z.string().min(2).max(100).optional(),
@@ -9,6 +9,7 @@ const updateSchema = z.object({
   apiKey: z.string().min(10).optional(),
   baseUrl: z.string().url().optional(),
   model: z.string().optional(),
+  expiresAt: z.union([z.string().datetime(), z.string().date(), z.null()]).optional(),
 });
 
 export const PATCH = withTenantApiHandler(
@@ -19,7 +20,7 @@ export const PATCH = withTenantApiHandler(
     const validation = await validateRequest(request, updateSchema);
     if ('error' in validation) return validation.error;
 
-    const { name, enabled, provider, apiKey, baseUrl, model } = validation.data;
+    const { name, enabled, provider, apiKey, baseUrl, model, expiresAt } = validation.data;
     const credentialsPatch =
       provider || apiKey || baseUrl || model
         ? ({
@@ -33,6 +34,7 @@ export const PATCH = withTenantApiHandler(
     const result = await updateCredentialById(ctx.tenant.organizationId, 'LLM', id, {
       name,
       enabled,
+      expiresAt: parseExpiresAt(expiresAt),
       credentialsPatch,
     });
     if (!result.success) {

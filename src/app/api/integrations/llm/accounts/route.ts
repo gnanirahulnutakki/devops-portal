@@ -1,6 +1,6 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
-import { saveCredentials } from '@/lib/services/integration-credentials';
+import { saveCredentials, parseExpiresAt } from '@/lib/services/integration-credentials';
 import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/encryption';
 
@@ -10,6 +10,7 @@ const createLlmAccountSchema = z.object({
   apiKey: z.string().min(10),
   baseUrl: z.string().url().optional(),
   model: z.string().optional(),
+  expiresAt: z.union([z.string().datetime(), z.string().date(), z.null()]).optional(),
 });
 
 export const GET = withTenantApiHandler(
@@ -25,6 +26,10 @@ export const GET = withTenantApiHandler(
           lastUsedAt: true,
           lastErrorAt: true,
           lastError: true,
+          expiresAt: true,
+          rotatedAt: true,
+          healthStatus: true,
+          lastHealthCheckAt: true,
           createdAt: true,
           updatedAt: true,
           credentials: true,
@@ -63,14 +68,15 @@ export const POST = withTenantApiHandler(
     const validation = await validateRequest(request, createLlmAccountSchema);
     if ('error' in validation) return validation.error;
 
-    const { name, provider, apiKey, baseUrl, model } = validation.data;
+    const { name, provider, apiKey, baseUrl, model, expiresAt } = validation.data;
 
     const result = await saveCredentials(
       ctx.tenant.organizationId,
       'LLM',
       { provider, apiKey, baseUrl, model },
       name,
-      ctx.tenant.userId
+      ctx.tenant.userId,
+      parseExpiresAt(expiresAt)
     );
 
     if (!result.success) {

@@ -1,6 +1,6 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
-import { deleteCredentialById, updateCredentialById } from '@/lib/services/integration-credentials';
+import { deleteCredentialById, updateCredentialById, parseExpiresAt } from '@/lib/services/integration-credentials';
 
 const updateSchema = z.object({
   name: z.string().min(2).max(100).optional(),
@@ -8,6 +8,7 @@ const updateSchema = z.object({
   url: z.string().url().optional(),
   anonKey: z.string().min(10).optional(),
   serviceRoleKey: z.string().min(10).optional(),
+  expiresAt: z.union([z.string().datetime(), z.string().date(), z.null()]).optional(),
 });
 
 export const PATCH = withTenantApiHandler(
@@ -18,7 +19,7 @@ export const PATCH = withTenantApiHandler(
     const validation = await validateRequest(request, updateSchema);
     if ('error' in validation) return validation.error;
 
-    const { name, enabled, url, anonKey, serviceRoleKey } = validation.data;
+    const { name, enabled, url, anonKey, serviceRoleKey, expiresAt } = validation.data;
     const credentialsPatch =
       url || anonKey || serviceRoleKey
         ? ({ ...(url ? { url } : {}), ...(anonKey ? { anonKey } : {}), ...(serviceRoleKey ? { serviceRoleKey } : {}) } as any)
@@ -27,6 +28,7 @@ export const PATCH = withTenantApiHandler(
     const result = await updateCredentialById(ctx.tenant.organizationId, 'SUPABASE', id, {
       name,
       enabled,
+      expiresAt: parseExpiresAt(expiresAt),
       credentialsPatch,
     });
     if (!result.success) {

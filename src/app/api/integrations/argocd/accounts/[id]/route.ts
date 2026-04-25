@@ -1,6 +1,6 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
-import { deleteCredentialById, updateCredentialById } from '@/lib/services/integration-credentials';
+import { deleteCredentialById, updateCredentialById, parseExpiresAt } from '@/lib/services/integration-credentials';
 
 const updateSchema = z.object({
   name: z.string().min(2).max(100).optional(),
@@ -25,12 +25,11 @@ export const PATCH = withTenantApiHandler(
       url || token || typeof insecure === 'boolean'
         ? ({ ...(url ? { url } : {}), ...(token ? { token } : {}), ...(typeof insecure === 'boolean' ? { insecure } : {}) } as any)
         : undefined;
-    const expiresAtValue = expiresAt === undefined ? undefined : expiresAt === null ? null : new Date(expiresAt);
 
     const result = await updateCredentialById(ctx.tenant.organizationId, 'ARGOCD', id, {
       name,
       enabled,
-      expiresAt: expiresAtValue,
+      expiresAt: parseExpiresAt(expiresAt),
       credentialsPatch,
     });
     if (!result.success) {

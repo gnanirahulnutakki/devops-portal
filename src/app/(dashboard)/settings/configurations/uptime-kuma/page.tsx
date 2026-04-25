@@ -26,6 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Pencil, Plus, Trash2, RefreshCcw } from 'lucide-react';
 import { OrgBanner } from '@/components/dashboard/org-banner';
+import { CredentialExpiryField } from '@/components/dashboard/credential-expiry-field';
 
 type UptimeAccount = {
   id: string;
@@ -35,6 +36,7 @@ type UptimeAccount = {
   hasApiKey?: boolean;
   updatedAt?: string;
   lastError?: string | null;
+  expiresAt?: string | null;
 };
 
 export default function UptimeKumaConfigurationsPage() {
@@ -50,8 +52,12 @@ export default function UptimeKumaConfigurationsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [active, setActive] = useState<UptimeAccount | null>(null);
 
-  const [createForm, setCreateForm] = useState({ name: '', url: '', apiKey: '' });
-  const [editForm, setEditForm] = useState({ name: '', url: '', apiKey: '', enabled: true });
+  const [createForm, setCreateForm] = useState<{
+    name: string; url: string; apiKey: string; expiresAt: string | null;
+  }>({ name: '', url: '', apiKey: '', expiresAt: null });
+  const [editForm, setEditForm] = useState<{
+    name: string; url: string; apiKey: string; enabled: boolean; expiresAt: string | null;
+  }>({ name: '', url: '', apiKey: '', enabled: true, expiresAt: null });
   const [busyId, setBusyId] = useState<string | null>(null);
 
   async function loadAccounts() {
@@ -82,6 +88,7 @@ export default function UptimeKumaConfigurationsPage() {
       url: a.url || '',
       apiKey: '',
       enabled: a.enabled,
+      expiresAt: a.expiresAt ?? null,
     });
     setEditOpen(true);
   };
@@ -106,7 +113,7 @@ export default function UptimeKumaConfigurationsPage() {
       if (!res.ok) throw new Error(data?.error?.message || `Failed (HTTP ${res.status})`);
       toast.success('Uptime Kuma account created.');
       setCreateOpen(false);
-      setCreateForm({ name: '', url: '', apiKey: '' });
+      setCreateForm({ name: '', url: '', apiKey: '', expiresAt: null });
       await loadAccounts();
     } catch (e: any) {
       toast.error(e?.message || 'Failed to create Uptime Kuma account');
@@ -121,7 +128,7 @@ export default function UptimeKumaConfigurationsPage() {
     if (!editForm.name || !editForm.url) return toast.error('Name and URL are required.');
     setBusyId(active.id);
     try {
-      const payload: any = { name: editForm.name, url: editForm.url, enabled: editForm.enabled };
+      const payload: any = { name: editForm.name, url: editForm.url, enabled: editForm.enabled, expiresAt: editForm.expiresAt };
       if (editForm.apiKey) payload.apiKey = editForm.apiKey;
 
       const res = await fetch(`/api/integrations/uptime-kuma/accounts/${active.id}`, {
@@ -298,6 +305,11 @@ export default function UptimeKumaConfigurationsPage() {
               <Label>API key</Label>
               <Input value={createForm.apiKey} onChange={(e) => setCreateForm((p) => ({ ...p, apiKey: e.target.value }))} type="password" />
             </div>
+            <CredentialExpiryField
+              id="uptime-kuma-create-expiry"
+              value={createForm.expiresAt}
+              onChange={(v) => setCreateForm((p) => ({ ...p, expiresAt: v }))}
+            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -335,6 +347,11 @@ export default function UptimeKumaConfigurationsPage() {
               </div>
               <Switch checked={editForm.enabled} onCheckedChange={(v) => setEditForm((p) => ({ ...p, enabled: v }))} />
             </div>
+            <CredentialExpiryField
+              id="uptime-kuma-edit-expiry"
+              value={editForm.expiresAt}
+              onChange={(v) => setEditForm((p) => ({ ...p, expiresAt: v }))}
+            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setEditOpen(false)}>

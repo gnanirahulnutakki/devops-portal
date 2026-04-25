@@ -5,7 +5,7 @@ import {
   validateRequest,
 } from '@/lib/api';
 import { z } from 'zod';
-import { saveCredentials } from '@/lib/services/integration-credentials';
+import { saveCredentials, parseExpiresAt } from '@/lib/services/integration-credentials';
 import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/encryption';
 
@@ -13,6 +13,7 @@ const createGrafanaAccountSchema = z.object({
   name: z.string().min(2).max(100),
   url: z.string().url(),
   apiKey: z.string().min(10),
+  expiresAt: z.union([z.string().datetime(), z.string().date(), z.null()]).optional(),
 });
 
 export const GET = withTenantApiHandler(
@@ -28,6 +29,10 @@ export const GET = withTenantApiHandler(
           lastUsedAt: true,
           lastErrorAt: true,
           lastError: true,
+          expiresAt: true,
+          rotatedAt: true,
+          healthStatus: true,
+          lastHealthCheckAt: true,
           createdAt: true,
           updatedAt: true,
           credentials: true,
@@ -62,14 +67,15 @@ export const POST = withTenantApiHandler(
     const validation = await validateRequest(request, createGrafanaAccountSchema);
     if ('error' in validation) return validation.error;
 
-    const { name, url, apiKey } = validation.data;
+    const { name, url, apiKey, expiresAt } = validation.data;
 
     const result = await saveCredentials(
       ctx.tenant.organizationId,
       'GRAFANA',
       { url, apiKey },
       name,
-      ctx.tenant.userId
+      ctx.tenant.userId,
+      parseExpiresAt(expiresAt)
     );
 
     if (!result.success) {

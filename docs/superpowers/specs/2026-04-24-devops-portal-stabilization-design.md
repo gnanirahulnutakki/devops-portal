@@ -160,10 +160,15 @@ Documented only; execution stays on `feature/core-protocol`.
 - Re-enabling Redis in production (separate infra decision; credential-health works on-demand without it).
 - Any changes inside `core/` (MVP), aside from the M1 milestone-plan section append.
 
-## Follow-ups deferred out of this plan
+## Follow-ups
 
-1. **Wire `CredentialExpiryField` into the remaining 5 integration config pages** — ArgoCD has end-to-end expiry support as the reference pattern; GitHub, Grafana, LLM, Supabase, and Uptime Kuma need the same treatment (form state + API schema + `saveCredentials`/`updateCredentialById` pass-through). Each page is ~10 minutes of mechanical copy-paste from the ArgoCD implementation.
-2. **Fix the same `REDIS_HOST`/`REDIS_PORT` bug in `src/lib/queue.ts`** — identical pattern to the credential-health worker's original bug; `getConnection()` there should also return the shared `getRedis()` client so the 3 existing BullMQ workers pick up `REDIS_URL` when Redis is re-enabled.
+### Resolved (landed alongside the main plan)
+
+1. ~~**Wire `CredentialExpiryField` into the remaining 5 integration config pages**~~ — **Done** in commit `504566a`. All 6 integrations (ArgoCD, GitHub, Grafana, LLM, Supabase, Uptime Kuma) now share the pattern via the new `parseExpiresAt` helper in `src/lib/services/integration-credentials.ts`.
+2. ~~**Fix the same `REDIS_HOST`/`REDIS_PORT` bug in `src/lib/queue.ts`**~~ — **Done** in commit `17937ca`. Both the bulk-operations queue/worker and the credential-health worker now reuse the shared `getRedis()` ioredis client.
+
+### Still deferred
+
 3. **Orchestrator expiry-override unit test** — the expiry-window logic in `checkSingleCredentialInternal` is pure arithmetic but is coupled to Prisma. A test would need Prisma mocks; defer until a broader test-infra pass.
 4. **Per-provider integration tests with probe mocks** (explicitly out of this plan's scope per Section 2; confirmed deferred).
 5. **Credential-rotation workflow UI** (non-goal for this plan; Prisma already tracks `rotatedAt`, needs a dedicated UI follow-up).

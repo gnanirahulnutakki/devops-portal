@@ -5,7 +5,7 @@ import {
   validateRequest,
 } from '@/lib/api';
 import { z } from 'zod';
-import { saveCredentials } from '@/lib/services/integration-credentials';
+import { saveCredentials, parseExpiresAt } from '@/lib/services/integration-credentials';
 import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/encryption';
 
@@ -76,7 +76,6 @@ export const POST = withTenantApiHandler(
     if ('error' in validation) return validation.error;
 
     const { name, url, token, insecure, expiresAt } = validation.data;
-    const expiresAtDate = expiresAt === undefined ? undefined : expiresAt === null ? null : new Date(expiresAt);
 
     const result = await saveCredentials(
       ctx.tenant.organizationId,
@@ -84,7 +83,7 @@ export const POST = withTenantApiHandler(
       { url, token, insecure: insecure ?? false },
       name,
       ctx.tenant.userId,
-      expiresAtDate
+      parseExpiresAt(expiresAt)
     );
 
     if (!result.success) {

@@ -8,6 +8,20 @@ import { encrypt, decrypt } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 import { IntegrationProvider } from '@prisma/client';
 
+/**
+ * Parses an ISO date string / null / undefined into the `expiresAt` value
+ * shape that saveCredentials and updateCredentialById accept.
+ *
+ * undefined → leave unchanged (don't touch the column)
+ * null      → clear the expiry
+ * string    → parse as Date (must be a valid ISO date or date-only string)
+ */
+export function parseExpiresAt(value: string | null | undefined): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return new Date(value);
+}
+
 // =============================================================================
 // Types
 // =============================================================================

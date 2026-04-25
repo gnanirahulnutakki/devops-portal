@@ -26,6 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Pencil, Plus, Trash2, RefreshCcw } from 'lucide-react';
 import { OrgBanner } from '@/components/dashboard/org-banner';
+import { CredentialExpiryField } from '@/components/dashboard/credential-expiry-field';
 
 type SupabaseAccount = {
   id: string;
@@ -35,6 +36,7 @@ type SupabaseAccount = {
   hasAnonKey?: boolean;
   hasServiceRoleKey?: boolean;
   lastError?: string | null;
+  expiresAt?: string | null;
 };
 
 export default function SupabaseConfigurationsPage() {
@@ -50,18 +52,24 @@ export default function SupabaseConfigurationsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [active, setActive] = useState<SupabaseAccount | null>(null);
 
-  const [createForm, setCreateForm] = useState({
+  const [createForm, setCreateForm] = useState<{
+    name: string; url: string; anonKey: string; serviceRoleKey: string; expiresAt: string | null;
+  }>({
     name: '',
     url: '',
     anonKey: '',
     serviceRoleKey: '',
+    expiresAt: null,
   });
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<{
+    name: string; url: string; anonKey: string; serviceRoleKey: string; enabled: boolean; expiresAt: string | null;
+  }>({
     name: '',
     url: '',
     anonKey: '',
     serviceRoleKey: '',
     enabled: true,
+    expiresAt: null,
   });
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -94,6 +102,7 @@ export default function SupabaseConfigurationsPage() {
       anonKey: '',
       serviceRoleKey: '',
       enabled: a.enabled,
+      expiresAt: a.expiresAt ?? null,
     });
     setEditOpen(true);
   };
@@ -118,13 +127,14 @@ export default function SupabaseConfigurationsPage() {
           url: createForm.url,
           ...(createForm.anonKey ? { anonKey: createForm.anonKey } : {}),
           ...(createForm.serviceRoleKey ? { serviceRoleKey: createForm.serviceRoleKey } : {}),
+          expiresAt: createForm.expiresAt,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error?.message || `Failed (HTTP ${res.status})`);
       toast.success('Supabase account created.');
       setCreateOpen(false);
-      setCreateForm({ name: '', url: '', anonKey: '', serviceRoleKey: '' });
+      setCreateForm({ name: '', url: '', anonKey: '', serviceRoleKey: '', expiresAt: null });
       await loadAccounts();
     } catch (e: any) {
       toast.error(e?.message || 'Failed to create Supabase account');
@@ -143,6 +153,7 @@ export default function SupabaseConfigurationsPage() {
         name: editForm.name,
         url: editForm.url,
         enabled: editForm.enabled,
+        expiresAt: editForm.expiresAt,
       };
       if (editForm.anonKey) payload.anonKey = editForm.anonKey;
       if (editForm.serviceRoleKey) payload.serviceRoleKey = editForm.serviceRoleKey;
@@ -329,6 +340,11 @@ export default function SupabaseConfigurationsPage() {
               <Input value={createForm.serviceRoleKey} onChange={(e) => setCreateForm((p) => ({ ...p, serviceRoleKey: e.target.value }))} type="password" />
               <p className="text-xs text-muted-foreground">At least one key is required.</p>
             </div>
+            <CredentialExpiryField
+              id="supabase-create-expiry"
+              value={createForm.expiresAt}
+              onChange={(v) => setCreateForm((p) => ({ ...p, expiresAt: v }))}
+            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -370,6 +386,11 @@ export default function SupabaseConfigurationsPage() {
               </div>
               <Switch checked={editForm.enabled} onCheckedChange={(v) => setEditForm((p) => ({ ...p, enabled: v }))} />
             </div>
+            <CredentialExpiryField
+              id="supabase-edit-expiry"
+              value={editForm.expiresAt}
+              onChange={(v) => setEditForm((p) => ({ ...p, expiresAt: v }))}
+            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setEditOpen(false)}>

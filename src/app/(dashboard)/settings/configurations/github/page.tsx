@@ -26,6 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Pencil, Plus, Trash2, RefreshCcw } from 'lucide-react';
 import { OrgBanner } from '@/components/dashboard/org-banner';
+import { CredentialExpiryField } from '@/components/dashboard/credential-expiry-field';
 
 type GitHubAccount = {
   id: string;
@@ -35,6 +36,7 @@ type GitHubAccount = {
   hasToken?: boolean;
   updatedAt?: string;
   lastError?: string | null;
+  expiresAt?: string | null;
 };
 
 export default function GitHubConfigurationsPage() {
@@ -50,8 +52,12 @@ export default function GitHubConfigurationsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [active, setActive] = useState<GitHubAccount | null>(null);
 
-  const [createForm, setCreateForm] = useState({ name: '', token: '', organization: '' });
-  const [editForm, setEditForm] = useState({ name: '', token: '', organization: '', enabled: true });
+  const [createForm, setCreateForm] = useState<{
+    name: string; token: string; organization: string; expiresAt: string | null;
+  }>({ name: '', token: '', organization: '', expiresAt: null });
+  const [editForm, setEditForm] = useState<{
+    name: string; token: string; organization: string; enabled: boolean; expiresAt: string | null;
+  }>({ name: '', token: '', organization: '', enabled: true, expiresAt: null });
   const [busyId, setBusyId] = useState<string | null>(null);
 
   async function loadAccounts() {
@@ -82,6 +88,7 @@ export default function GitHubConfigurationsPage() {
       token: '',
       organization: a.organization || '',
       enabled: a.enabled,
+      expiresAt: a.expiresAt ?? null,
     });
     setEditOpen(true);
   };
@@ -104,13 +111,14 @@ export default function GitHubConfigurationsPage() {
           name: createForm.name,
           token: createForm.token,
           organization: createForm.organization || undefined,
+          expiresAt: createForm.expiresAt,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error?.message || `Failed (HTTP ${res.status})`);
       toast.success('GitHub account created.');
       setCreateOpen(false);
-      setCreateForm({ name: '', token: '', organization: '' });
+      setCreateForm({ name: '', token: '', organization: '', expiresAt: null });
       await loadAccounts();
     } catch (e: any) {
       toast.error(e?.message || 'Failed to create GitHub account');
@@ -129,6 +137,7 @@ export default function GitHubConfigurationsPage() {
         name: editForm.name,
         enabled: editForm.enabled,
         organization: editForm.organization || undefined,
+        expiresAt: editForm.expiresAt,
       };
       if (editForm.token) payload.token = editForm.token;
 
@@ -302,6 +311,11 @@ export default function GitHubConfigurationsPage() {
               <Label>Default organization (optional)</Label>
               <Input value={createForm.organization} onChange={(e) => setCreateForm((p) => ({ ...p, organization: e.target.value }))} placeholder="radiantlogic-devops" />
             </div>
+            <CredentialExpiryField
+              id="github-create-expiry"
+              value={createForm.expiresAt}
+              onChange={(v) => setCreateForm((p) => ({ ...p, expiresAt: v }))}
+            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -339,6 +353,11 @@ export default function GitHubConfigurationsPage() {
               </div>
               <Switch checked={editForm.enabled} onCheckedChange={(v) => setEditForm((p) => ({ ...p, enabled: v }))} />
             </div>
+            <CredentialExpiryField
+              id="github-edit-expiry"
+              value={editForm.expiresAt}
+              onChange={(v) => setEditForm((p) => ({ ...p, expiresAt: v }))}
+            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setEditOpen(false)}>
