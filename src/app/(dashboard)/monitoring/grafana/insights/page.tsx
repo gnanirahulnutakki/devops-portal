@@ -84,7 +84,7 @@ export default function GrafanaAlertInsightsPage() {
       if (cancelled) return;
       if (res.ok) {
         setAccounts(data.data || []);
-        if (!selectedAccount && data.data?.[0]) setSelectedAccount(data.data[0].id);
+        setSelectedAccount((current) => current || data.data?.[0]?.id || '');
       }
     }
     void load();

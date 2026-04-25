@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useOrganizationStore } from '@/store/organization-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -88,7 +88,7 @@ export default function GitHubActionsPage() {
     [repositories]
   );
 
-  const loadRepositories = async () => {
+  const loadRepositories = useCallback(async () => {
     if (!selectedAccount) return;
     const params = new URLSearchParams();
     params.set('credentialId', selectedAccount);
@@ -100,9 +100,9 @@ export default function GitHubActionsPage() {
         setSelectedRepo(data.data[0].fullName);
       }
     }
-  };
+  }, [selectedAccount]);
 
-  const loadBranches = async (repository: string) => {
+  const loadBranches = useCallback(async (repository: string) => {
     if (!repository) return;
     const params = new URLSearchParams({ repository });
     if (selectedAccount) params.set('credentialId', selectedAccount);
@@ -114,9 +114,9 @@ export default function GitHubActionsPage() {
         setSelectedBranch(data.data[0].name);
       }
     }
-  };
+  }, [selectedAccount]);
 
-  const loadRuns = async () => {
+  const loadRuns = useCallback(async () => {
     if (!selectedRepo) return;
     setLoading(true);
     const params = new URLSearchParams({ repository: selectedRepo });
@@ -126,7 +126,7 @@ export default function GitHubActionsPage() {
     const data = await res.json();
     if (res.ok) setRuns(data.data || []);
     setLoading(false);
-  };
+  }, [selectedRepo, selectedBranch, selectedAccount]);
 
   // Reload repos when account changes
   useEffect(() => {
@@ -136,19 +136,19 @@ export default function GitHubActionsPage() {
     setBranches([]);
     setSelectedBranch('');
     setRuns([]);
-    loadRepositories();
-  }, [selectedAccount]);
+    void loadRepositories();
+  }, [selectedAccount, loadRepositories]);
 
   useEffect(() => {
     if (!selectedRepo) return;
     setBranches([]);
     setSelectedBranch('');
-    loadBranches(selectedRepo);
-  }, [selectedRepo]);
+    void loadBranches(selectedRepo);
+  }, [selectedRepo, loadBranches]);
 
   useEffect(() => {
-    loadRuns();
-  }, [selectedRepo, selectedBranch]);
+    void loadRuns();
+  }, [loadRuns]);
 
   const rerun = async (runId: number) => {
     if (!selectedRepo) return;

@@ -40,14 +40,14 @@ export default function GrafanaDashboardsPage() {
       if (cancelled) return;
       if (res.ok) {
         setAccounts(data.data || []);
-        if (!selectedAccount && data.data?.[0]) setSelectedAccount(data.data[0].id);
+        setSelectedAccount((current) => current || data.data?.[0]?.id || '');
       }
     }
     void load();
     return () => {
       cancelled = true;
     };
-  }, [orgId]); // intentionally not depending on selectedAccount
+  }, [orgId]);
 
   return (
     <div className="space-y-6">
