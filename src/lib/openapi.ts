@@ -944,6 +944,23 @@ export const OPENAPI_SPEC = {
         },
       },
     },
+    '/api/clusters/{id}/events': {
+      get: {
+        tags: ['Clusters'],
+        summary: 'Cluster events',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'namespace', in: 'query', required: false, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: {
+            description: 'Event list (sorted newest first)',
+            content: { 'application/json': { schema: apiResponseSchema } },
+          },
+        },
+      },
+    },
     '/api/clusters/{id}/helm': {
       get: {
         tags: ['Clusters'],
