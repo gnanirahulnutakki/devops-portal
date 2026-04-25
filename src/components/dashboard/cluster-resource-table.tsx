@@ -22,6 +22,8 @@ interface ClusterResourceTableProps<T> {
   columns: Column<T>[];
   filterFn?: (row: T, q: string) => boolean;
   emptyMessage?: string;
+  /** Auto-refresh interval in ms. Pass 0 (default) to disable. */
+  refreshInterval?: number;
 }
 
 export function ClusterResourceTable<T>({
@@ -31,6 +33,7 @@ export function ClusterResourceTable<T>({
   columns,
   filterFn,
   emptyMessage = 'No items',
+  refreshInterval = 0,
 }: ClusterResourceTableProps<T>) {
   const orgId = useOrganizationStore((s) => s.currentOrganization?.id);
   const [items, setItems] = useState<T[]>([]);
@@ -53,7 +56,11 @@ export function ClusterResourceTable<T>({
 
   useEffect(() => {
     void load();
-  }, [load]);
+    if (refreshInterval > 0) {
+      const id = setInterval(() => void load(), refreshInterval);
+      return () => clearInterval(id);
+    }
+  }, [load, refreshInterval]);
 
   const filtered = useMemo(() => {
     if (!filter || !filterFn) return items;

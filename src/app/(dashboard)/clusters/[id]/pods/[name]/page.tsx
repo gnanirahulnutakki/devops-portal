@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ChevronLeft } from 'lucide-react';
 import { PodLogStream } from '@/components/dashboard/pod-log-stream';
 import { ClusterYamlEditor } from '@/components/dashboard/cluster-yaml-editor';
+import { PodMetricsChart } from '@/components/dashboard/pod-metrics-chart';
 
 interface PodDetail {
   name: string;
@@ -90,6 +91,7 @@ export default function PodDetailPage({ params }: { params: Promise<{ id: string
       <Tabs defaultValue="logs">
         <TabsList>
           <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="metrics">Metrics</TabsTrigger>
           <TabsTrigger value="yaml">YAML</TabsTrigger>
           <TabsTrigger value="info">Info</TabsTrigger>
         </TabsList>
@@ -116,6 +118,10 @@ export default function PodDetailPage({ params }: { params: Promise<{ id: string
             podName={name}
             container={container || undefined}
           />
+        </TabsContent>
+
+        <TabsContent value="metrics">
+          <PodMetricsChart clusterId={id} namespace={namespace} podName={name} />
         </TabsContent>
 
         <TabsContent value="yaml">
