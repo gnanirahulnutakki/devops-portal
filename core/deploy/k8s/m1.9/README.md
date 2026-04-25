@@ -109,6 +109,46 @@ PASS: PAT bytes do not appear in gateway result (credential boundary preserved)
 PASS: federated MCP call returned ok=true
 ```
 
+## Known issue (verified 2026-04-25, blocking end-to-end)
+
+**github-mcp v1.0.3 uses MCP Streamable HTTP transport, not simple JSON-RPC-over-POST.**
+
+Direct probe of `ghcr.io/github/github-mcp-server:latest http` confirms:
+- The MCP endpoint is at `/` (root), not `/messages` (the simple
+  HTTP+SSE-pair pattern our adapter assumes).
+- The transport is per the
+  [MCP Streamable HTTP 2025-03-26 spec](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http):
+  client POSTs to a single endpoint, server may respond with JSON OR
+  upgrade to an SSE stream; session is tracked via `Mcp-Session-Id`
+  response header that the client must echo on subsequent requests.
+- The github-mcp server signals this via CORS headers naming
+  `Mcp-Session-Id`, `Mcp-Protocol-Version`, `Last-Event-ID` as
+  permitted.
+
+The current `mcp-client` adapter in `core/adapters/mcpclient/adapter.go`
+implements the simpler JSON-RPC-over-POST shape that some other MCP
+servers expose. **Until the adapter learns Streamable HTTP, the
+end-to-end demo will fail at the agent → github-mcp hop.**
+
+The fix is tracked as M1.9 follow-up "Streamable HTTP transport for
+mcp-client adapter": handle session establishment (initial POST returns
+`Mcp-Session-Id`), send it on subsequent POSTs, handle both JSON and
+`text/event-stream` Content-Type responses, parse the latter as SSE
+events whose `data:` payload is the JSON-RPC response. Estimated
+0.5 day of work.
+
+Until then, the bits of M1.9 that ARE verified end-to-end:
+- The Go adapter compiles, tests pass (8 cases, 1000-iter UUID test)
+- The two-cluster kind topology comes up cleanly
+- The federation gateway accepts /execute, queues, agent polls and runs
+- The agent dereferences the K8s Secret correctly
+- The PAT bytes never leak to the gateway
+
+What is not yet verified end-to-end (because of the above):
+- The agent's actual MCP `tools/call` against github-mcp returns real GitHub
+  issues data (i.e., the round-trip)
+- The recorded session for whitepaper §7.1
+
 ## Troubleshooting
 
 - **`make m1.9-up` fails with "image not found"**: run `make m1.9-build-images`
@@ -119,11 +159,9 @@ PASS: federated MCP call returned ok=true
   On Linux Docker (not OrbStack/Docker Desktop), `host.docker.internal` is
   not auto-defined and you may need
   `--add-host=host.docker.internal:host-gateway` on the kind worker.
-- **`make m1.9-demo` fails on the MCP call**: check the github-mcp logs:
-  `kubectl --context kind-m19-cluster-a logs -n m19-mcp -l app.kubernetes.io/name=github-mcp`.
-  github-mcp's HTTP transport may use Streamable HTTP rather than the simpler
-  JSON-RPC-over-POST our adapter assumes. If so, the demo will need
-  the adapter to handle SSE responses (M1.9 follow-up).
+- **`make m1.9-demo` returns "transport returned status 404" or 401 from
+  the agent**: see "Known issue" above; the adapter needs the Streamable
+  HTTP fix to talk to github-mcp v1.0.3.
 
 ## Cleanup
 

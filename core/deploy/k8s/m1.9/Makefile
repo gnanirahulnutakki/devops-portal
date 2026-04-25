@@ -40,7 +40,7 @@ m1.9-demo:
 		curl -sf -X POST http://host.docker.internal:8080/execute \
 		  -H "Content-Type: application/json" \
 		  -H "X-Execute-Token: $$EXECUTE_TOKEN" \
-		  -d "{\"agent_name\":\"cluster-a-agent\",\"adapter_name\":\"mcp-client\",\"params\":{\"server_url\":\"http://github-mcp.m19-mcp.svc.cluster.local:8080\",\"tool_name\":\"list_issues\",\"arguments\":{\"owner\":\"kubernetes\",\"repo\":\"kubernetes\",\"per_page\":3},\"credential_uri\":\"k8s://secret/github-pat?key=token\",\"schema_uri\":\"mcp://tools/call/v1.0\"}}" \
+		  -d "{\"agent_name\":\"cluster-a-agent\",\"adapter_name\":\"mcp-client\",\"params\":{\"server_url\":\"http://github-mcp.m19-mcp.svc.cluster.local:8082\",\"tool_name\":\"list_issues\",\"arguments\":{\"owner\":\"kubernetes\",\"repo\":\"kubernetes\",\"per_page\":3},\"credential_uri\":\"k8s://secret/github-pat?key=token\",\"schema_uri\":\"mcp://tools/call/v1.0\"}}" \
 		' | tee /tmp/m19-execute.json | grep -o '"operation_id":"[^"]*"' | cut -d'"' -f4); \
 	echo "operation_id=$$OP_ID"; \
 	echo "==> Step 2: poll gateway /result for outcome"; \

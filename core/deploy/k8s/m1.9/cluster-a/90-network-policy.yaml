@@ -52,7 +52,7 @@ spec:
           app.kubernetes.io/name: github-mcp
     ports:
     - protocol: TCP
-      port: 8080
+      port: 8082
   - to:
     - podSelector:
         matchLabels:

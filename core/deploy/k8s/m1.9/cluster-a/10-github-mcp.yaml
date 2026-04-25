@@ -11,8 +11,8 @@ spec:
   selector:
     app.kubernetes.io/name: github-mcp
   ports:
-  - port: 8080
-    targetPort: 8080
+  - port: 8082
+    targetPort: 8082
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -38,9 +38,13 @@ spec:
         runAsUser: 1000
       containers:
       - name: mcp-server
-        image: ghcr.io/github/github-mcp-server:latest
+        image: ghcr.io/github/github-mcp-server:v1.0.3
+        args:
+        - "http"
+        - "--read-only"
+        - "--toolsets=issues"
         ports:
-        - containerPort: 8080
+        - containerPort: 8082
         resources:
           requests:
             cpu: 100m
@@ -54,7 +58,7 @@ spec:
           capabilities:
             drop: [ALL]
         env:
-        - name: GITHUB_TOKEN
+        - name: GITHUB_PERSONAL_ACCESS_TOKEN
           valueFrom:
             secretKeyRef:
               name: github-pat
