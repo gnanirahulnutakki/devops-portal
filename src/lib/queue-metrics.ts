@@ -3,7 +3,7 @@
 // Integrates BullMQ with Prometheus metrics
 // =============================================================================
 
-import { Queue, QueueEvents, Job } from 'bullmq';
+import { Queue, QueueEvents, Job, ConnectionOptions } from 'bullmq';
 import { logger } from './logger';
 import {
   recordQueueJob,
@@ -20,7 +20,7 @@ const jobStartTimes = new Map<string, number>();
 export function initQueueMetrics(
   queue: Queue,
   queueName: string,
-  connection: { host: string; port: number }
+  connection: ConnectionOptions
 ) {
   const queueEvents = new QueueEvents(queueName, { connection });
 

@@ -98,7 +98,7 @@ export async function checkAllCredentials(
 export async function checkSingleCredential(
   credentialId: string,
   organizationId: string
-): Promise<HealthCheckResult & { credentialId: string; provider: string }> {
+): Promise<HealthCheckResult & { credentialId: string; provider: IntegrationProvider }> {
   const credential = await prisma.integrationCredential.findFirst({
     where: {
       id: credentialId,
@@ -134,7 +134,7 @@ interface CredentialRecord {
 
 async function checkSingleCredentialInternal(
   credential: CredentialRecord
-): Promise<HealthCheckResult & { credentialId: string; provider: string }> {
+): Promise<HealthCheckResult & { credentialId: string; provider: IntegrationProvider }> {
   let result: HealthCheckResult;
 
   // Decrypt credentials
