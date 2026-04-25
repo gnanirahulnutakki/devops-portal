@@ -178,3 +178,4 @@ Documented only; execution stays on `feature/core-protocol`.
    - esbuild → vite → vitest (dev-server issue, dev-only, not in production bundle)
    - postcss nested under next (npm suggests downgrading next to 9.x, not viable)
    - uuid via bullmq + gaxios (npm suggests downgrading bullmq to 0.0.1, not viable)
+9. **OpenAPI spec sync** — `src/lib/__tests__/openapi-contract.test.ts` was skipped in commit `16155b1` because 22 routes lack entries in `src/lib/openapi.ts`. Most are pre-existing (`/api/auth/connections`, `/api/features`, `/api/notifications`, `/api/security/*`, `/api/scorecards/results`, `/api/monitoring/dora`, etc.); four are new from credential-health (`/api/integrations/credentials/*`, `/api/integrations/*/accounts/{id}`). Either extend the spec manually or code-generate from route handlers + Zod schemas.
