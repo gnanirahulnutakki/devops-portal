@@ -35,7 +35,7 @@ mkdir -p "$OUTPUT_DIR"
 
 # Generate random secrets
 NEXTAUTH_SECRET=$(openssl rand -base64 32)
-ENCRYPTION_KEY=$(openssl rand -hex 32)
+TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32)
 POSTGRES_ADMIN_PASS=$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)
 POSTGRES_USER_PASS=$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)
 REDIS_PASS=$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)
@@ -51,8 +51,12 @@ metadata:
   namespace: $NAMESPACE
 type: Opaque
 stringData:
+  # NextAuth v5 reads both NEXTAUTH_SECRET and AUTH_SECRET; chart maps
+  # NEXTAUTH_SECRET → AUTH_SECRET in extraEnv. Setting both is harmless.
   NEXTAUTH_SECRET: "$NEXTAUTH_SECRET"
-  ENCRYPTION_KEY: "$ENCRYPTION_KEY"
+  AUTH_SECRET: "$NEXTAUTH_SECRET"
+  # Application reads TOKEN_ENCRYPTION_KEY (src/lib/encryption.ts)
+  TOKEN_ENCRYPTION_KEY: "$TOKEN_ENCRYPTION_KEY"
 EOF
 
 echo "Step 2: Generating PostgreSQL secrets..."

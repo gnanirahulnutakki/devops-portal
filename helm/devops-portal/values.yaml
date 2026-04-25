@@ -200,7 +200,10 @@ secrets:
     # These will be base64 encoded if secrets.create=true
     # NEVER commit real values - use sealed secrets instead
     NEXTAUTH_SECRET: ""
-    ENCRYPTION_KEY: ""
+    # Application reads TOKEN_ENCRYPTION_KEY (src/lib/encryption.ts).
+    # Older docs referenced ENCRYPTION_KEY — kept here as a synonym for
+    # backward compatibility with existing sealed secrets.
+    TOKEN_ENCRYPTION_KEY: ""
     DATABASE_URL: ""
     REDIS_URL: ""
 
