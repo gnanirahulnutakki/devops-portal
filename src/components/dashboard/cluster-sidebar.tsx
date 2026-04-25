@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Server, Layers, Box, Network, Globe,
-  Bell, Package, Boxes,
+  Bell, Package, Boxes, GitMerge,
 } from 'lucide-react';
 
 interface ClusterSidebarProps {
@@ -22,6 +22,7 @@ const NAV: { href: string; label: string; icon: typeof Server }[] = [
   { href: '/ingresses', label: 'Ingresses', icon: Globe },
   { href: '/events', label: 'Events', icon: Bell },
   { href: '/helm', label: 'Helm', icon: Package },
+  { href: '/rollouts', label: 'Rollouts', icon: GitMerge },
   { href: '/crds', label: 'CRDs', icon: Boxes },
 ];
 
