@@ -430,7 +430,13 @@ model IntegrationCredential {
   lastUsedAt  DateTime?
   lastErrorAt DateTime?
   lastError   String?
-  
+
+  // Health monitoring
+  expiresAt          DateTime?
+  rotatedAt          DateTime?
+  lastHealthCheckAt  DateTime?
+  healthStatus       String?    @default("unknown")  // healthy | degraded | unhealthy | unknown
+
   // Organization scope
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -438,7 +444,8 @@ model IntegrationCredential {
   // Audit
   createdById String?
   createdBy   User?    @relation(fields: [createdById], references: [id])
-  
+  healthChecks CredentialHealthCheck[]
+
   // Timestamps
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -464,6 +471,23 @@ enum IntegrationProvider {
   UPTIME_KUMA
   SUPABASE
   VANTA
+}
+
+// =============================================================================
+// Credential Health Checks (Audit Trail)
+// =============================================================================
+
+model CredentialHealthCheck {
+  id           String   @id @default(cuid())
+  credentialId String
+  credential   IntegrationCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  status       String   // healthy | degraded | unhealthy
+  latencyMs    Int?
+  error        String?  // sanitized, never raw secrets
+  checkedAt    DateTime @default(now())
+
+  @@index([credentialId, checkedAt])
+  @@map("credential_health_checks")
 }
 
 // =============================================================================

@@ -19,6 +19,7 @@ export type FeatureKey =
   | 'apiDocs'
   | 'organizations'
   | 'scorecards'
+  | 'credentialHealth'
   | 'team'
   | 'settings';
 
@@ -58,6 +59,7 @@ export function defaultFeaturePolicy(): FeaturePolicy {
     uptimeKuma: { enabled: true, minRole: 'USER' },
     alerts: { enabled: true, minRole: 'USER' },
     scorecards: { enabled: true, minRole: 'USER' },
+    credentialHealth: { enabled: true, minRole: 'USER' },
     vulnerability: { enabled: false, minRole: 'USER' },
     storage: { enabled: true, minRole: 'USER' },
     helm: { enabled: true, minRole: 'READWRITE' },

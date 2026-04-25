@@ -143,7 +143,8 @@ export async function saveCredentials(
   provider: IntegrationProvider,
   credentials: Record<string, unknown>,
   name: string,
-  createdById?: string
+  createdById?: string,
+  expiresAt?: Date | null
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // Validate credentials based on provider
@@ -169,6 +170,8 @@ export async function saveCredentials(
           lastError: null,
           lastErrorAt: null,
           updatedAt: new Date(),
+          ...(expiresAt !== undefined ? { expiresAt } : {}),
+          rotatedAt: new Date(),
         },
       });
     } else {
@@ -180,6 +183,7 @@ export async function saveCredentials(
           credentials: encrypted,
           createdById,
           enabled: true,
+          ...(expiresAt !== undefined ? { expiresAt } : {}),
         },
       });
     }
@@ -237,6 +241,10 @@ export async function listCredentials(
       lastUsedAt: true,
       lastErrorAt: true,
       lastError: true,
+      healthStatus: true,
+      lastHealthCheckAt: true,
+      expiresAt: true,
+      rotatedAt: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -257,6 +265,7 @@ export async function updateCredentialById<T extends Record<string, any>>(
   update: {
     name?: string;
     enabled?: boolean;
+    expiresAt?: Date | null;
     credentialsPatch?: Partial<T>;
     replaceCredentials?: T;
   }
@@ -289,11 +298,13 @@ export async function updateCredentialById<T extends Record<string, any>>(
       data: {
         ...(typeof update.name === 'string' ? { name: update.name } : {}),
         ...(typeof update.enabled === 'boolean' ? { enabled: update.enabled } : {}),
+        ...(update.expiresAt !== undefined ? { expiresAt: update.expiresAt } : {}),
         ...(encrypted ? { credentials: encrypted } : {}),
         ...(encrypted
           ? {
               lastError: null,
               lastErrorAt: null,
+              rotatedAt: new Date(),
               updatedAt: new Date(),
             }
           : { updatedAt: new Date() }),

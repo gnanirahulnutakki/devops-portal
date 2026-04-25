@@ -26,6 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Pencil, Plus, Trash2, RefreshCcw } from 'lucide-react';
 import { OrgBanner } from '@/components/dashboard/org-banner';
+import { CredentialExpiryField } from '@/components/dashboard/credential-expiry-field';
 
 type ArgoAccount = {
   id: string;
@@ -36,6 +37,7 @@ type ArgoAccount = {
   hasToken?: boolean;
   updatedAt?: string;
   lastError?: string | null;
+  expiresAt?: string | null;
 };
 
 export default function ArgoCdConfigurationsPage() {
@@ -51,8 +53,12 @@ export default function ArgoCdConfigurationsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [active, setActive] = useState<ArgoAccount | null>(null);
 
-  const [createForm, setCreateForm] = useState({ name: '', url: '', token: '', insecure: false });
-  const [editForm, setEditForm] = useState({ name: '', url: '', token: '', insecure: false, enabled: true });
+  const [createForm, setCreateForm] = useState<{
+    name: string; url: string; token: string; insecure: boolean; expiresAt: string | null;
+  }>({ name: '', url: '', token: '', insecure: false, expiresAt: null });
+  const [editForm, setEditForm] = useState<{
+    name: string; url: string; token: string; insecure: boolean; enabled: boolean; expiresAt: string | null;
+  }>({ name: '', url: '', token: '', insecure: false, enabled: true, expiresAt: null });
   const [busyId, setBusyId] = useState<string | null>(null);
 
   async function loadAccounts() {
@@ -84,6 +90,7 @@ export default function ArgoCdConfigurationsPage() {
       token: '',
       insecure: Boolean(a.insecure),
       enabled: a.enabled,
+      expiresAt: a.expiresAt ?? null,
     });
     setEditOpen(true);
   };
@@ -108,7 +115,7 @@ export default function ArgoCdConfigurationsPage() {
       if (!res.ok) throw new Error(data?.error?.message || `Failed (HTTP ${res.status})`);
       toast.success('ArgoCD account created.');
       setCreateOpen(false);
-      setCreateForm({ name: '', url: '', token: '', insecure: false });
+      setCreateForm({ name: '', url: '', token: '', insecure: false, expiresAt: null });
       await loadAccounts();
     } catch (e: any) {
       toast.error(e?.message || 'Failed to create ArgoCD account');
@@ -128,6 +135,7 @@ export default function ArgoCdConfigurationsPage() {
         url: editForm.url,
         enabled: editForm.enabled,
         insecure: editForm.insecure,
+        expiresAt: editForm.expiresAt,
       };
       if (editForm.token) payload.token = editForm.token;
 
@@ -320,6 +328,11 @@ export default function ArgoCdConfigurationsPage() {
               </div>
               <Switch checked={createForm.insecure} onCheckedChange={(v) => setCreateForm((p) => ({ ...p, insecure: v }))} />
             </div>
+            <CredentialExpiryField
+              id="argocd-create-expiry"
+              value={createForm.expiresAt}
+              onChange={(v) => setCreateForm((p) => ({ ...p, expiresAt: v }))}
+            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -365,6 +378,11 @@ export default function ArgoCdConfigurationsPage() {
               </div>
               <Switch checked={editForm.enabled} onCheckedChange={(v) => setEditForm((p) => ({ ...p, enabled: v }))} />
             </div>
+            <CredentialExpiryField
+              id="argocd-edit-expiry"
+              value={editForm.expiresAt}
+              onChange={(v) => setEditForm((p) => ({ ...p, expiresAt: v }))}
+            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setEditOpen(false)}>

@@ -8,6 +8,8 @@ const updateSchema = z.object({
   url: z.string().url().optional(),
   token: z.string().min(10).optional(),
   insecure: z.boolean().optional(),
+  // null clears the expiry, undefined leaves it unchanged.
+  expiresAt: z.union([z.string().datetime(), z.string().date(), z.null()]).optional(),
 });
 
 export const PATCH = withTenantApiHandler(
@@ -18,15 +20,17 @@ export const PATCH = withTenantApiHandler(
     const validation = await validateRequest(request, updateSchema);
     if ('error' in validation) return validation.error;
 
-    const { name, enabled, url, token, insecure } = validation.data;
+    const { name, enabled, url, token, insecure, expiresAt } = validation.data;
     const credentialsPatch =
       url || token || typeof insecure === 'boolean'
         ? ({ ...(url ? { url } : {}), ...(token ? { token } : {}), ...(typeof insecure === 'boolean' ? { insecure } : {}) } as any)
         : undefined;
+    const expiresAtValue = expiresAt === undefined ? undefined : expiresAt === null ? null : new Date(expiresAt);
 
     const result = await updateCredentialById(ctx.tenant.organizationId, 'ARGOCD', id, {
       name,
       enabled,
+      expiresAt: expiresAtValue,
       credentialsPatch,
     });
     if (!result.success) {

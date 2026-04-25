@@ -162,6 +162,39 @@ export const syncOperationsTotal = new Counter({
 });
 
 // =============================================================================
+// Credential Health Metrics
+// =============================================================================
+
+export const credentialHealthCheckTotal = new Counter({
+  name: 'devops_portal_credential_health_check_total',
+  help: 'Total credential health checks performed',
+  labelNames: ['provider', 'status'] as const,
+  registers: [metricsRegistry],
+});
+
+export const credentialHealthCheckDuration = new Histogram({
+  name: 'devops_portal_credential_health_check_duration_seconds',
+  help: 'Credential health check duration in seconds',
+  labelNames: ['provider'] as const,
+  buckets: [0.1, 0.5, 1, 2.5, 5, 10],
+  registers: [metricsRegistry],
+});
+
+export const credentialExpiringSoonGauge = new Gauge({
+  name: 'devops_portal_credential_expiring_soon',
+  help: 'Number of credentials expiring within 7 days',
+  labelNames: ['provider', 'organization_id'] as const,
+  registers: [metricsRegistry],
+});
+
+export const credentialHealthStatusGauge = new Gauge({
+  name: 'devops_portal_credential_health_status',
+  help: 'Current credential health status counts',
+  labelNames: ['provider', 'organization_id', 'status'] as const,
+  registers: [metricsRegistry],
+});
+
+// =============================================================================
 // Helper Functions
 // =============================================================================
 
@@ -272,6 +305,38 @@ export function recordRateLimitHit(
     limiter_type: limiterType,
     organization_id: organizationId || 'anonymous',
   });
+}
+
+/**
+ * Record a credential health check result
+ */
+export function recordCredentialHealthCheck(
+  provider: string,
+  status: 'healthy' | 'degraded' | 'unhealthy',
+  durationMs: number
+) {
+  credentialHealthCheckTotal.inc({ provider: provider.toLowerCase(), status });
+  credentialHealthCheckDuration.observe(
+    { provider: provider.toLowerCase() },
+    durationMs / 1000
+  );
+}
+
+/**
+ * Update credential health status gauges for an organization
+ */
+export function updateCredentialHealthGauges(
+  organizationId: string,
+  statusCounts: Record<string, Record<string, number>> // provider -> status -> count
+) {
+  for (const [provider, counts] of Object.entries(statusCounts)) {
+    for (const [status, count] of Object.entries(counts)) {
+      credentialHealthStatusGauge.set(
+        { provider: provider.toLowerCase(), organization_id: organizationId, status },
+        count
+      );
+    }
+  }
 }
 
 /**

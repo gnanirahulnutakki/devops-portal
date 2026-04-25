@@ -36,7 +36,7 @@ const sdk = new NodeSDK({
 export function register() {
   if (process.env.OTEL_ENABLED === 'true') {
     sdk.start();
-    
+
     // Graceful shutdown
     process.on('SIGTERM', () => {
       sdk
@@ -45,5 +45,16 @@ export function register() {
         .catch((error) => console.log('Error shutting down OpenTelemetry SDK', error))
         .finally(() => process.exit(0));
     });
+  }
+
+  // Background workers self-gate on Redis availability — no-op when disabled.
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    import('./workers/credential-health-worker')
+      .then(({ startCredentialHealthWorker }) => {
+        startCredentialHealthWorker();
+      })
+      .catch((err) => {
+        console.log('Failed to start credential-health worker', err);
+      });
   }
 }

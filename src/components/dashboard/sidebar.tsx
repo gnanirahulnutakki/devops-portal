@@ -34,6 +34,7 @@ import {
   BarChart3,
   BookOpen,
   Award,
+  KeyRound,
 } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -79,6 +80,7 @@ const navGroups: { id: string; title: string; items: NavItem[] }[] = [
       { title: 'Scorecards', href: '/scorecards', icon: Award, featureKey: 'scorecards' },
       { title: 'DORA Metrics', href: '/monitoring/dora', icon: BarChart3, featureKey: 'monitoring' },
       { title: 'Vulnerability', href: '/vulnerability', icon: ShieldCheck, featureKey: 'vulnerability' },
+      { title: 'Credential Health', href: '/monitoring/credential-health', icon: KeyRound, featureKey: 'credentialHealth' },
       { title: 'Loki · Logs', href: '/monitoring/loki', icon: Logs, featureKey: 'monitoring' },
       { title: 'Log Browser', href: '/storage', icon: HardDrive, featureKey: 'storage' },
       { title: 'Uptime Kuma', href: '/uptime-kuma', icon: Activity, featureKey: 'uptimeKuma' },

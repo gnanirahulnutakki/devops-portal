@@ -14,6 +14,8 @@ const createArgocdAccountSchema = z.object({
   url: z.string().url(),
   token: z.string().min(10),
   insecure: z.boolean().optional(),
+  // ISO date string; null = clear; omitted = leave unchanged.
+  expiresAt: z.union([z.string().datetime(), z.string().date(), z.null()]).optional(),
 });
 
 export const GET = withTenantApiHandler(
@@ -29,6 +31,10 @@ export const GET = withTenantApiHandler(
           lastUsedAt: true,
           lastErrorAt: true,
           lastError: true,
+          expiresAt: true,
+          rotatedAt: true,
+          healthStatus: true,
+          lastHealthCheckAt: true,
           createdAt: true,
           updatedAt: true,
           credentials: true,
@@ -69,14 +75,16 @@ export const POST = withTenantApiHandler(
     const validation = await validateRequest(request, createArgocdAccountSchema);
     if ('error' in validation) return validation.error;
 
-    const { name, url, token, insecure } = validation.data;
+    const { name, url, token, insecure, expiresAt } = validation.data;
+    const expiresAtDate = expiresAt === undefined ? undefined : expiresAt === null ? null : new Date(expiresAt);
 
     const result = await saveCredentials(
       ctx.tenant.organizationId,
       'ARGOCD',
       { url, token, insecure: insecure ?? false },
       name,
-      ctx.tenant.userId
+      ctx.tenant.userId,
+      expiresAtDate
     );
 
     if (!result.success) {
