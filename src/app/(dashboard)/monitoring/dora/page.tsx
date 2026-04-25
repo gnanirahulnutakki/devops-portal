@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/tooltip';
 import {
   Rocket, Clock, AlertTriangle, HeartPulse, RefreshCw, TrendingUp,
-  ArrowUpRight, ArrowDownRight, Minus, Info, BarChart3,
+  Info, BarChart3,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------

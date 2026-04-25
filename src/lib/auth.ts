@@ -248,7 +248,7 @@ export const authConfig: NextAuthConfig = {
   },
 
   callbacks: {
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account, profile: _profile }) {
       logger.info(
         { userId: user.id, provider: account?.provider, email: user.email },
         'User sign-in attempt'
