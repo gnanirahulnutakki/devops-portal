@@ -1,881 +1,193 @@
-# GitOps Management Portal - Administrator Guide
+# DevOps Portal Administrator Guide
 
-## Table of Contents
+This guide is for operators and maintainers of the active root-runtime application.
 
-1. [Overview](#overview)
-2. [Installation and Setup](#installation-and-setup)
-3. [Configuration](#configuration)
-4. [Operations](#operations)
-5. [Monitoring and Maintenance](#monitoring-and-maintenance)
-6. [Security](#security)
-7. [Troubleshooting](#troubleshooting)
-8. [Backup and Recovery](#backup-and-recovery)
+Use it together with:
 
----
+- `README.md`
+- `docs/deployment/DEPLOY_GUIDE.md`
+- `docs/operations/AUTHENTICATION_AND_USERS.md`
+- `docs/operations/SECRETS_AND_VAULT.md`
+- `docs/operations/DEPLOYMENT_RUNBOOK.md`
 
-## Overview
+## Administrator Responsibilities
 
-This guide is for administrators responsible for deploying, configuring, and maintaining the GitOps Management Portal. It covers installation, configuration, monitoring, and operational procedures.
+Typical responsibilities for this runtime are:
 
-### Administrator Responsibilities
+- configure auth providers and org bootstrap behavior
+- manage runtime secrets and integration credentials
+- deploy and upgrade the app container and Helm chart
+- monitor health, metrics, and background behavior
+- manage organization, team, and feature access
+- verify storage, queue, and security-scan dependencies
 
-- Deploy and configure the portal
-- Manage user access and permissions
-- Monitor system health and performance
-- Maintain database and backups
-- Configure integrations (GitHub, ArgoCD, Grafana)
-- Troubleshoot issues
-- Plan and execute upgrades
+## Runtime Components You Own
 
----
+As an operator, assume ownership of these components:
 
-## Installation and Setup
+- root Next.js app under `src/`
+- Prisma/PostgreSQL schema and migrations
+- Redis-backed queue, rate limiting, and token storage
+- S3 or MinIO storage integration
+- Helm chart and Kubernetes deployment resources
+- external integration connectivity for ArgoCD, Grafana, GitHub, Prometheus, and optional LLM systems
 
-### Prerequisites
+## Authentication And Access Control
 
-Before installing the portal, ensure you have:
+### Auth modes
 
-#### System Requirements
+- default: `AUTH_MODE=keycloak-only`
+- optional multi-provider mode: `AUTH_MODE=multi`
 
-- **Node.js**: v18, v20, or v24
-- **Yarn**: v1.22+
-- **PostgreSQL**: v14+
-- **Docker**: For containerized deployments
-- **Kubernetes**: For production deployments (optional)
+In `keycloak-only` mode, the app expects:
 
-#### Access Requirements
+- `KEYCLOAK_ID`
+- `KEYCLOAK_SECRET`
+- `KEYCLOAK_ISSUER`
 
-- GitHub Personal Access Token with:
-  - `repo` - Full control of private repositories
-  - `read:org` - Read org and team membership
-  - `workflow` - Update GitHub Action workflows
+If these are missing, auth is unhealthy and sign-in will not behave correctly.
 
-- ArgoCD Authentication Token:
-  ```bash
-  argocd account generate-token --account argocd-server
-  ```
+### Credentials login
 
-- Grafana API Token (optional):
-  - Access to relevant dashboards and metrics
-
-#### Network Requirements
-
-- Outbound access to:
-  - `github.com` (port 443)
-  - `api.github.com` (port 443)
-  - ArgoCD server URL
-  - Grafana server URL
-- Inbound access for users (port 3000 frontend, port 7007 backend)
-
-### Local Development Setup
-
-#### Step 1: Clone Repository
+If you need local or fallback credentials login:
 
 ```bash
-git clone https://github.com/radiantlogic-saas/backstage-gitops.git
-cd backstage-gitops
+AUTH_MODE=multi
+ENABLE_CREDENTIALS_AUTH=true
 ```
 
-#### Step 2: Install Dependencies
+### Org membership enforcement
 
-```bash
-yarn install
-```
+Middleware enforces organization access using JWT membership claims. Client state alone does not grant access.
 
-#### Step 3: Setup PostgreSQL
+That means:
 
-**Option A: Using Docker Compose**
+- a user must have a valid org membership
+- API requests must carry valid org context
+- page access also depends on a selected org cookie
 
-```bash
-docker-compose up -d postgres
-```
+## Team And Organization Administration
 
-**Option B: Local PostgreSQL Installation**
+Current admin surfaces live in the app itself:
 
-```bash
-# Create database
-createdb backstage
+- Settings → Team
+- organization settings routes
+- user and membership APIs
 
-# Create user
-psql -c "CREATE USER backstage WITH PASSWORD 'backstage';"
-psql -c "GRANT ALL PRIVILEGES ON DATABASE backstage TO backstage;"
-```
+Admins can generally:
 
-#### Step 4: Configure Environment Variables
+- create or remove members
+- change org roles
+- manage organization settings JSON
+- control feature policy exposure
 
-```bash
-cp .env.example .env
-```
+## Integration Administration
 
-Edit `.env` file with your credentials:
+The portal supports org-scoped encrypted integration credentials for providers such as:
 
-```bash
-# Database
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_USER=backstage
-POSTGRES_PASSWORD=your_secure_password
-POSTGRES_DB=backstage
+- ArgoCD
+- Grafana
+- GitHub
+- S3
+- LLM
+- Uptime Kuma
+- Supabase
+- Vanta
 
-# GitHub
-GITHUB_TOKEN=ghp_your_actual_token_here
-GITHUB_OAUTH_CLIENT_ID=your_oauth_client_id
-GITHUB_OAUTH_CLIENT_SECRET=your_oauth_secret
+Operationally, admins should prefer DB-backed encrypted credentials over loose env-only setups where possible.
 
-# ArgoCD
-ARGOCD_URL=https://argocd.your-domain.com
-ARGOCD_TOKEN=your_argocd_token
+### Current caveat
 
-# Grafana
-GRAFANA_URL=https://your-org.grafana.net
-GRAFANA_TOKEN=your_grafana_token
-
-# Auth
-AUTH_SESSION_SECRET=$(openssl rand -base64 32)
-```
-
-#### Step 5: Run Database Migrations
-
-```bash
-# Run migrations
-yarn workspace @internal/plugin-gitops-backend knex migrate:latest
-
-# Verify migrations
-yarn workspace @internal/plugin-gitops-backend knex migrate:status
-```
-
-#### Step 6: Start the Application
-
-```bash
-# Start with environment variables loaded
-./start-with-env.sh
-```
-
-#### Step 7: Verify Installation
-
-```bash
-# Check frontend
-curl http://localhost:3000/
-
-# Check backend
-curl http://localhost:7007/api/gitops/health
+Credential sourcing is not fully normalized yet. Some services can still fall back to:
 
-# Expected response: {"status":"ok"}
-```
-
----
+- org settings JSON
+- per-user Redis tokens
+- process environment variables
 
-## Configuration
+That increases drift risk and should be reviewed during incident analysis.
 
-### Application Configuration
+## Deployment Administration
 
-The main configuration file is `app-config.yaml`:
+Primary deployment assets:
 
-```yaml
-app:
-  title: GitOps Management Portal
-  baseUrl: http://localhost:3000
+- root `Dockerfile`
+- `docker-compose.yml`
+- `helm/devops-portal/`
 
-organization:
-  name: RadiantLogic
-
-backend:
-  baseUrl: http://localhost:7007
-  listen:
-    port: 7007
-  database:
-    client: pg
-    connection:
-      host: ${POSTGRES_HOST}
-      port: ${POSTGRES_PORT}
-      user: ${POSTGRES_USER}
-      password: ${POSTGRES_PASSWORD}
-      database: ${POSTGRES_DB}
-
-# GitHub Integration
-integrations:
-  github:
-    - host: github.com
-      token: ${GITHUB_TOKEN}
-
-# GitOps Plugin Configuration
-gitops:
-  github:
-    organization: radiantlogic-saas
-    token: ${GITHUB_TOKEN}
-  argocd:
-    enabled: true
-    url: ${ARGOCD_URL}
-    token: ${ARGOCD_TOKEN}
-  grafana:
-    enabled: true
-    url: ${GRAFANA_URL}
-    token: ${GRAFANA_TOKEN}
-```
-
-### Environment-Specific Configuration
-
-Create environment-specific configs:
-
-**app-config.production.yaml**:
-
-```yaml
-app:
-  baseUrl: https://gitops.radiantlogic.com
-
-backend:
-  baseUrl: https://gitops-api.radiantlogic.com
-  database:
-    connection:
-      ssl:
-        require: true
-        rejectUnauthorized: false
-
-# Production-specific settings
-gitops:
-  github:
-    rateLimitWarning: 100
-  bulkOperations:
-    maxConcurrency: 20
-    timeout: 600000
-```
-
-### Database Configuration
-
-#### Connection Pooling
-
-Configure in `packages/backend/src/plugins/database.ts`:
-
-```typescript
-const pool = {
-  min: 2,
-  max: 10,
-  acquireTimeoutMillis: 60000,
-  idleTimeoutMillis: 600000,
-};
-```
-
-#### Migrations
-
-Migrations are in `plugins/gitops-backend/migrations/`:
-
-```bash
-# Create new migration
-yarn workspace @internal/plugin-gitops-backend knex migrate:make migration_name
-
-# Run pending migrations
-yarn workspace @internal/plugin-gitops-backend knex migrate:latest
-
-# Rollback last migration
-yarn workspace @internal/plugin-gitops-backend knex migrate:rollback
-
-# Check migration status
-yarn workspace @internal/plugin-gitops-backend knex migrate:status
-```
-
-### GitHub Integration Configuration
-
-#### Rate Limiting
-
-GitHub API has rate limits:
-- **Authenticated**: 5,000 requests per hour
-- **Search API**: 30 requests per minute
-
-Configure rate limit handling in `plugins/gitops-backend/src/services/GitHubService.ts`:
-
-```typescript
-const octokit = new Octokit({
-  auth: config.token,
-  throttle: {
-    onRateLimit: (retryAfter, options) => {
-      logger.warn(`Rate limit hit, retrying after ${retryAfter}s`);
-      return true; // Retry
-    },
-  },
-});
-```
-
-#### Webhook Configuration (Optional)
-
-To receive real-time updates from GitHub:
-
-1. Go to GitHub Organization Settings
-2. Navigate to Webhooks
-3. Add webhook:
-   - **Payload URL**: `https://gitops-api.your-domain.com/webhooks/github`
-   - **Content type**: `application/json`
-   - **Secret**: Generate secure secret
-   - **Events**: Select relevant events (push, pull_request, etc.)
-
-### ArgoCD Integration Configuration
-
-#### Authentication
-
-ArgoCD supports multiple auth methods:
-
-**Token-based (Recommended)**:
-```bash
-# Generate long-lived token
-argocd account generate-token --account argocd-server --expires-in 8760h
-```
-
-**Username/Password**:
-```yaml
-gitops:
-  argocd:
-    url: https://argocd.example.com
-    username: admin
-    password: ${ARGOCD_PASSWORD}
-```
-
-#### Namespace Configuration
-
-If using namespace-scoped ArgoCD:
-
-```yaml
-gitops:
-  argocd:
-    namespace: argocd
-    # Or tenant-specific namespace
-    namespace: duploservices-rli-use2-svc
-```
-
----
-
-## Operations
-
-### Starting and Stopping
-
-#### Development
-
-```bash
-# Start
-./start-with-env.sh
-
-# Stop
-pkill -f "backstage-cli package start"
-```
-
-#### Production (Systemd)
-
-Create systemd service file `/etc/systemd/system/backstage-gitops.service`:
-
-```ini
-[Unit]
-Description=Backstage GitOps Portal
-After=network.target postgresql.service
-
-[Service]
-Type=simple
-User=backstage
-WorkingDirectory=/opt/backstage-gitops
-EnvironmentFile=/opt/backstage-gitops/.env
-ExecStart=/usr/bin/yarn start
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Manage the service:
-
-```bash
-# Enable and start
-sudo systemctl enable backstage-gitops
-sudo systemctl start backstage-gitops
-
-# Check status
-sudo systemctl status backstage-gitops
-
-# View logs
-sudo journalctl -u backstage-gitops -f
-```
-
-### Production Deployment
-
-#### Option 1: Kubernetes with Helm
-
-```bash
-# Create namespace
-kubectl create namespace gitops-portal
-
-# Create secrets
-kubectl create secret generic backstage-secrets \
-  --namespace gitops-portal \
-  --from-literal=GITHUB_TOKEN=$GITHUB_TOKEN \
-  --from-literal=ARGOCD_TOKEN=$ARGOCD_TOKEN \
-  --from-literal=POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+The Helm chart currently manages:
 
-# Deploy with Helm
-helm install backstage-gitops ./helm \
-  --namespace gitops-portal \
-  --values helm/values-prod.yaml
-```
-
-#### Option 2: Docker Compose
-
-```bash
-# Build image
-docker-compose build
-
-# Start services
-docker-compose up -d
+- app deployment
+- probes and HPA
+- service account and network policy
+- bundled PostgreSQL, Redis, and MinIO when enabled
+- optional Sealed Secrets, External Secrets, CSI secret integration, and Trivy Operator support
 
-# View logs
-docker-compose logs -f
-```
+## Operational Endpoints
 
-### Scaling
+Key endpoints for operators:
 
-#### Horizontal Scaling
+- `/api/health`
+- `/api/metrics`
+- `/api/features`
+- `/api/queue/stats`
+- `/api/openapi`
 
-The backend can be scaled horizontally:
+### Important behaviors
 
-**Kubernetes**:
-```yaml
-replicaCount: 3
+- `/api/metrics` should be protected with `METRICS_AUTH_TOKEN`
+- verbose health output requires bearer auth in production
+- `/api/openapi` is not effectively public today because middleware still applies normal API auth behavior
 
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 80
-```
+## Reliability Checks
 
-**Docker Compose**:
-```yaml
-services:
-  backend:
-    deploy:
-      replicas: 3
-```
+Regular checks should include:
 
-#### Database Connection Pooling
+- app health status
+- readiness and rollout behavior in Kubernetes
+- DB connectivity
+- Redis availability
+- object storage reachability
+- integration credential health
+- BullMQ queue health and worker presence
+- security-scan job execution if vulnerability features are enabled
 
-Adjust pool size based on replicas:
+## Backup And Recovery
 
-```typescript
-// Rule of thumb: (replicas * max_connections) < postgres_max_connections
-const pool = {
-  max: 10, // per instance
-};
-```
+The portal depends on multiple state stores:
 
-### Backup and Recovery
+- PostgreSQL
+- object storage
+- Kubernetes secrets or secret backends
 
-#### Database Backups
+Minimum recovery plan:
 
-**Automated Daily Backups**:
+1. backup PostgreSQL regularly
+2. preserve object storage buckets if used for tenant data or artifacts
+3. back up or regenerate secret material, especially:
+   - `AUTH_SECRET` or `NEXTAUTH_SECRET`
+   - `TOKEN_ENCRYPTION_KEY`
+   - integration credentials or their backing secret sources
 
-```bash
-#!/bin/bash
-# /opt/backups/backup-gitops-db.sh
+If `TOKEN_ENCRYPTION_KEY` is lost or rotated incorrectly, encrypted integration credentials may become unreadable.
 
-DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="/opt/backups/gitops"
-BACKUP_FILE="$BACKUP_DIR/backstage_$DATE.sql.gz"
+## Security Defaults To Keep
 
-# Create backup
-pg_dump -h localhost -U backstage backstage | gzip > $BACKUP_FILE
+- run with non-root containers
+- keep network policies enabled unless intentionally replaced
+- avoid plaintext secrets in Git
+- protect `/api/metrics`
+- prefer least-privilege credentials for external systems
+- review security-scan service account permissions before broadening them
 
-# Keep only last 30 days
-find $BACKUP_DIR -name "*.sql.gz" -mtime +30 -delete
+## Known Risks
 
-# Upload to S3 (optional)
-aws s3 cp $BACKUP_FILE s3://your-backup-bucket/gitops/
-```
+- worker startup is not clearly wired from the inspected startup paths
+- some org-backed models still rely on explicit route filtering rather than centralized Prisma auto-scoping
+- Redis behavior in local `localhost` mode disables some runtime capabilities
+- mixed credential sources can produce drift between org settings, DB records, and env vars
 
-Add to crontab:
-```bash
-# Daily backup at 2 AM
-0 2 * * * /opt/backups/backup-gitops-db.sh
-```
+## Historical Version
 
-**Manual Backup**:
+The replaced Backstage-era administrator guide now lives at:
 
-```bash
-# Backup
-pg_dump -h localhost -U backstage backstage > backup.sql
-
-# Restore
-psql -h localhost -U backstage backstage < backup.sql
-```
-
-#### Application State Backup
-
-Backup configuration files:
-
-```bash
-#!/bin/bash
-tar -czf gitops-config-$(date +%Y%m%d).tar.gz \
-  app-config.yaml \
-  app-config.production.yaml \
-  .env \
-  helm/values-prod.yaml
-```
-
----
-
-## Monitoring and Maintenance
-
-### Health Checks
-
-#### Application Health
-
-```bash
-# Backend health
-curl http://localhost:7007/api/gitops/health
-
-# Database connectivity
-curl http://localhost:7007/api/gitops/health/db
-
-# GitHub API connectivity
-curl http://localhost:7007/api/gitops/health/github
-
-# ArgoCD connectivity
-curl http://localhost:7007/api/gitops/health/argocd
-```
-
-#### Metrics
-
-The portal exposes metrics at `/metrics` (Prometheus format):
-
-- Request count by endpoint
-- Request duration
-- Error rates
-- Database connection pool stats
-- GitHub API rate limit remaining
-
-### Log Management
-
-#### Log Locations
-
-**Development**:
-- Backend: Console output
-- Frontend: Browser console
-
-**Production**:
-- Systemd: `/var/log/journal/` or `journalctl`
-- Docker: `docker logs <container>`
-- Kubernetes: `kubectl logs <pod>`
-
-#### Log Levels
-
-Configure in `app-config.yaml`:
-
-```yaml
-backend:
-  logLevel: info  # debug, info, warn, error
-```
-
-#### Log Rotation
-
-Configure logrotate for production:
-
-```bash
-# /etc/logrotate.d/backstage-gitops
-/var/log/backstage-gitops/*.log {
-    daily
-    missingok
-    rotate 14
-    compress
-    delaycompress
-    notifempty
-    create 0640 backstage backstage
-    sharedscripts
-    postrotate
-        systemctl reload backstage-gitops
-    endscript
-}
-```
-
-### Performance Monitoring
-
-#### Database Performance
-
-```sql
--- Check slow queries
-SELECT query, calls, total_time, mean_time
-FROM pg_stat_statements
-ORDER BY mean_time DESC
-LIMIT 10;
-
--- Check table sizes
-SELECT schemaname, tablename,
-  pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size
-FROM pg_tables
-WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
-
--- Check index usage
-SELECT schemaname, tablename, indexname, idx_scan
-FROM pg_stat_user_indexes
-ORDER BY idx_scan;
-```
-
-#### Application Performance
-
-Monitor key metrics:
-- API response times
-- Bulk operation duration
-- Database query times
-- GitHub API call latency
-- Memory and CPU usage
-
-### Maintenance Tasks
-
-#### Weekly Tasks
-
-- Review error logs
-- Check disk space
-- Verify backups are running
-- Review audit logs for anomalies
-
-#### Monthly Tasks
-
-- Update dependencies: `yarn upgrade-interactive`
-- Review and optimize slow queries
-- Clean up old audit logs (older than 90 days)
-- Test backup restoration
-- Review security advisories
-
-#### Quarterly Tasks
-
-- Plan and execute version upgrades
-- Review and update documentation
-- Conduct security audit
-- Review access permissions
-- Load testing
-
----
-
-## Security
-
-### Authentication and Authorization
-
-#### GitHub OAuth Setup
-
-1. Create GitHub OAuth App:
-   - Go to: Settings → Developer settings → OAuth Apps
-   - **Application name**: GitOps Management Portal
-   - **Homepage URL**: `https://gitops.your-domain.com`
-   - **Authorization callback URL**: `https://gitops.your-domain.com/api/auth/github/handler/frame`
-
-2. Configure in `.env`:
-   ```bash
-   GITHUB_OAUTH_CLIENT_ID=your_client_id
-   GITHUB_OAUTH_CLIENT_SECRET=your_client_secret
-   ```
-
-#### Session Management
-
-Configure session settings:
-
-```yaml
-auth:
-  session:
-    secret: ${AUTH_SESSION_SECRET}
-    secure: true  # HTTPS only
-    sameSite: strict
-    maxAge: 86400000  # 24 hours
-```
-
-### Network Security
-
-#### TLS/SSL Configuration
-
-**Nginx Reverse Proxy**:
-
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name gitops.your-domain.com;
-
-    ssl_certificate /etc/nginx/ssl/gitops.crt;
-    ssl_certificate_key /etc/nginx/ssl/gitops.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /api/ {
-        proxy_pass http://localhost:7007;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-#### Firewall Rules
-
-Allow only necessary ports:
-
-```bash
-# Allow SSH
-ufw allow 22/tcp
-
-# Allow HTTPS
-ufw allow 443/tcp
-
-# Block direct access to backend
-ufw deny 7007/tcp
-
-# Enable firewall
-ufw enable
-```
-
-### Secret Management
-
-#### Using Kubernetes Secrets
-
-```bash
-# Create secret
-kubectl create secret generic backstage-secrets \
-  --from-literal=GITHUB_TOKEN=$GITHUB_TOKEN \
-  --from-literal=POSTGRES_PASSWORD=$POSTGRES_PASSWORD
-
-# Reference in deployment
-env:
-  - name: GITHUB_TOKEN
-    valueFrom:
-      secretKeyRef:
-        name: backstage-secrets
-        key: GITHUB_TOKEN
-```
-
-#### Using HashiCorp Vault (Advanced)
-
-```yaml
-backend:
-  secrets:
-    vault:
-      addr: https://vault.example.com
-      token: ${VAULT_TOKEN}
-      paths:
-        - secret/gitops/*
-```
-
-### Audit and Compliance
-
-#### Enable Audit Logging
-
-All operations are logged to the `audit_logs` table:
-
-```sql
-SELECT
-  timestamp,
-  user_id,
-  operation,
-  repository,
-  branch,
-  details
-FROM audit_logs
-WHERE timestamp > NOW() - INTERVAL '30 days'
-ORDER BY timestamp DESC;
-```
-
-#### Export Audit Reports
-
-```bash
-# Monthly audit report
-psql -h localhost -U backstage -c "
-  COPY (
-    SELECT * FROM audit_logs
-    WHERE timestamp >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
-      AND timestamp < DATE_TRUNC('month', CURRENT_DATE)
-  ) TO '/tmp/audit_report_$(date +%Y%m).csv' CSV HEADER;
-"
-```
-
----
-
-## Troubleshooting
-
-See [Troubleshooting Guide](troubleshooting.md) for detailed troubleshooting steps.
-
-### Common Issues
-
-#### 1. Cannot Connect to Database
-
-**Symptoms**: Backend fails to start, error: "Connection refused"
-
-**Solution**:
-```bash
-# Check PostgreSQL is running
-sudo systemctl status postgresql
-
-# Check connectivity
-psql -h localhost -U backstage -d backstage
-
-# Check logs
-sudo journalctl -u postgresql -n 50
-```
-
-#### 2. GitHub API Rate Limit Exceeded
-
-**Symptoms**: Operations fail with 403 error
-
-**Solution**:
-```bash
-# Check rate limit status
-curl -H "Authorization: token $GITHUB_TOKEN" \
-  https://api.github.com/rate_limit
-
-# Wait for reset or use different token
-# Implement caching to reduce API calls
-```
-
-#### 3. Frontend Not Loading
-
-**Symptoms**: Blank page or loading indefinitely
-
-**Solution**:
-```bash
-# Check backend is running
-curl http://localhost:7007/api/gitops/health
-
-# Check browser console for errors
-# Rebuild frontend
-cd packages/app && yarn build
-
-# Clear browser cache
-```
-
----
-
-## Appendix
-
-### Useful Commands
-
-```bash
-# View all running processes
-ps aux | grep backstage
-
-# Check port usage
-lsof -i :3000
-lsof -i :7007
-
-# View database connections
-psql -c "SELECT * FROM pg_stat_activity;"
-
-# Restart services
-systemctl restart backstage-gitops
-
-# View real-time logs
-tail -f /var/log/backstage-gitops/app.log
-```
-
-### Configuration Reference
-
-See `app-config.yaml` for full configuration options.
-
-### API Endpoints
-
-See [API Reference](../reference/api-reference.md) for complete API documentation.
+- `docs/legacy/backstage-era/guides/admin-guide.md`

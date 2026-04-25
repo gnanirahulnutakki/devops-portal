@@ -1,223 +1,153 @@
 # Getting Started
 
-This guide will help you get started with the RadiantLogic DevOps Management Portal.
+This guide is for the current DevOps Portal runtime.
 
-## Prerequisites
+It assumes the active app is the root Next.js portal and not the older Backstage/plugin layout.
 
-- Access to the portal (URL provided by your administrator)
-- GitHub account with access to RadiantLogic repositories
-- Basic understanding of Git and YAML
+## Who This Is For
 
-## Portal Overview
+Use this guide if you need to:
 
-The portal consists of several main sections accessible from the left sidebar:
+- sign in to the portal for the first time
+- select an organization
+- connect the first integrations
+- understand the main dashboard areas
 
-### 🏠 Home
-Your dashboard showing:
-- Recent activity across all repositories
-- Quick statistics (open PRs, branches, operations)
-- Quick action buttons for common tasks
-- System health status
+## Before You Begin
 
-### 📁 Repository Browser
-Edit configuration files:
-- Browse repositories, branches, and files
-- Edit YAML files with Monaco editor
-- Commit changes to single or multiple branches
-- Create pull requests
+You need:
 
-### 🔀 Pull Requests
-Manage PRs:
-- View all open pull requests
-- Review changes with diff viewer
-- View PR timeline and activity
-- Merge or close pull requests
+- a working portal URL
+- a user account or SSO access
+- membership in at least one organization
+- at least one configured integration if you want live GitHub, ArgoCD, Grafana, or S3 data
 
-### 🚀 ArgoCD Applications
-Monitor deployments:
-- View sync status of applications
-- Trigger manual syncs
-- View deployment history
+## First Sign-In
 
-## Your First Task: Updating a Configuration
+### Auth mode matters
 
-### Scenario: Update FID version for a QA environment
+The portal can run in different auth modes:
 
-**Step 1: Navigate to Repository Browser**
-- Click "Repository Browser" in the left sidebar
-- Or click "Edit Config" button from Home
+- `keycloak-only`
+- `multi`
 
-**Step 2: Select Your Target**
-- **Repository**: Select `rlqa-usw2` from dropdown
-- **Branch**: Select `rlqa-usw2-qa01` (or your target environment)
-- **File**: Select `values.yaml`
+If your environment is SSO-first, follow your platform team’s Keycloak login instructions.
 
-**Step 3: Edit the Configuration**
-- Click "Edit with Monaco" button
-- The Monaco editor will open with your file
-- You have two editing modes:
-  - **Field-Level Edit**: Update specific YAML fields
-  - **Full File Edit**: Edit the entire file
+If your environment uses multi-provider auth, the login page may show:
 
-**Step 4: Using Field-Level Edit (Recommended)**
-- Select "Field-Level Edit" tab
-- In the field selector:
-  - **Field Path**: `fid.image.tag`
-  - **New Value**: `v1.2.3`
-- **Commit Message**: `Update FID to v1.2.3 for QA`
+- credentials login
+- GitHub
+- Google
+- Azure AD
+- Keycloak
 
-**Step 5: Choose Branches (Optional for Multi-Branch)**
-- If updating multiple environments:
-  - Check additional branches (e.g., `rlqa-usw2-qa02`, `rlqa-usw2-qa03`)
-- Or keep just the current branch selected
+## Select Your Organization
 
-**Step 6: Commit Changes**
-- Click dropdown arrow next to commit button
-- Choose one option:
-  - **Commit to Current Branch**: Direct commit
-  - **Commit to New Branch**: Create feature branch
-  - **Create New Branch & Pull Request**: Create branch + PR
+After sign-in, the portal may redirect you to `/select-organization`.
 
-**Step 7: Verify Changes**
-- If you created a PR, go to "Pull Requests" tab
-- View the diff to confirm changes
-- If you committed directly, check ArgoCD for deployment
+This is expected. Most pages and APIs are organization-scoped.
 
-## Common Workflows
+Choose the organization you want to work in before continuing.
 
-### Workflow 1: Quick Single-Environment Update
-```
-1. Repository Browser → Select repo/branch/file
-2. Edit with Monaco → Field-Level Edit
-3. Update single field
-4. Commit to current branch
-5. Done! ArgoCD will auto-deploy
-```
+## Initial Setup Checklist
 
-### Workflow 2: Bulk Update Across Environments
-```
-1. Repository Browser → Select base branch
-2. Edit with Monaco → Field-Level Edit
-3. Update field (e.g., fid.image.tag → v1.2.3)
-4. Select multiple branches (15 QA branches)
-5. Commit → "Update Field in 15 Branches"
-6. Go to Operations tab to track progress
-7. View Audit Log for results
-```
+For a new tenant or a fresh environment, the minimum useful setup is:
 
-### Workflow 3: PR-Based Deployment
-```
-1. Repository Browser → Select branch
-2. Edit with Monaco
-3. Make changes
-4. "Create New Branch & Pull Request"
-5. Fill PR title and description
-6. Create PR
-7. Go to Pull Requests tab
-8. Review changes
-9. Merge when ready
-10. ArgoCD deploys automatically
-```
+1. verify you can sign in
+2. select an organization
+3. open **Settings**
+4. add the integrations your team actually uses
+5. confirm feature access with the sidebar and `/api/features`
 
-## Understanding Branch Selection in Monaco Editor
+### Common first integrations
 
-When editing with Monaco:
+- GitHub account or org credential
+- ArgoCD credential
+- Grafana credential
+- S3 or MinIO credential
 
-### Single Branch Mode
-- Edit and commit to current branch only
-- Fastest for single environment updates
+## Main Areas Of The Portal
 
-### Multi-Branch Mode
-- Select multiple branches from checkboxes
-- First 15 branches shown
-- Click "View All X Branches" to see and select all
-- Selected branches have:
-  - Navy blue background
-  - Checkmark icon
-  - Bold text
+The current sidebar is organized around these sections:
 
-### Branch Selection Dialog
-- Search for branches by name
-- Check/uncheck branches
-- See total selected count
-- Click "Done" to confirm
+### Launchpad
 
-## Key Concepts
+- Dashboard
+- Repositories
+- Pull Requests
+- GitHub Actions
+- Deployments
+- ArgoCD
+- Clusters
+- GitOps Studio
 
-### Field Path Notation
-YAML paths use dot notation:
-```yaml
-fid:
-  image:
-    tag: v1.2.3
-```
-Field path: `fid.image.tag`
+### Monitoring
 
-### Branch Naming Convention
-- `{product}-{region}-{customer}`
-- Example: `rlqa-usw2-customer01`
-- Production branches are protected
+- Grafana Dashboards
+- Alerts
+- Grafana Insights
+- Prometheus-facing alert views
+- Scorecards
+- DORA Metrics
+- Vulnerability
+- Credential Health
+- Loki Logs
+- Log Browser
+- Uptime Kuma
 
-### Bulk Operations
-- Asynchronous processing
-- Returns Operation ID
-- Track progress in Operations tab
-- View results in Audit Log
+### Tools
 
-### Commit Messages
-Best practices:
-- Be descriptive: "Update FID to v1.2.3 for QA environments"
-- Include ticket number: "JIRA-123: Fix memory leak"
-- Avoid generic: "update" or "fix"
+- Helm
+- Diagrams
+- MCP
+- API Docs
 
-## Tips & Best Practices
+### Settings
 
-### 1. Use Field-Level Edits When Possible
-- Safer than full file edits
-- Clear intent
-- Easy to review
-- Less merge conflicts
+- general settings
+- team and organization management
+- configuration and integration setup
 
-### 2. Preview Changes Before Committing
-- Review diff carefully
-- Check all selected branches
-- Verify commit message
+## Suggested First Tour
 
-### 3. Use Pull Requests for Production
-- Always use PRs for production changes
-- Get peer review
-- Document changes in PR description
+If the environment is already configured, this is a good first pass:
 
-### 4. Monitor Operations
-- Check Operations tab for bulk operations
-- View Audit Log for history
-- Watch ArgoCD for deployment status
+1. open **Dashboard**
+2. open **Repositories** to confirm GitHub connectivity
+3. open **Pull Requests** to confirm repo-scoped data is loading
+4. open **ArgoCD** or **Clusters** if your org uses Kubernetes integrations
+5. open **Monitoring** pages if Grafana is configured
+6. open **Settings** to review org and integration configuration
 
-### 5. Test in Lower Environments First
-- Test in dev/qa before prod
-- Verify configuration works
-- Roll out incrementally
+## First Admin Tasks
 
-## Next Steps
+If you are an admin, do these early:
 
-Now that you understand the basics:
+1. confirm your org role is correct
+2. review feature visibility in the sidebar
+3. configure integration credentials under Settings
+4. test health and metrics endpoints in the target environment
+5. verify secrets management and auth settings with your platform team
 
-1. **Try a test update** in a dev environment
-2. **Explore the Pull Requests tab** to see existing PRs
-3. **Check the Operations tab** to see bulk operations
-4. **Review the Audit Log** to see change history
-5. **Read the detailed guides** for specific workflows
+## First GitOps Tasks
 
-## Getting Help
+If your organization uses the GitOps features:
 
-- **Troubleshooting**: See [Troubleshooting Guide](guides/troubleshooting.md)
-- **Workflows**: See [User Guides](guides/README.md)
-- **API**: See [API Reference](reference/api-reference.md)
-- **Support**: Contact DevOps team
+- use **Repositories** for browsing repository inventory
+- use **Pull Requests** for review and merge workflows
+- use **GitOps Studio** for admin-only file editing and commit workflows
 
-## What's Next?
+## If Something Looks Wrong
 
-- [Bulk Operations Guide](guides/bulk-operations.md)
-- [Pull Request Workflow](guides/pr-workflow.md)
-- [YAML Configuration Reference](reference/yaml-structure.md)
-- [Troubleshooting](guides/troubleshooting.md)
+Use these docs next:
+
+- `docs/guides/user-guide.md`
+- `docs/guides/troubleshooting.md`
+- `docs/reference/api-reference.md`
+- `docs/development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md`
+
+## Historical Version
+
+The replaced historical getting-started guide now lives at:
+
+- `docs/legacy/backstage-era/getting-started.md`

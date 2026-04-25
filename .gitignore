@@ -67,3 +67,13 @@ helm/devops-portal/scripts/sealed-secrets/
 
 # Prisma
 prisma/migrations/*.sql.tmp
+
+# iCloud Finder duplicates (preventive — this repo lives outside iCloud but defense-in-depth)
+* [2-9].*
+* 1[0-9].*
+* [2-9]
+* 1[0-9]
+
+# Playwright test artifacts (screenshots, videos)
+.playwright-cli/
+output/

@@ -28,7 +28,7 @@ Enterprise-grade DevOps Management Portal built with Next.js 15, React 19, and a
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - Docker & Docker Compose
 - npm or pnpm
 
@@ -138,6 +138,22 @@ integrations:
 ```
 
 ## Architecture
+
+For a code-grounded walkthrough of the active runtime, see:
+
+- [docs/architecture/CURRENT_RUNTIME_ARCHITECTURE.md](docs/architecture/CURRENT_RUNTIME_ARCHITECTURE.md)
+- [docs/development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md](docs/development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md)
+- [docs/development/LEGACY_DOCS_AND_WORKFLOWS_CLEANUP_PLAN.md](docs/development/LEGACY_DOCS_AND_WORKFLOWS_CLEANUP_PLAN.md)
+- [docs/legacy/README.md](docs/legacy/README.md)
+- [docs/legacy/SOURCE_TREE_STATUS.md](docs/legacy/SOURCE_TREE_STATUS.md)
+
+## Legacy Source Trees
+
+The repository still contains preserved Backstage-era source under `packages/`, `plugins/`, and `deployment/docker/`.
+
+Those paths are not the active runtime. Before using them, read:
+
+- [docs/legacy/SOURCE_TREE_STATUS.md](docs/legacy/SOURCE_TREE_STATUS.md)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐

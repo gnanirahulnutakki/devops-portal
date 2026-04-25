@@ -1,4 +1,8 @@
-# Grafana Feature Hardening Gaps (Enterprise Grade)
+# Grafana Integration Hardening Backlog
+
+This file is a live engineering backlog note for the current Grafana integration in the root Next.js runtime.
+
+It is not a user guide or a canonical architecture document. Use it as an implementation gap tracker only.
 
 ## Resolved
 - [x] **Critical bug**: `isGrafanaConfigured` was async but called without `await` in all 4 API routes (dashboards, alerts, folders, render) -- the not-configured guard never fired.

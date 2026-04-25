@@ -1,142 +1,65 @@
-# RadiantLogic DevOps Management Portal
+# DevOps Portal Documentation
 
-Welcome to the RadiantLogic DevOps Management Portal documentation. This portal provides a unified interface for managing multi-branch configurations, pull requests, and ArgoCD deployments across 50+ customer environments.
+This documentation set now has two buckets:
 
-## What is This Portal?
+- current-runtime docs for the root Next.js application that actually runs today
+- archived Backstage-era material kept for repo archaeology
 
-The RadiantLogic DevOps Portal is a custom Backstage-based platform that enables:
+## Start Here
 
-- **Multi-Branch Configuration Management**: Edit values.yaml across multiple environment branches simultaneously
-- **Pull Request Workflow**: Create, review, and merge PRs with visual diffs and timelines
-- **ArgoCD Integration**: Monitor and manage Kubernetes deployments
-- **Audit Trail**: Track all configuration changes and operations
-- **Grafana Dashboards**: View metrics and monitoring data
-- **S3 Browser**: Access deployment artifacts and logs
+If you are maintaining the active portal runtime, start with these documents in order:
 
-## Quick Links
+1. [Current Runtime Architecture Deep Dive](architecture/CURRENT_RUNTIME_ARCHITECTURE.md)
+2. [Current Runtime Maintainer Handoff](development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md)
+3. [Notion-Ready Architecture Summary](architecture/CURRENT_RUNTIME_ARCHITECTURE_NOTION_READY.md)
+4. [Legacy Docs And Workflows Cleanup Plan](development/LEGACY_DOCS_AND_WORKFLOWS_CLEANUP_PLAN.md)
+5. [Root README](../README.md)
 
-- [Getting Started](getting-started.md) - New to the portal? Start here
-- [User Guides](guides/README.md) - Step-by-step instructions for common tasks
-- [API Reference](reference/api-reference.md) - Backend API documentation
-- [Tutorials](tutorials/README.md) - Hands-on learning scenarios
-- [Troubleshooting](guides/troubleshooting.md) - Common issues and solutions
+## Active Runtime
 
-## Portal Sections
+The current application is:
 
-### 🏠 Home
-Dashboard showing recent activity, statistics, and quick actions
+- the root Next.js 15 app under `src/`
+- the root Prisma schema in `prisma/schema.prisma`
+- the root deployment assets:
+  - `Dockerfile`
+  - `docker-compose.yml`
+  - `helm/devops-portal/`
 
-### 📁 Repository Browser
-Browse and edit configuration files across multiple branches:
-- Select repository, branch, and file
-- Edit with Monaco code editor
-- Commit to single or multiple branches
-- Create pull requests
+The following repo areas are not the primary runtime:
 
-### 🔀 Pull Requests
-Manage pull request workflow:
-- View open/closed PRs
-- Review changes with diff viewer
-- View PR timeline and comments
-- Merge or close PRs
+- `packages/`
+- `plugins/`
+- `deployment/docker/`
+- older Backstage-oriented docs and workflows
 
-### 🚀 ArgoCD Applications
-Monitor Kubernetes deployments:
-- View application sync status
-- Trigger manual syncs
-- View deployment history
-- Monitor application health
+## Current Runtime References
 
-### ⚙️ Operations
-Track bulk operations:
-- View operation status
-- Monitor progress across branches
-- View success/failure results
+Architecture and maintainer references:
 
-### 📊 Audit Logs
-Complete audit trail:
-- All configuration changes
-- User actions
-- Operation results
-- Timestamps and metadata
+- [Current Runtime Architecture Deep Dive](architecture/CURRENT_RUNTIME_ARCHITECTURE.md)
+- [Current Runtime Maintainer Handoff](development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md)
+- [Notion-Ready Architecture Summary](architecture/CURRENT_RUNTIME_ARCHITECTURE_NOTION_READY.md)
 
-## Architecture
+Operational references that still align with the active runtime:
 
-For a complete feature inventory and architecture documentation, see:
-- **[Complete Feature Inventory & Wiring](architecture/COMPLETE_FEATURE_INVENTORY.md)** - Comprehensive documentation of all 15+ features, 80+ API endpoints, database schema, and system architecture
+- [Authentication And Users](operations/AUTHENTICATION_AND_USERS.md)
+- [Deployment Runbook](operations/DEPLOYMENT_RUNBOOK.md)
+- [Secrets And Vault](operations/SECRETS_AND_VAULT.md)
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Frontend (React + TypeScript)            │
-│                      Backstage Framework                     │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-                             │ REST API
-                             ▼
-┌─────────────────────────────────────────────────────────────┐
-│               Backend (Node.js + Express)                   │
-│  ┌──────────────┬──────────────┬──────────────────────────┐│
-│  │ GitHub       │ ArgoCD       │ Grafana                  ││
-│  │ Service      │ Service      │ Service                  ││
-│  └──────────────┴──────────────┴──────────────────────────┘│
-└────────────────────────────┬────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────┐
-│            PostgreSQL (Audit Logs & Operations)             │
-└─────────────────────────────────────────────────────────────┘
-```
+## Legacy Archive
 
-## Key Features
+Historical documents that were clearly tied to the older Backstage/plugin implementation have been moved under:
 
-### Bulk Operations
-Update configuration values across 50+ branches in a single operation:
-- Field-level editing (e.g., update only `fid.image.tag`)
-- Full file replacement
-- Asynchronous processing with progress tracking
-- Detailed success/failure reporting
+- [Legacy Archive Landing Page](legacy/README.md)
+- [Backstage-Era Archive](legacy/backstage-era/README.md)
+- [Legacy Source Tree Status](legacy/SOURCE_TREE_STATUS.md)
 
-### GitOps Workflow
-Industry-standard Git workflow:
-1. Create feature branch
-2. Make changes
-3. Create pull request
-4. Review and merge
-5. ArgoCD auto-deploys
+Those files are preserved intentionally, but they are not authoritative for the live runtime.
 
-### Multi-Tenant Support
-Each customer environment has its own branch:
-- `prod-usw2-customer1`
-- `qa-usw2-customer2`
-- `staging-use2-customer3`
+## Verification Limits
 
-### Safety Features
-- Preview changes before committing
-- Audit log of all operations
-- Protected branch warnings
-- PR review workflow
-- Rollback capabilities
+The current-runtime documentation set was produced from static repo inspection in this shell.
 
-## Technology Stack
-
-- **Frontend**: React 18, TypeScript, Material-UI v4
-- **Backend**: Node.js, Express, TypeScript
-- **Database**: PostgreSQL
-- **APIs**: GitHub (Octokit), ArgoCD, Grafana
-- **Framework**: Backstage
-- **Editor**: Monaco Editor (VS Code editor)
-
-## Support
-
-For issues, questions, or feature requests:
-- Check [Troubleshooting Guide](guides/troubleshooting.md)
-- Review [FAQ](reference/faq.md)
-- Contact DevOps team
-
-## Contributing
-
-See [Development Guide](reference/development.md) for information on:
-- Setting up development environment
-- Running tests
-- Code standards
-- Submitting changes
+- `node` and `npm` are not available here
+- build, lint, typecheck, tests, and runtime startup remain unverified in this environment
