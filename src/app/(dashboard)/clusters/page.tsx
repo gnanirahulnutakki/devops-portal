@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useOrganizationStore } from '@/store/organization-store';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

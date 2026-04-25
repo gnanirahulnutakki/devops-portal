@@ -29,7 +29,6 @@ import {
   ShieldCheck,
   GitBranch,
   Users,
-  Settings,
   ExternalLink,
 } from 'lucide-react';
 
@@ -67,8 +66,8 @@ export default function SettingsPage() {
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [teamLoading, setTeamLoading] = useState(false);
 
-  // Organization tab state
-  const [orgDetails, setOrgDetails] = useState<any>(null);
+  // Organization tab state (placeholder — read usage TBD)
+  const [_orgDetails, setOrgDetails] = useState<any>(null);
 
   const defaultTab = searchParams.get('tab') || 'profile';
 

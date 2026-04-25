@@ -1,12 +1,9 @@
 import { withTenantApiHandler, successResponse, errorResponse, validateRequest } from '@/lib/api';
 import { z } from 'zod';
-import { testKubeconfig } from '@/lib/services/kubernetes';
 import {
   generateKubeconfig,
   validateConnection,
   detectAuthType,
-  type ClusterAuthType,
-  type DuploCredentials,
 } from '@/lib/services/cluster-auth';
 
 const validateSchema = z.discriminatedUnion('authType', [

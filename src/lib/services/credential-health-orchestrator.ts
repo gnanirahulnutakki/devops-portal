@@ -142,7 +142,7 @@ async function checkSingleCredentialInternal(
   try {
     const decryptedString = decrypt(credential.credentials);
     decrypted = JSON.parse(decryptedString) as Record<string, unknown>;
-  } catch (error) {
+  } catch {
     logger.error(
       { credentialId: credential.id, provider: credential.provider },
       'Failed to decrypt credential during health check'

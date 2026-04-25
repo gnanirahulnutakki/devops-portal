@@ -58,9 +58,14 @@ export const PATCH = withTenantApiHandler(
     const validation = await validateRequest(request, updateClusterSchema);
     if ('error' in validation) return validation.error;
 
-    const { kubeconfig, authType, duploHost, duploToken, planId, duploIsAdmin,
-      eksClusterName, eksRegion, eksEndpoint, eksCaData, eksAccessKeyId, eksSecretAccessKey, eksRoleArn,
-      ...clusterData } = validation.data;
+    // Destructure auth-type-specific fields out of clusterData so they're not
+    // persisted as generic cluster columns; mergeConfig() consumes them separately.
+    const { kubeconfig,
+      authType: _authType, duploHost: _duploHost, duploToken: _duploToken, planId: _planId, duploIsAdmin: _duploIsAdmin,
+      eksClusterName: _eksClusterName, eksRegion: _eksRegion, eksEndpoint: _eksEndpoint, eksCaData: _eksCaData,
+      eksAccessKeyId: _eksAccessKeyId, eksSecretAccessKey: _eksSecretAccessKey, eksRoleArn: _eksRoleArn,
+      ...clusterData
+    } = validation.data;
 
     const existing = await ctx.db.cluster.findUnique({
       where: { id_organizationId: { id: clusterId, organizationId: ctx.tenant.organizationId } },

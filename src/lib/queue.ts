@@ -123,7 +123,7 @@ export const bulkOperationsQueue = {
 // Queue Events (Lazy Initialized)
 // =============================================================================
 
-function getQueueEvents(): QueueEvents | null {
+function _getQueueEvents(): QueueEvents | null {
   if (_queueEvents) return _queueEvents;
   
   const connection = getConnection();

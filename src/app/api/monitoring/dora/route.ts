@@ -1,4 +1,4 @@
-import { withTenantApiHandler, successResponse, errorResponse } from '@/lib/api';
+import { withTenantApiHandler, successResponse } from '@/lib/api';
 import { computeDoraMetrics } from '@/lib/services/dora-metrics';
 import { trackIntegrationCall } from '@/lib/services/with-integration-metrics';
 

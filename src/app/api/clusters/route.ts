@@ -67,9 +67,14 @@ export const POST = withTenantApiHandler(
     const validation = await validateRequest(request, createClusterSchema);
     if ('error' in validation) return validation.error;
 
-    const { kubeconfig, authType, duploHost, duploToken, planId, duploIsAdmin,
-      eksClusterName, eksRegion, eksEndpoint, eksCaData, eksAccessKeyId, eksSecretAccessKey, eksRoleArn,
-      ...clusterData } = validation.data;
+    // Auth-type-specific fields are consumed by buildConfig() below; excluded
+    // from clusterData so they don't get persisted as generic cluster columns.
+    const { kubeconfig, authType,
+      duploHost: _duploHost, duploToken: _duploToken, planId: _planId, duploIsAdmin: _duploIsAdmin,
+      eksClusterName: _eksClusterName, eksRegion: _eksRegion, eksEndpoint: _eksEndpoint, eksCaData: _eksCaData,
+      eksAccessKeyId: _eksAccessKeyId, eksSecretAccessKey: _eksSecretAccessKey, eksRoleArn: _eksRoleArn,
+      ...clusterData
+    } = validation.data;
 
     const config = buildConfig(validation.data);
 

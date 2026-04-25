@@ -12,11 +12,10 @@
  *   4. Results cached in DB with 15-minute TTL
  */
 
-import { prisma } from '@/lib/prisma';
 import type { TenantPrismaClient } from '@/lib/prisma-tenant';
-import type { ScorecardLevel, RuleCategory, CheckSource } from '@prisma/client';
+import type { ScorecardLevel, RuleCategory } from '@prisma/client';
 import { listApplications } from './argocd';
-import { computeDoraMetrics, type DoraLevel } from './dora-metrics';
+import { computeDoraMetrics } from './dora-metrics';
 import { isGrafanaConfigured, listAlerts, listDashboards } from './grafana';
 import { createGitHubServiceForUser } from '@/lib/integrations/github';
 import { logger } from '@/lib/logger';
@@ -261,7 +260,7 @@ async function prefetchData(
 
     const repoFetches = Array.from(repoSet).map(async (repo) => {
       try {
-        const [owner, repoName] = repo.split('/');
+        const [, repoName] = repo.split('/');
         const [depAlerts, branches, runs] = await Promise.allSettled([
           ghService.listDependabotAlerts(repoName, { state: 'open' }),
           ghService.listBranches(repoName),

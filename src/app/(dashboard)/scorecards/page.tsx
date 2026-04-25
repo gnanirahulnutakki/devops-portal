@@ -44,12 +44,6 @@ interface ScorecardData {
 }
 
 const LEVEL_ORDER = { GOLD: 0, SILVER: 1, BRONZE: 2, BASIC: 3 };
-const LEVEL_COLORS: Record<string, string> = {
-  GOLD: 'text-yellow-600 dark:text-yellow-400',
-  SILVER: 'text-gray-500 dark:text-gray-300',
-  BRONZE: 'text-amber-700 dark:text-amber-500',
-  BASIC: 'text-muted-foreground',
-};
 const LEVEL_BG: Record<string, string> = {
   GOLD: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
   SILVER: 'bg-gray-100 text-gray-700 dark:bg-gray-800/50 dark:text-gray-300',
