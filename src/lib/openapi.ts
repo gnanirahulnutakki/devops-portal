@@ -2238,6 +2238,39 @@ export const OPENAPI_SPEC = {
         },
       },
     },
+    '/api/argocd/applicationsets': {
+      get: {
+        tags: ['ArgoCD'],
+        summary: 'List ApplicationSets',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'ApplicationSets list', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/argocd/applicationsets/{name}/sync': {
+      post: {
+        tags: ['ArgoCD'],
+        summary: 'Fan-out sync of generated apps for an ApplicationSet (max 50)',
+        parameters: [
+          organizationHeader,
+          { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Targets queued; returns { targeted, succeeded, failed }', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/argocd/projects': {
+      get: {
+        tags: ['ArgoCD'],
+        summary: 'List AppProjects (read-only browse)',
+        parameters: [organizationHeader],
+        responses: {
+          200: { description: 'AppProject list', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
     '/api/integrations/credentials/{id}/check': {
       post: {
         tags: ['Integrations'],

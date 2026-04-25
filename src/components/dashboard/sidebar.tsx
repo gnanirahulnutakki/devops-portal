@@ -60,6 +60,8 @@ const navGroups: { id: string; title: string; items: NavItem[] }[] = [
       { title: 'GitHub Actions', href: '/github-actions', icon: PlayCircle, featureKey: 'githubActions' },
       { title: 'Deployments', href: '/deployments', icon: Rocket, featureKey: 'deployments' },
       { title: 'ArgoCD', href: '/argocd', icon: GitBranch, featureKey: 'argocd' },
+      { title: 'ArgoCD · ApplicationSets', href: '/argocd/applicationsets', icon: Layers, featureKey: 'argocd' },
+      { title: 'ArgoCD · Projects', href: '/argocd/projects', icon: ShieldCheck, featureKey: 'argocd' },
       { title: 'Clusters', href: '/clusters', icon: Server, featureKey: 'clusters' },
       { title: 'GitOps Studio', href: '/gitops-studio', icon: Pencil, adminOnly: true, featureKey: 'gitOpsStudio' },
     ],
