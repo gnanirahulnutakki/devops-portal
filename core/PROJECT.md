@@ -1,14 +1,45 @@
-# TBD_PROJECT_NAME — Multi-Cluster Day-2 Action Protocol
+# TBD_PROJECT_NAME — Multi-Cluster MCP Federation Protocol
 
-**Project status** (last updated 2026-04-13): MVP shipped end-to-end, v0.1 architecture freeze in progress. Critical path steps 1–5 must close before any gRPC/proto code is written.
+**Project status** (last updated 2026-04-25): MVP shipped end-to-end as a generic
+typed action protocol; **strategic pivot 2026-04-25** to focus the donation case on
+the **MCP-for-Clusters** gap explicitly named by [CNCF TOC initiative #1746](https://github.com/cncf/toc/issues/1746)
+("Cloud-Native Foundations for Distributed Agentic Systems"). v0.1 wire freeze
+unchanged; only the application framing and donation target are sharper.
 
 **Working name placeholder**: literal string `TBD_PROJECT_NAME` everywhere until a trademark-cleared name lands in an atomic rename commit. Candidates to research: `opspact`, `beacon`, `verdict`, `kap`, `convoke`, `parley`, `signet`, `attest`, `conduit`. **Dead**: `clusterops` (ReactiveOps trademark Reg. No. 6015193).
 
 ## What this project is
 
-A typed, auditable, policy-envelope-bearing day-2 action protocol for Kubernetes clusters, suitable for both human and machine-to-machine callers. The donation target is a **wire protocol**, not a product. The reference implementation is a **standalone Go binary** that speaks the protocol — not a Kubernetes-native controller, not a hub service, not an OCM addon.
+A typed, auditable, policy-envelope-bearing protocol for **federating Model Context
+Protocol (MCP) traffic and equivalent typed agent operations across multiple
+Kubernetes clusters and non-K8s targets**. The donation target is a **wire
+protocol**, not a product. The reference implementation is a **standalone Go
+binary** that speaks the protocol — not a Kubernetes-native controller, not a
+hub service, not an OCM addon.
 
-For the architectural justification of why this is not an OCM addon or subproject, see `core/protocol/docs/why-not-ocm.md`.
+The original framing was "multi-cluster day-2 actions for K8s" — that scope is
+preserved, but day-2 ops are now positioned as **one application** of the
+underlying MCP-for-Clusters federation primitive, not the project's defining
+purpose. Day-2 K8s ops, MCP tool invocations, A2A agent communication, and
+non-K8s typed actions all ride the same wire.
+
+The shift in framing aligns the project with **TOC initiative #1746**, which
+explicitly names these gaps as "where new projects are needed":
+
+- **MCP-for-Clusters** — auth, discovery, streaming for MCP at cluster scale (no incumbent)
+- **Agent CRD** — fleet-level schema + lifecycle (single-pod is taken by `kubernetes-sigs/agent-sandbox`)
+- **Observability spec** — minimum OTel schema for autonomous behavior (no incumbent)
+- **Policy CRDs** — Kyverno/Gatekeeper guardrails for autonomous action
+
+Single-cluster MCP traffic handling is the territory of [Solo.io's
+agentgateway](https://agentgateway.dev/); this project complements that work by
+addressing **federation across clusters and across heterogeneous backends** —
+the slot CNCF marked open in #1746.
+
+For the architectural justification of why this is not an OCM addon or
+subproject, see `core/protocol/docs/why-not-ocm.md`. For the explicit gap
+mapping vs current CNCF Sandbox AI projects (kagent, llm-d, Higress, agentregistry,
+agentevals), see the new `core/protocol/docs/why-mcp-for-clusters.md` (added 2026-04-25).
 
 The B→A path (DR-010, 2026-04-11): build internally first under `core/`, with CNCF-grade discipline from day one, then extract to a standalone CNCF Sandbox project. **Timeline rebaseline deferred until architecture is frozen.**
 
