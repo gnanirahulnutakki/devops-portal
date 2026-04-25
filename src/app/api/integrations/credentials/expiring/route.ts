@@ -12,7 +12,7 @@ export const GET = withTenantApiHandler(
       const url = new URL(request.url);
       const validation = validateQuery(url.searchParams, querySchema);
       if ('error' in validation) return validation.error;
-      const { days } = validation.data;
+      const days = validation.data.days ?? 7;
 
       const expiryThreshold = new Date();
       expiryThreshold.setDate(expiryThreshold.getDate() + days);
