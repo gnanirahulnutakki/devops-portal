@@ -28,6 +28,7 @@ export default function EventsPage({ params }: { params: Promise<{ id: string }>
       clusterId={id}
       resource="events"
       title="Events"
+      refreshInterval={10_000}
       columns={[
         { key: 'lastSeen', label: 'Last Seen', render: (e) => e.lastSeen ? new Date(e.lastSeen).toLocaleString() : '—', className: 'text-muted-foreground whitespace-nowrap' },
         { key: 'type', label: 'Type', render: (e) => <Badge variant={TYPE_VARIANT(e.type)}>{e.type}</Badge> },

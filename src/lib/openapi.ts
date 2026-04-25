@@ -944,6 +944,72 @@ export const OPENAPI_SPEC = {
         },
       },
     },
+    '/api/clusters/{id}/yaml': {
+      get: {
+        tags: ['Clusters'],
+        summary: 'Fetch a cluster resource as YAML',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'apiVersion', in: 'query', required: false, schema: { type: 'string', default: 'v1' } },
+          { name: 'kind', in: 'query', required: true, schema: { type: 'string' } },
+          { name: 'name', in: 'query', required: true, schema: { type: 'string' } },
+          { name: 'namespace', in: 'query', required: false, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: {
+            description: 'Resource YAML (Secrets are redacted)',
+            content: { 'application/json': { schema: apiResponseSchema } },
+          },
+        },
+      },
+      put: {
+        tags: ['Clusters'],
+        summary: 'Server-side apply a YAML manifest',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['yaml'],
+                properties: { yaml: { type: 'string' } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Applied (returns updated YAML)', content: { 'application/json': { schema: apiResponseSchema } } },
+          403: { description: 'Forbidden — Secret edits are blocked', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
+    },
+    '/api/clusters/{id}/pods/{name}/metrics': {
+      get: {
+        tags: ['Clusters'],
+        summary: 'Point-in-time CPU + memory snapshot from metrics-server',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'namespace', in: 'query', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: {
+            description: 'Per-container CPU (millicores) + memory (bytes) snapshot',
+            content: { 'application/json': { schema: apiResponseSchema } },
+          },
+          404: {
+            description: 'metrics-server not installed in this cluster, or no recent samples',
+            content: { 'application/json': { schema: apiResponseSchema } },
+          },
+        },
+      },
+    },
     '/api/clusters/{id}/pods/{name}/logs/stream': {
       get: {
         tags: ['Clusters'],
