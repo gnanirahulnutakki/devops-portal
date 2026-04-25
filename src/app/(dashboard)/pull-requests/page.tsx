@@ -92,7 +92,7 @@ export default function PullRequestsPage() {
           const accts = data.data || [];
           setAccounts(accts);
           const firstEnabled = accts.find((a: GitHubAccount) => a.enabled && a.hasToken);
-          if (!selectedAccount && firstEnabled) setSelectedAccount(firstEnabled.id);
+          setSelectedAccount((current) => current || firstEnabled?.id || '');
         }
       } finally {
         if (!cancelled) setAccountsLoading(false);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useOrganizationStore, isAdmin } from '@/store/organization-store';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -61,7 +61,7 @@ export default function ArgoCdConfigurationsPage() {
   }>({ name: '', url: '', token: '', insecure: false, enabled: true, expiresAt: null });
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  async function loadAccounts() {
+  const loadAccounts = useCallback(async () => {
     if (!orgId) return;
     setLoading(true);
     try {
@@ -76,11 +76,11 @@ export default function ArgoCdConfigurationsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [orgId]);
 
   useEffect(() => {
     void loadAccounts();
-  }, [orgId]);
+  }, [loadAccounts]);
 
   const openEdit = (a: ArgoAccount) => {
     setActive(a);

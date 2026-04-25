@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useOrganizationStore } from '@/store/organization-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,19 +30,17 @@ export default function HelmPage() {
 
   const orgId = currentOrganization?.id;
 
-  const loadClusters = async () => {
+  const loadClusters = useCallback(async () => {
     if (!orgId) return;
     const res = await fetch('/api/clusters', { headers: { 'x-organization-id': orgId } });
     const data = await res.json();
     if (res.ok) {
       setClusters(data.data || []);
-      if (!selectedCluster && data.data?.[0]) {
-        setSelectedCluster(data.data[0].id);
-      }
+      setSelectedCluster((current) => current || data.data?.[0]?.id || '');
     }
-  };
+  }, [orgId]);
 
-  const loadReleases = async () => {
+  const loadReleases = useCallback(async () => {
     if (!orgId || !selectedCluster) return;
     setLoading(true);
     const res = await fetch(`/api/clusters/${selectedCluster}/helm`, {
@@ -51,15 +49,15 @@ export default function HelmPage() {
     const data = await res.json();
     if (res.ok) setReleases(data.data || []);
     setLoading(false);
-  };
+  }, [orgId, selectedCluster]);
 
   useEffect(() => {
-    loadClusters();
-  }, [orgId]);
+    void loadClusters();
+  }, [loadClusters]);
 
   useEffect(() => {
-    loadReleases();
-  }, [selectedCluster]);
+    void loadReleases();
+  }, [loadReleases]);
 
   return (
     <div className="space-y-6">

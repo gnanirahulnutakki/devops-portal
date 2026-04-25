@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useOrganizationStore } from '@/store/organization-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -67,7 +67,7 @@ export function GrafanaPanels() {
   const [panels, setPanels] = useState<GrafanaPanel[]>([]);
   const [selectedPanel, setSelectedPanel] = useState<string | undefined>();
   const [savedPanels, setSavedPanels] = useState<PanelSelection[]>([]);
-  const [dashboardLayout, setDashboardLayout] = useState<Record<string, unknown> | null>(null);
+  const [_dashboardLayout, setDashboardLayout] = useState<Record<string, unknown> | null>(null);
 
 
   const orgId = currentOrganization?.id;
@@ -82,7 +82,7 @@ export function GrafanaPanels() {
     [accountOptions, selectedAccount]
   );
 
-  async function fetchPreferences() {
+  const fetchPreferences = useCallback(async () => {
     if (!orgId) return;
     const res = await fetch('/api/user-preferences', {
       headers: { 'x-organization-id': orgId },
@@ -98,29 +98,32 @@ export function GrafanaPanels() {
         setSelectedAccount(credentialId);
       }
     }
-  }
+  }, [orgId]);
 
-  async function savePreferences(panels: PanelSelection[], credentialId?: string) {
+  const savePreferences = useCallback(async (panels: PanelSelection[], credentialId?: string) => {
     if (!orgId) return;
-    const nextLayout = {
-      ...(dashboardLayout || {}),
-      grafanaPanels: {
-        credentialId,
-        panels,
-      },
-    };
-    setDashboardLayout(nextLayout);
-    await fetch('/api/user-preferences', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-organization-id': orgId,
-      },
-      body: JSON.stringify({ dashboardLayout: nextLayout }),
+    setDashboardLayout((prevLayout) => {
+      const nextLayout = {
+        ...(prevLayout || {}),
+        grafanaPanels: {
+          credentialId,
+          panels,
+        },
+      };
+      // Fire-and-forget the persistence; UI state already updated.
+      void fetch('/api/user-preferences', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-organization-id': orgId,
+        },
+        body: JSON.stringify({ dashboardLayout: nextLayout }),
+      });
+      return nextLayout;
     });
-  }
+  }, [orgId]);
 
-  async function fetchAccounts() {
+  const fetchAccounts = useCallback(async () => {
     if (!orgId) return;
     const res = await fetch('/api/integrations/grafana/accounts', {
       headers: { 'x-organization-id': orgId },
@@ -129,9 +132,9 @@ export function GrafanaPanels() {
     if (res.ok) {
       setAccounts(data.data || []);
     }
-  }
+  }, [orgId]);
 
-  async function fetchDashboards(credentialId?: string) {
+  const fetchDashboards = useCallback(async (credentialId?: string) => {
     if (!orgId || !credentialId) {
       setDashboards([]);
       return;
@@ -146,9 +149,9 @@ export function GrafanaPanels() {
     } else {
       setDashboards([]);
     }
-  }
+  }, [orgId]);
 
-  async function fetchPanels(credentialId: string, uid: string) {
+  const fetchPanels = useCallback(async (credentialId: string, uid: string) => {
     if (!orgId) return;
     const res = await fetch(
       `/api/monitoring/grafana/panels?uid=${encodeURIComponent(uid)}&credentialId=${encodeURIComponent(credentialId)}`,
@@ -160,12 +163,12 @@ export function GrafanaPanels() {
     } else {
       setPanels([]);
     }
-  }
+  }, [orgId]);
 
   useEffect(() => {
-    fetchAccounts();
-    fetchPreferences();
-  }, [orgId]);
+    void fetchAccounts();
+    void fetchPreferences();
+  }, [fetchAccounts, fetchPreferences]);
 
   useEffect(() => {
     if (!selectedAccount && accountOptions[0]) {
@@ -175,16 +178,16 @@ export function GrafanaPanels() {
 
   useEffect(() => {
     if (selectedAccount) {
-      fetchDashboards(selectedAccount);
-      savePreferences(savedPanels, selectedAccount);
+      void fetchDashboards(selectedAccount);
+      void savePreferences(savedPanels, selectedAccount);
     }
-  }, [selectedAccount]);
+  }, [selectedAccount, fetchDashboards, savePreferences, savedPanels]);
 
   useEffect(() => {
     if (selectedAccount && selectedDashboard) {
-      fetchPanels(selectedAccount, selectedDashboard);
+      void fetchPanels(selectedAccount, selectedDashboard);
     }
-  }, [selectedAccount, selectedDashboard]);
+  }, [selectedAccount, selectedDashboard, fetchPanels]);
 
   const handleAddPanel = async () => {
     if (!selectedAccount || !selectedDashboard || !selectedPanel) {

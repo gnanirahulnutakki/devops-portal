@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useOrganizationStore, isAdmin } from '@/store/organization-store';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -74,16 +74,16 @@ export default function GrafanaConfigurationsPage() {
 
   const enabledAccounts = useMemo(() => accounts.filter((a) => a.enabled), [accounts]);
 
-  async function loadSettings() {
+  const loadSettings = useCallback(async () => {
     if (!orgId) return;
     const res = await fetch('/api/organizations/settings', {
       headers: { 'x-organization-id': orgId },
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) setSettingsDraft(data.data || {});
-  }
+  }, [orgId]);
 
-  async function loadAccounts() {
+  const loadAccounts = useCallback(async () => {
     if (!orgId) return;
     setLoading(true);
     try {
@@ -98,12 +98,12 @@ export default function GrafanaConfigurationsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [orgId]);
 
   useEffect(() => {
     void loadSettings();
     void loadAccounts();
-  }, [orgId]);
+  }, [loadSettings, loadAccounts]);
 
   const saveDefault = async (credentialId: string) => {
     if (!orgId) return;

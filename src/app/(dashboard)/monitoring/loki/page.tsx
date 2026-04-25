@@ -71,7 +71,7 @@ export default function LokiLogsPage() {
       if (cancelled) return;
       if (res.ok) {
         setAccounts(data.data || []);
-        if (!selectedAccount && data.data?.[0]) setSelectedAccount(data.data[0].id);
+        setSelectedAccount((current) => current || data.data?.[0]?.id || '');
       }
     }
     void loadAccounts();
@@ -95,7 +95,7 @@ export default function LokiLogsPage() {
           .filter((d: any) => String(d?.type || '').toLowerCase() === 'loki')
           .map((d: any) => ({ uid: d.uid, name: d.name, type: d.type }));
         setDatasources(loki);
-        if (!selectedDatasource && loki[0]) setSelectedDatasource(loki[0].uid);
+        setSelectedDatasource((current) => current || loki[0]?.uid || '');
       } else {
         setDatasources([]);
       }

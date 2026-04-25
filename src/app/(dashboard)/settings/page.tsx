@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession, signIn } from 'next-auth/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -86,7 +86,7 @@ export default function SettingsPage() {
     };
   }, [orgId, setOrganization]);
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     if (!orgId) return;
     const res = await fetch('/api/organizations/settings', {
       headers: { 'x-organization-id': orgId },
@@ -95,9 +95,9 @@ export default function SettingsPage() {
     if (res.ok) {
       setDraft(data.data || {});
     }
-  };
+  }, [orgId]);
 
-  const loadAccounts = async () => {
+  const loadAccounts = useCallback(async () => {
     if (!orgId) return;
     const [githubRes, grafanaRes, uptimeRes, llmRes, argocdRes] = await Promise.all([
       fetch('/api/integrations/github/accounts', { headers: { 'x-organization-id': orgId } }),
@@ -118,12 +118,12 @@ export default function SettingsPage() {
     if (uptimeRes.ok) setUptimeAccounts(uptimeData.data || []);
     if (llmRes.ok) setLlmAccounts(llmData.data || []);
     if (argocdRes.ok) setArgocdAccounts(argocdData.data || []);
-  };
+  }, [orgId]);
 
   useEffect(() => {
-    loadSettings();
-    loadAccounts();
-  }, [orgId]);
+    void loadSettings();
+    void loadAccounts();
+  }, [loadSettings, loadAccounts]);
 
   const loadConnections = async () => {
     setConnectionsLoading(true);

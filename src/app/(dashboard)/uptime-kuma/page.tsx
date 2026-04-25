@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,20 +10,20 @@ export default function UptimeKumaPage() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('');
 
-  const loadAccounts = async () => {
+  const loadAccounts = useCallback(async () => {
     const res = await fetch('/api/integrations/uptime-kuma/accounts');
     const data = await res.json();
     if (res.ok) {
       setAccounts(data.data || []);
-      if (!selectedAccount && data.data?.length) {
-        setSelectedAccount(data.data[0].id);
-      }
+      // Functional updater avoids depending on selectedAccount (which would
+      // make this callback churn on every selection).
+      setSelectedAccount((current) => current || data.data?.[0]?.id || '');
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadAccounts();
-  }, []);
+    void loadAccounts();
+  }, [loadAccounts]);
 
   return (
     <div className="space-y-6">
