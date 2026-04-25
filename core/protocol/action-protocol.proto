@@ -1,307 +1,269 @@
 syntax = "proto3";
 
-// =============================================================================
-// DEPRECATION NOTICE — 2026-04-11 post-3-reviewer synthesis
-//
-// This v0.1 draft has 5 LOAD-BEARING ISSUES flagged by the reviewer pass.
-// DO NOT BUILD Go code against this proto until it is rewritten.
-//
-// Known issues (all to be fixed before v0.1 freeze):
-//   1. OperationRequest uses google.protobuf.Struct for params — type-unsafe.
-//      Must be replaced with schema-addressed opaque payload (schema_uri +
-//      payload_digest + bytes) per revised D1. See docs/schema-distribution.md
-//   2. In-band Heartbeat contradicts DR-008 (K8s Lease). Rename to
-//      StreamKeepalive; make Lease authoritative per revised D2.
-//   3. AgentHello is referenced but not defined, and has no protocol_version
-//      or supported_features fields. Required before v0.1 per D3.
-//   4. AuditEvent is in AgentEnvelope.oneof — agent-authored audit is a trust
-//      inversion. Gateway must be sole author per revised D5. Remove from
-//      AgentEnvelope; synthesize from OperationAck/Progress/Result.
-//   5. No backpressure / flow control on the bidir stream. Simple max-
-//      concurrent-ops semaphore + bounded queues + payload caps per revised D4.
-//      Windowed flow tokens deferred to v0.2+.
-//
-// Also missing (must land before wire freeze):
-//   - CredentialReference envelope (D8 revised — see docs/credential-references.md)
-//   - Concurrency / conflict semantics (D14 — see docs/concurrency-semantics.md)
-//   - Schema distribution mechanism (D16 — see docs/schema-distribution.md)
-//
-// This file is kept in the tree for historical reference. It will be replaced
-// wholesale by the synthesis-approved v0.1 spec after the trust model is
-// locked (critical path steps 1–5 in PROJECT.md).
-// =============================================================================
+// Multi-Cluster MCP Federation Protocol — v0.1 wire freeze candidate. Decisions D1, D2, D3, D5, D8, D14, D16 applied per core/protocol/docs/.
 
 package tbd_project_name.action.v0;
 
 option go_package = "github.com/TBD_PROJECT_NAME/go/action/v0;actionv0";
 
-import "google/protobuf/struct.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
-// AgentGateway is the public wire contract.
-// The Kubernetes CRD projection is secondary per DR-003.
-service AgentGateway {
-  // Connect is the long-lived, agent-initiated control stream.
-  // Agents dial out so the control plane never needs inbound reachability into spoke clusters.
+service ActionProtocol {
   rpc Connect(stream AgentEnvelope) returns (stream ControlEnvelope);
-
-  // Enroll is the one-shot bootstrap path.
-  // It turns a short-lived join token + CSR into an mTLS client identity.
   rpc Enroll(EnrollRequest) returns (EnrollResponse);
 }
 
-// OperationState is the durable lifecycle of an operation.
-// UNKNOWN is terminal per DR-005.
 enum OperationState {
   OPERATION_STATE_UNSPECIFIED = 0;
-  OPERATION_STATE_ACCEPTED = 1;   // Gateway durably committed the request but has not yet completed execution.
-  OPERATION_STATE_RUNNING = 2;    // Agent acknowledged execution and is actively processing.
-  OPERATION_STATE_SUCCEEDED = 3;  // Terminal success.
-  OPERATION_STATE_FAILED = 4;     // Terminal failure.
-  OPERATION_STATE_CANCELLED = 5;  // Terminal cooperative cancellation.
-  OPERATION_STATE_UNKNOWN = 6;    // Terminal unresolved state after reconciliation window expiry.
+  OPERATION_STATE_ACCEPTED = 1;
+  OPERATION_STATE_RUNNING = 2;
+  OPERATION_STATE_SUCCEEDED = 3;
+  OPERATION_STATE_FAILED = 4;
+  OPERATION_STATE_CANCELLED = 5;
+  OPERATION_STATE_REJECTED = 6;
+  OPERATION_STATE_TIMED_OUT = 7;
 }
 
-// Decision standardizes policy outcomes without standardizing the policy engine.
 enum Decision {
   DECISION_UNSPECIFIED = 0;
   DECISION_ALLOW = 1;
   DECISION_DENY = 2;
   DECISION_REQUIRE_APPROVAL = 3;
+  DECISION_DEFER = 4;
 }
 
-// AdapterOperationClass lets callers and policies distinguish read paths from write paths.
 enum AdapterOperationClass {
   ADAPTER_OPERATION_CLASS_UNSPECIFIED = 0;
   ADAPTER_OPERATION_CLASS_READ = 1;
   ADAPTER_OPERATION_CLASS_WRITE = 2;
-  ADAPTER_OPERATION_CLASS_STREAM = 3;
+  ADAPTER_OPERATION_CLASS_DELETE = 3;
+  ADAPTER_OPERATION_CLASS_EXECUTE = 4;
 }
 
-// ReconnectBehavior answers blind spot #1:
-// when the stream breaks during RUNNING, can this adapter replay, resume, or only reject?
 enum ReconnectBehavior {
   RECONNECT_BEHAVIOR_UNSPECIFIED = 0;
-  RECONNECT_BEHAVIOR_REPLAY = 1;  // Restart from a deterministic step boundary.
-  RECONNECT_BEHAVIOR_RESUME = 2;  // Continue from the last persisted checkpoint.
-  RECONNECT_BEHAVIOR_REJECT = 3;  // Fail-fast; operator must issue a new operation.
+  RECONNECT_BEHAVIOR_RESUME = 1;
+  RECONNECT_BEHAVIOR_REPLAY = 2;
+  RECONNECT_BEHAVIOR_FAIL = 3;
 }
 
-// AgentEnvelope is every message sent from agent to gateway.
-// The nonce + signature pair directly addresses blind spot #5 (replay and compromise handling).
+enum LockScope {
+  LOCK_SCOPE_UNSPECIFIED = 0;
+  LOCK_SCOPE_NONE = 1; // Adapter has no shared state; conflicts impossible.
+  LOCK_SCOPE_TARGET = 2; // One operation per target_uri.
+  LOCK_SCOPE_GROUP = 3; // One operation per adapter-defined target group.
+  LOCK_SCOPE_ADAPTER = 4; // One operation per adapter regardless of target.
+}
+
 message AgentEnvelope {
-  string agent_id = 1; // Stable gateway-assigned identity from EnrollResponse; used for routing and revocation.
-  uint64 nonce = 2; // Monotonic per agent and persisted across restarts; gateway rejects stale values.
-  bytes signature = 3; // Signature over the canonical envelope hash excluding this field; binds payload+nonce to the enrolled key.
+  string agent_id = 1;
+  string stream_id = 2;
+  uint64 sequence = 3;
+  bytes nonce = 4;
+  google.protobuf.Timestamp sent_at = 5;
+  bytes signature = 6;
+  string key_id = 7;
 
   oneof payload {
-    AgentHello hello = 10; // First message on a new stream; announces versions and reconnect intent.
-    Heartbeat heartbeat = 11; // Liveness and meta-observability signal; not a CRD heartbeat (DR-008).
-    CapabilityAdvertisement capabilities = 12; // Declares what this agent can safely execute.
-    OperationAck ack = 13; // Acknowledges receipt or local preflight outcome for an operation.
-    OperationProgress progress = 14; // Reports checkpointed progress for long-running work.
-    OperationResult result = 15; // Emits terminal outcome and typed output for the caller.
-    AuditEvent audit = 16; // Emits metadata-only audit envelope per DR-004.
+    AgentHello hello = 10;
+    StreamKeepalive keepalive = 11;
+    OperationAck operation_ack = 12;
+    OperationProgress operation_progress = 13;
+    OperationResult operation_result = 14;
+    AgentGoodbye goodbye = 15;
   }
+
+  reserved 16;
 }
 
-// ControlEnvelope is every message sent from gateway to agent.
 message ControlEnvelope {
-  string command_id = 1; // Gateway-supplied ULID; uniquely audits a control-plane command even when clients retry.
+  string gateway_id = 1;
+  string stream_id = 2;
+  uint64 sequence = 3;
+  string command_id = 4;
+  google.protobuf.Timestamp sent_at = 5;
+  bytes signature = 6;
+  string key_id = 7;
 
   oneof payload {
-    OperationRequest request = 10; // Typed request to execute against a named adapter.
-    OperationCancel cancel = 11; // Cooperative cancellation request for an in-flight operation.
-    PolicyUpdate policy = 12; // Pushes policy bundles or references to the agent.
-    RevocationNotice revocation = 13; // Invalidates the current identity and outstanding sessions.
-    HealthCheck health = 14; // Asks the agent to respond promptly for path validation.
+    OperationRequest operation_request = 10;
+    OperationCancel operation_cancel = 11;
+    PolicyUpdate policy_update = 12;
+    RevocationNotice revocation_notice = 13;
+    HealthCheck health_check = 14;
   }
 }
 
-// AgentHello handles version skew and reconnect correlation.
-// It closes the gap around protocol evolution and stream restart ambiguity.
 message AgentHello {
-  string protocol_version = 1; // Semantic protocol version understood by the agent; used for skew detection.
-  string agent_version = 2; // Concrete binary version for debugging, rollout safety, and supportability.
-  string cluster_id = 3; // Stable cluster identity from the operator's inventory; avoids name collisions.
-  string cluster_name = 4; // Human-readable label for dashboards and audit joins.
-  string reconnect_session_id = 5; // Correlates a new stream with a previous stream after disconnect (blind spot #1).
-  google.protobuf.Timestamp started_at = 6; // Agent process start time; distinguishes reconnect from process restart.
-  google.protobuf.Timestamp cert_expires_at = 7; // Exposes certificate expiry for meta-observability (blind spot #12).
-  string policy_hash = 8; // Hash of the currently loaded local policy bundle; detects policy skew.
-  google.protobuf.Struct labels = 9; // Arbitrary cluster metadata for routing, policy context, and filtering.
+  string protocol_version = 1;
+  string agent_id = 2;
+  string cluster_id = 3;
+  string namespace = 4;
+  string service_account = 5;
+  repeated AdapterCapability capabilities = 6;
+  string policy_hash = 7;
+  google.protobuf.Timestamp started_at = 8;
+  repeated string supported_schemas = 10;
+  repeated string supported_features = 11;
+  uint32 max_concurrent_ops = 12;
+  repeated string supported_protocol_versions = 13;
 }
 
-// Heartbeat is the stream-level health signal.
-// It exists even though Kubernetes liveness uses Lease objects, because the wire path needs its own signal.
-message Heartbeat {
-  google.protobuf.Timestamp observed_at = 1; // When the heartbeat was emitted by the agent.
-  google.protobuf.Timestamp cert_expires_at = 2; // Repeated here so expiry is visible without waiting for a new hello.
-  uint32 inflight_operations = 3; // Current count of active operations for backpressure and fleet health.
-  string policy_hash = 4; // Current local policy bundle hash; alerts if an agent missed an update.
-  google.protobuf.Struct stats = 5; // Extensible status map, e.g. queue depth, reconnect count, adapter failures.
+message AgentGoodbye {
+  string reason = 1;
+  bool retryable = 2;
+  ReconnectBehavior reconnect_behavior = 3;
+  google.protobuf.Duration retry_after = 4;
 }
 
-// CapabilityAdvertisement answers blind spot #8:
-// the protocol must describe capability shape, not just an adapter name string.
-message CapabilityAdvertisement {
-  string catalog_version = 1; // Semantic version of the advertised capability catalog.
-  google.protobuf.Timestamp generated_at = 2; // When the catalog was assembled by the agent.
-  repeated AdapterCapability adapters = 3; // Full list of adapters available on this agent.
-  bytes catalog_digest = 4; // SHA-256 of the normalized catalog; detects drift and partial rollout mismatches.
+message StreamKeepalive {
+  google.protobuf.Timestamp observed_at = 1;
+  google.protobuf.Timestamp cert_expires_at = 2;
+  uint32 inflight_operations = 3;
+  string policy_hash = 4;
 }
 
-// AdapterCapability makes adapter contracts inspectable to callers, policy, and conformance tests.
 message AdapterCapability {
-  string name = 1; // Stable adapter identifier, e.g. "prometheus-read".
-  string version = 2; // Adapter contract semver; addresses blind spot #9 (adapter drift).
-  AdapterOperationClass operation_class = 3; // Read/write/stream classification for policy and UX.
-  ReconnectBehavior reconnect_behavior = 4; // Declared reconnect rule for RUNNING operations (blind spot #1).
-  bool supports_dry_run = 5; // Tells callers whether preflight-only execution is available.
-  bool idempotent = 6; // Declares whether duplicate execution is semantically safe.
-  google.protobuf.Duration default_timeout = 7; // Prevents unbounded operations by default.
-  SchemaReference input_schema = 8; // Input schema used to validate OperationRequest.params.
-  SchemaReference output_schema = 9; // Output schema used to validate OperationResult.output.
-  repeated string sensitive_field_paths = 10; // JSON pointer-style paths that must be redacted in audit.
-  repeated string required_permissions = 11; // Human-readable permission hints for review and blast-radius analysis.
-  google.protobuf.Struct annotations = 12; // Extensible metadata, e.g. upstream API range or implementation notes.
+  string adapter_id = 1;
+  string name = 2;
+  string version = 3;
+  repeated string supported_operations = 4;
+  repeated AdapterOperationClass operation_classes = 5;
+  repeated string supported_resource_types = 6;
+  bool supports_cancel = 7;
+  bool supports_resume = 8;
+  google.protobuf.Duration default_timeout = 9;
+  uint32 max_concurrent_operations = 10;
+  repeated string required_features = 11;
+  repeated CredentialReference credential_references = 12;
+  LockScope lock_scope = 13;
 }
 
-// SchemaReference gives callers a stable way to locate and verify schemas.
-message SchemaReference {
-  string format = 1; // Schema format, e.g. "jsonschema".
-  string uri = 2; // Canonical location for the schema document.
-  bytes sha256 = 3; // Integrity digest for drift detection and offline verification.
+message CredentialReference {
+  string credential_uri = 1;
+  string credential_version = 2;
+  string provider = 3;
+  string required_scope = 4;
 }
 
-// OperationRequest is the typed execution contract.
-// It closes blind spots #1, #6, #8, and #9 by carrying idempotency, policy, and schema-validated params.
 message OperationRequest {
-  string operation_id = 1; // Client-supplied ULID; durable identity for reconciliation and uniqueness checks.
-  string idempotency_key = 2; // Separate dedupe key so retries need not mint a new operation identity.
-  string adapter_name = 3; // Requested adapter, matched against CapabilityAdvertisement.
-  string adapter_version = 4; // Requested contract version; prevents silent adapter drift.
-  google.protobuf.Struct params = 5; // Adapter-specific input; must validate against the advertised schema.
-  google.protobuf.Duration timeout = 6; // Hard upper bound for execution; endless operations are explicitly forbidden.
-  PolicyVerdict central_verdict = 7; // Gateway-side admission result; enables dual policy placement (blind spot #6).
-  string operator_id = 8; // End-user or machine principal on whose behalf the request is issued.
-  string tenant_id = 9; // Optional tenant or account scope for audit and policy evaluation.
-  google.protobuf.Timestamp issued_at = 10; // Gateway issuance time; protects against stale delayed delivery.
-  bool dry_run = 11; // Requests validation/preflight without side effects when the adapter supports it.
-  google.protobuf.Struct context = 12; // Additional caller context, e.g. incident ID or change request number.
+  string operation_id = 1;
+  string adapter_id = 2;
+  string operation = 3;
+  AdapterOperationClass operation_class = 4;
+  string schema_uri = 5;
+  PolicyVerdict policy_verdict = 6;
+  google.protobuf.Timestamp requested_at = 7;
+  google.protobuf.Duration timeout = 8;
+  string idempotency_key = 9;
+  string trace_id = 10;
+  string parent_operation_id = 11;
+  bytes payload_digest = 13;
+  bytes payload = 14;
+  string target_uri = 15;
+  repeated CredentialReference credential_references = 16;
 }
 
-// OperationAck is the earliest durable signal from the agent.
 message OperationAck {
-  string operation_id = 1; // Operation being acknowledged.
-  OperationState state = 2; // Usually ACCEPTED; may be FAILED if local preflight immediately denies execution.
-  PolicyVerdict local_verdict = 3; // Agent-side decision with concrete local context (blind spot #6).
-  string checkpoint_id = 4; // Adapter-defined execution cursor for later replay or resume.
-  google.protobuf.Timestamp acknowledged_at = 5; // Time the agent accepted or denied the request.
-  string message = 6; // Human-readable explanation for operators and automation logs.
+  string operation_id = 1;
+  OperationState state = 2;
+  google.protobuf.Timestamp accepted_at = 3;
+  string message = 4;
+  string agent_operation_id = 5;
 }
 
-// OperationProgress provides checkpointed progress for long-running work.
 message OperationProgress {
-  string operation_id = 1; // Operation in progress.
-  OperationState state = 2; // Must remain RUNNING; terminal states are carried by OperationResult.
-  string step_id = 3; // Adapter-defined logical step for user visibility and reconciliation.
-  string checkpoint_id = 4; // Latest durable checkpoint available for replay or resume.
-  google.protobuf.Struct summary = 5; // Non-sensitive progress payload for the caller.
-  google.protobuf.Timestamp observed_at = 6; // Time the progress event was emitted.
+  string operation_id = 1;
+  OperationState state = 2;
+  uint32 percent_complete = 3;
+  string message = 4;
+  bytes summary_payload = 5;
+  google.protobuf.Timestamp observed_at = 6;
 }
 
-// OperationResult is the terminal outcome returned by the agent.
 message OperationResult {
-  string operation_id = 1; // Operation that completed.
-  OperationState state = 2; // Must be SUCCEEDED, FAILED, CANCELLED, or UNKNOWN.
-  int32 result_code = 3; // Adapter-specific numeric outcome for automation branches and SLOs.
-  string message = 4; // Human-readable outcome summary.
-  google.protobuf.Struct output = 5; // Typed result returned to the caller; not automatically persisted to audit.
-  bytes output_digest = 6; // SHA-256 of the redacted output for integrity checks without retaining content.
-  google.protobuf.Timestamp completed_at = 7; // Completion time used for audit and latency measurement.
-  PolicyVerdict local_verdict = 8; // Final local decision so denial-after-recheck is explicitly visible.
-  google.protobuf.Duration execution_duration = 9; // Wall-clock runtime for SLOs and timeout tuning.
+  string operation_id = 1;
+  OperationState state = 2;
+  google.protobuf.Timestamp completed_at = 3;
+  string message = 4;
+  string output_schema_uri = 5;
+  bytes output_digest = 6;
+  string error_code = 7;
+  string error_details = 8;
+  bool retryable = 9;
+  bytes output_payload = 10;
 }
 
-// OperationCancel requests cooperative cancellation.
-// There is no promise that the adapter can stop mid-step.
 message OperationCancel {
-  string operation_id = 1; // Operation the gateway wants the agent to cancel.
-  string reason = 2; // Operator-visible explanation for why cancellation was requested.
-  string requested_by = 3; // Human or machine principal initiating the cancel.
-  google.protobuf.Timestamp requested_at = 4; // Time the gateway issued the cancellation.
+  string operation_id = 1;
+  string reason = 2;
+  google.protobuf.Timestamp requested_at = 3;
 }
 
-// PolicyUpdate distributes policy bundles to the agent.
-// The protocol standardizes the envelope, not the policy engine contents.
 message PolicyUpdate {
-  string bundle_id = 1; // Stable identifier for the policy bundle revision.
-  string policy_hash = 2; // Digest of the bundle so the agent can detect corruption or mismatch.
-  google.protobuf.Timestamp issued_at = 3; // Time the gateway published this revision.
-  string bundle_format = 4; // Format hint, e.g. "opa-bundle" or "cel-set".
-  bytes bundle = 5; // Serialized bundle bytes for small v0 distributions.
-  google.protobuf.Timestamp valid_after = 6; // Not-before timestamp to coordinate safe rollout.
+  string policy_id = 1;
+  string policy_hash = 2;
+  bytes policy_bundle = 3;
+  google.protobuf.Timestamp effective_at = 4;
+  string signature_key_id = 5;
+  bytes signature = 6;
 }
 
-// RevocationNotice is the on-wire revocation primitive pushed from gateway to agent.
 message RevocationNotice {
-  string agent_id = 1; // Identity being revoked; usually the current stream's agent_id.
-  string agent_fingerprint = 2; // Fingerprint entered into the server-side denylist (blind spot #5).
-  string reason = 3; // Operator-facing incident or compromise reason.
-  google.protobuf.Timestamp effective_at = 4; // When revocation takes effect.
-  bool invalidate_sessions = 5; // If true, all outstanding sessions and operations must be treated as invalid.
+  string credential_uri = 1;
+  string credential_version = 2;
+  string reason = 3;
+  google.protobuf.Timestamp revoked_at = 4;
 }
 
-// HealthCheck tests the control path without sending a full operation.
 message HealthCheck {
-  string probe_id = 1; // Correlation identifier for the probe.
-  google.protobuf.Timestamp sent_at = 2; // Gateway emission time.
-  google.protobuf.Duration response_timeout = 3; // Maximum expected response latency for this probe.
-  google.protobuf.Struct expected = 4; // Optional probe metadata or echo payload.
+  string check_id = 1;
+  google.protobuf.Timestamp requested_at = 2;
+  google.protobuf.Duration timeout = 3;
 }
 
-// PolicyVerdict standardizes what policy decided, when, and why.
 message PolicyVerdict {
-  Decision decision = 1; // ALLOW, DENY, or REQUIRE_APPROVAL.
-  string policy_hash = 2; // Hash of the bundle or rule-set that produced this verdict.
-  google.protobuf.Timestamp evaluated_at = 3; // When the decision was rendered.
-  string evaluator_id = 4; // Concrete evaluator identity, e.g. gateway instance or agent.
-  string reason = 5; // Human-readable explanation for audit and debugging.
+  Decision decision = 1;
+  string policy_id = 2;
+  string policy_hash = 3;
+  string reason = 4;
+  repeated string obligations = 5;
+  google.protobuf.Timestamp evaluated_at = 6;
+  google.protobuf.Duration ttl = 7;
 }
 
-// AuditEvent is metadata-only by design per DR-004.
-// No raw payloads are stored here, which directly avoids blind spot #3.
-message AuditEvent {
-  string operation_id = 1; // Operation this audit envelope describes.
-  string agent_id = 2; // Agent that executed or denied the operation.
-  string operator_id = 3; // Human or machine principal on whose behalf the operation ran.
-  string adapter_name = 4; // Adapter selected for this operation.
-  string adapter_version = 5; // Exact adapter contract version used.
-  OperationState state = 6; // State transition being recorded.
-  google.protobuf.Timestamp timestamp = 7; // Event emission time.
-  PolicyVerdict central_verdict = 8; // Central policy decision carried for full audit lineage.
-  PolicyVerdict local_verdict = 9; // Local policy decision carried for execution-context lineage.
-  int32 result_code = 10; // Adapter-defined result code without raw payload leakage.
-  bytes redacted_payload_digest = 11; // SHA-256 of the redacted payload for integrity without content retention.
-}
-
-// EnrollRequest is the bootstrap identity request.
-// It closes blind spot #4 by making enrollment explicit instead of implied by transport.
 message EnrollRequest {
-  string join_token = 1; // One-use, out-of-band bootstrap credential with short TTL.
-  bytes csr_pem = 2; // PEM-encoded certificate signing request generated by the agent.
-  string agent_fingerprint = 3; // Stable public-key fingerprint used for denylist and compromise handling.
-  google.protobuf.Timestamp requested_at = 4; // Time the agent initiated enrollment.
-  string cluster_hint = 5; // Optional operator-facing cluster hint to help join approval workflows.
+  string agent_id = 1;
+  string cluster_id = 2;
+  string namespace = 3;
+  string service_account = 4;
+  bytes csr = 5;
+  string attestation_type = 6;
+  bytes attestation = 7;
+  google.protobuf.Timestamp requested_at = 8;
 }
 
-// EnrollResponse returns the signed client identity for future Connect calls.
 message EnrollResponse {
-  bytes signed_cert_pem = 1; // PEM-encoded client certificate signed by the gateway CA.
-  bytes ca_bundle_pem = 2; // PEM bundle the agent must trust for future mTLS sessions.
-  google.protobuf.Duration cert_ttl = 3; // Requested cert lifetime; default 24h per DR-006.
-  string agent_id = 4; // Stable gateway-assigned identifier bound into the certificate SAN.
-  google.protobuf.Timestamp expires_at = 5; // Absolute expiry to support renew-at-50% scheduling.
+  string agent_id = 1;
+  bytes certificate_chain = 2;
+  bytes ca_bundle = 3;
+  google.protobuf.Timestamp issued_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  string policy_hash = 6;
+  string gateway_id = 7;
+}
+
+message AuditEvent {
+  string event_id = 1;
+  string operation_id = 2;
+  string agent_id = 3;
+  string gateway_id = 4;
+  OperationState state = 5;
+  Decision decision = 6;
+  string policy_hash = 7;
+  google.protobuf.Timestamp observed_at = 8;
+  bytes request_digest = 9;
+  bytes result_digest = 10;
+  string trace_id = 11;
 }
