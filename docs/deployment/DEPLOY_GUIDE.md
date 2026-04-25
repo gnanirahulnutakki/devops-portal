@@ -1,648 +1,258 @@
-# Backstage GitOps Portal - Deployment Guide
+# DevOps Portal Deployment Guide
 
-This guide provides comprehensive instructions for building Docker images and deploying the Backstage GitOps Portal to Kubernetes using Helm.
+This guide covers deployment of the active root-level Next.js runtime.
 
-## Table of Contents
+It replaces the older Backstage-oriented deployment instructions that are now archived under `docs/legacy/backstage-era/`.
 
-1. [Docker Build and Push](#docker-build-and-push)
-2. [Kubernetes Deployment with Helm](#kubernetes-deployment-with-helm)
-3. [Configuration](#configuration)
-4. [Troubleshooting](#troubleshooting)
-5. [Monitoring and Maintenance](#monitoring-and-maintenance)
+## Scope
 
----
+This guide applies to:
 
-## Docker Build and Push
+- the root `Dockerfile`
+- `docker-compose.yml`
+- `helm/devops-portal/`
+- the root Prisma schema and Next.js API runtime
 
-### Prerequisites
+It does not describe `packages/`, `plugins/`, or `deployment/docker/` as the primary deployment path.
 
-- Docker installed and running
-- Access to a container registry (Docker Hub, GitHub Container Registry, AWS ECR, etc.)
-- Completed local development setup (see START_GUIDE.md)
+## Deployment Modes
 
-### Build the Docker Image
+The repository supports three practical deployment modes:
 
-```bash
-# Navigate to project root
-cd /path/to/backstage-gitops
+1. local development with root `npm` scripts plus `docker-compose`
+2. container image build from the root `Dockerfile`
+3. Kubernetes deployment via `helm/devops-portal`
 
-# Build the Docker image
-docker build -t backstage-gitops:latest .
+## Prerequisites
 
-# Or build with a specific version tag
-docker build -t backstage-gitops:1.0.0 .
-```
+- Node.js 22+
+- Docker and Docker Compose
+- access to PostgreSQL, Redis, and S3-compatible object storage
+- required auth and integration secrets
+- Helm 3 for Kubernetes deployments
 
-**Build Options:**
+## Required Configuration Categories
 
-```bash
-# Build with build args
-docker build \
-  --build-arg NODE_VERSION=24.1.0 \
-  -t backstage-gitops:latest \
-  .
+At minimum, plan for these env/config groups:
 
-# Build without cache (for clean builds)
-docker build --no-cache -t backstage-gitops:latest .
+- app and auth:
+  - `NEXTAUTH_URL`
+  - `AUTH_SECRET` or `NEXTAUTH_SECRET`
+  - `AUTH_MODE`
+  - `ENABLE_CREDENTIALS_AUTH`
+- database and cache:
+  - `DATABASE_URL`
+  - `REDIS_URL`
+  - `TOKEN_ENCRYPTION_KEY`
+- object storage:
+  - `S3_BUCKET`
+  - `AWS_REGION`
+  - `AWS_ACCESS_KEY_ID`
+  - `AWS_SECRET_ACCESS_KEY`
+  - optional `S3_ENDPOINT`
+- integration endpoints and credentials:
+  - ArgoCD
+  - Grafana
+  - Prometheus
+  - GitHub OAuth or PAT
+  - optional LLM, Uptime Kuma, Supabase, Vanta
+- operational security:
+  - `METRICS_AUTH_TOKEN`
+  - optional `HEALTH_AUTH_TOKEN`
 
-# Multi-platform build (for ARM and x86)
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t backstage-gitops:latest \
-  .
-```
+See `.env.example`, `docs/operations/AUTHENTICATION_AND_USERS.md`, and `docs/operations/SECRETS_AND_VAULT.md` for current examples.
 
-### Tag and Push to Registry
+## Local Development Bring-Up
 
-#### Docker Hub
-
-```bash
-# Tag the image
-docker tag backstage-gitops:latest your-dockerhub-username/backstage-gitops:latest
-docker tag backstage-gitops:latest your-dockerhub-username/backstage-gitops:1.0.0
-
-# Login to Docker Hub
-docker login
-
-# Push the image
-docker push your-dockerhub-username/backstage-gitops:latest
-docker push your-dockerhub-username/backstage-gitops:1.0.0
-```
-
-#### GitHub Container Registry (GHCR)
+Start infrastructure:
 
 ```bash
-# Login to GHCR
-echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
-
-# Tag the image
-docker tag backstage-gitops:latest ghcr.io/radiantlogic-saas/backstage-gitops:latest
-docker tag backstage-gitops:latest ghcr.io/radiantlogic-saas/backstage-gitops:1.0.0
-
-# Push the image
-docker push ghcr.io/radiantlogic-saas/backstage-gitops:latest
-docker push ghcr.io/radiantlogic-saas/backstage-gitops:1.0.0
-```
-
-#### AWS ECR
-
-```bash
-# Login to ECR
-aws ecr get-login-password --region us-east-1 | \
-  docker login --username AWS --password-stdin \
-  123456789012.dkr.ecr.us-east-1.amazonaws.com
-
-# Create repository (if not exists)
-aws ecr create-repository --repository-name backstage-gitops
-
-# Tag the image
-docker tag backstage-gitops:latest \
-  123456789012.dkr.ecr.us-east-1.amazonaws.com/backstage-gitops:latest
-
-# Push the image
-docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/backstage-gitops:latest
-```
-
-### Test the Docker Image Locally
-
-```bash
-# Run with docker-compose (recommended)
 docker-compose up -d
-
-# Or run standalone
-docker run -d \
-  --name backstage-test \
-  -p 7007:7007 \
-  -e GITHUB_TOKEN=your_token \
-  -e POSTGRES_HOST=host.docker.internal \
-  -e POSTGRES_PORT=5432 \
-  -e POSTGRES_USER=backstage \
-  -e POSTGRES_PASSWORD=backstage \
-  -e POSTGRES_DB=backstage \
-  backstage-gitops:latest
-
-# Check logs
-docker logs -f backstage-test
-
-# Test health check
-curl http://localhost:7007/healthcheck
-
-# Stop and remove
-docker stop backstage-test
-docker rm backstage-test
 ```
 
----
-
-## Kubernetes Deployment with Helm
-
-### Prerequisites
-
-- Kubernetes cluster (1.19+)
-- kubectl configured to access your cluster
-- Helm 3.x installed
-- Container image pushed to a registry
-- Secrets and ConfigMaps prepared
-
-### Step 1: Create Kubernetes Namespace
+Create local env:
 
 ```bash
-# Create namespace
-kubectl create namespace backstage
-
-# Or use a different namespace
-kubectl create namespace devops-tools
+cp .env.example .env
 ```
 
-### Step 2: Create Secrets
-
-Create secrets for sensitive data:
+If you are not using Keycloak locally, set:
 
 ```bash
-# Create secret for GitHub token
-kubectl create secret generic backstage-secrets \
-  --namespace backstage \
-  --from-literal=GITHUB_TOKEN='your_github_pat_token' \
-  --from-literal=POSTGRES_PASSWORD='your_postgres_password' \
-  --from-literal=ARGOCD_TOKEN='your_argocd_token' \
-  --from-literal=GRAFANA_API_KEY='your_grafana_api_key'
-
-# Verify secret
-kubectl get secret backstage-secrets -n backstage
-kubectl describe secret backstage-secrets -n backstage
+AUTH_MODE=multi
+ENABLE_CREDENTIALS_AUTH=true
 ```
 
-**Using a secrets file:**
+Then initialize and run:
 
 ```bash
-# Create secrets.yaml
-cat <<EOF > secrets.yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: backstage-secrets
-  namespace: backstage
-type: Opaque
-stringData:
-  GITHUB_TOKEN: "ghp_your_github_token_here"
-  POSTGRES_PASSWORD: "your_postgres_password"
-  ARGOCD_TOKEN: "your_argocd_token"
-  GRAFANA_API_KEY: "your_grafana_api_key"
-EOF
-
-# Apply secrets
-kubectl apply -f secrets.yaml
-
-# Delete the secrets file (security best practice)
-shred -vfz -n 10 secrets.yaml  # Linux
-rm -P secrets.yaml  # macOS
+npm ci --legacy-peer-deps
+npm run db:migrate
+npm run db:seed
+npm run dev
 ```
 
-### Step 3: Configure Helm Values
+Access the app at `http://localhost:3000`.
 
-Create a custom values file:
+### Local Redis caveat
+
+The current `src/lib/redis.ts` disables Redis when `REDIS_URL` contains `localhost`.
+
+That means queue, rate-limit analytics, and Redis-backed token behavior are effectively disabled in that mode. If you need Redis-backed behavior in local testing, use a non-`localhost` hostname that resolves from the app environment.
+
+## Docker Image Build
+
+Build from the root runtime:
 
 ```bash
-# Create custom-values.yaml
-cat <<EOF > custom-values.yaml
-# Custom values for production deployment
-
-replicaCount: 2
-
-image:
-  repository: ghcr.io/radiantlogic-saas/backstage-gitops
-  tag: "1.0.0"
-  pullPolicy: IfNotPresent
-
-ingress:
-  enabled: true
-  className: nginx
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-  hosts:
-    - host: backstage.yourdomain.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: backstage-tls
-      hosts:
-        - backstage.yourdomain.com
-
-resources:
-  limits:
-    cpu: 1000m
-    memory: 1Gi
-  requests:
-    cpu: 500m
-    memory: 512Mi
-
-postgres:
-  enabled: true
-  storage:
-    size: 20Gi
-    storageClass: gp3
-
-backstage:
-  baseUrl: https://backstage.yourdomain.com
-
-github:
-  organization: your-org-name
-
-argocd:
-  enabled: true
-  url: https://argocd.yourdomain.com
-
-grafana:
-  enabled: true
-  url: https://your-org.grafana.net
-EOF
+docker build \
+  --build-arg DATABASE_URL="postgresql://postgres:postgres@host.docker.internal:5432/devops_portal?schema=public" \
+  --build-arg NEXTAUTH_URL="http://localhost:3000" \
+  -t devops-portal:local \
+  .
 ```
 
-### Step 4: Install with Helm
+Notes:
+
+- the Docker build uses the root `Dockerfile`
+- Prisma generate runs during build
+- `NEXTAUTH_SECRET` should be supplied at runtime, not baked into the image
+- the image exposes port `3000` and uses `/api/health` as its health check
+
+Run the image:
 
 ```bash
-# Install the chart
-helm install backstage-gitops ./helm \
-  --namespace backstage \
-  --values custom-values.yaml
-
-# Or upgrade if already installed
-helm upgrade --install backstage-gitops ./helm \
-  --namespace backstage \
-  --values custom-values.yaml
-
-# With debug output
-helm upgrade --install backstage-gitops ./helm \
-  --namespace backstage \
-  --values custom-values.yaml \
-  --debug \
-  --dry-run
-
-# Remove --dry-run when ready to deploy
-helm upgrade --install backstage-gitops ./helm \
-  --namespace backstage \
-  --values custom-values.yaml
+docker run --rm -p 3000:3000 \
+  -e NEXTAUTH_URL=http://localhost:3000 \
+  -e AUTH_SECRET=replace-me \
+  -e DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/devops_portal?schema=public \
+  -e TOKEN_ENCRYPTION_KEY=replace-me \
+  devops-portal:local
 ```
 
-### Step 5: Verify Deployment
+## Kubernetes Deployment With Helm
+
+The primary chart is `helm/devops-portal/`.
+
+### Chart characteristics
+
+- deploys the root app container on port `3000`
+- defaults to HPA-enabled multi-replica deployment
+- uses `/api/health` for startup, readiness, and liveness probes
+- supports bundled PostgreSQL, Redis, MinIO, Sealed Secrets, and Trivy Operator dependencies
+- supports External Secrets Operator and Secrets Store CSI Driver as alternatives
+- runs init containers to wait for the database and apply schema via `prisma db push`
+
+### Install dependencies
 
 ```bash
-# Check deployment status
-kubectl get deployments -n backstage
-kubectl get pods -n backstage
-kubectl get services -n backstage
-kubectl get ingress -n backstage
-
-# Watch pod startup
-kubectl get pods -n backstage -w
-
-# Check pod logs
-kubectl logs -f deployment/backstage-gitops -n backstage
-
-# Check specific pod logs
-POD_NAME=$(kubectl get pods -n backstage -l app.kubernetes.io/name=backstage-gitops -o jsonpath='{.items[0].metadata.name}')
-kubectl logs -f $POD_NAME -n backstage
-
-# Check events
-kubectl get events -n backstage --sort-by='.lastTimestamp'
+cd helm/devops-portal
+helm dependency update
 ```
 
-### Step 6: Access the Application
+### Choose a secret strategy
+
+Recommended production options:
+
+1. Sealed Secrets
+2. External Secrets Operator
+3. Secrets Store CSI Driver
+
+Do not commit plaintext runtime secrets to Git.
+
+### Minimum Helm values to review
+
+- `config.baseUrl`
+- `image.repository`
+- `image.tag`
+- `ingress.*`
+- `postgresql.enabled` versus `externalDatabase.*`
+- `redis.enabled` versus `externalRedis.*`
+- `minio.enabled` versus `externalS3.*`
+- `integrations.*`
+- `serviceMonitor.enabled`
+- `networkPolicy.enabled`
+- `initContainers.*`
+
+### Install or upgrade
 
 ```bash
-# Port forward for local access (testing)
-kubectl port-forward -n backstage service/backstage-gitops 7007:80
-
-# Access via browser
-open http://localhost:7007
-
-# Or use the ingress URL
-open https://backstage.yourdomain.com
+helm upgrade --install devops-portal ./helm/devops-portal \
+  -n devops-portal \
+  --create-namespace \
+  -f helm/devops-portal/values-prod.yaml
 ```
 
----
-
-## Configuration
-
-### Environment Variables
-
-The application uses the following environment variables:
-
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `BACKSTAGE_BASE_URL` | Public URL of Backstage | Yes | - |
-| `GITHUB_TOKEN` | GitHub Personal Access Token | Yes | - |
-| `GITHUB_ORG` | GitHub organization name | Yes | - |
-| `POSTGRES_HOST` | PostgreSQL host | Yes | - |
-| `POSTGRES_PORT` | PostgreSQL port | Yes | 5432 |
-| `POSTGRES_USER` | PostgreSQL username | Yes | backstage |
-| `POSTGRES_PASSWORD` | PostgreSQL password | Yes | - |
-| `POSTGRES_DB` | PostgreSQL database name | Yes | backstage |
-| `ARGOCD_ENABLED` | Enable ArgoCD integration | No | false |
-| `ARGOCD_URL` | ArgoCD API URL | No | - |
-| `ARGOCD_TOKEN` | ArgoCD API token | No | - |
-| `GRAFANA_ENABLED` | Enable Grafana integration | No | false |
-| `GRAFANA_URL` | Grafana URL | No | - |
-| `GRAFANA_API_KEY` | Grafana API key | No | - |
-| `LOG_LEVEL` | Logging level | No | info |
-
-### Helm Chart Configuration
-
-Key configuration options in `values.yaml`:
-
-```yaml
-# Number of replicas
-replicaCount: 2
-
-# Image configuration
-image:
-  repository: your-registry/backstage-gitops
-  tag: "1.0.0"
-
-# Resource limits
-resources:
-  limits:
-    cpu: 1000m
-    memory: 1Gi
-  requests:
-    cpu: 500m
-    memory: 512Mi
-
-# Auto-scaling
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 5
-  targetCPUUtilizationPercentage: 80
-
-# PostgreSQL
-postgres:
-  enabled: true
-  storage:
-    size: 20Gi
-    storageClass: gp3
-```
-
-### Update Configuration
+If you are pinning the image tag from CI:
 
 ```bash
-# Update Helm values
-helm upgrade backstage-gitops ./helm \
-  --namespace backstage \
-  --values custom-values.yaml \
-  --reuse-values
-
-# Update specific value
-helm upgrade backstage-gitops ./helm \
-  --namespace backstage \
-  --set image.tag=1.0.1
-
-# Update secrets
-kubectl create secret generic backstage-secrets \
-  --namespace backstage \
-  --from-literal=GITHUB_TOKEN='new_token' \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-# Restart pods to pick up new secrets
-kubectl rollout restart deployment/backstage-gitops -n backstage
+helm upgrade --install devops-portal ./helm/devops-portal \
+  -n devops-portal \
+  --create-namespace \
+  -f helm/devops-portal/values-prod.yaml \
+  --set image.repository=rahulnutakki/devops-portal \
+  --set image.tag=latest
 ```
 
----
+## Post-Deploy Verification
 
-## Troubleshooting
-
-### Common Issues
-
-#### 1. Pods Not Starting
+Check rollout status:
 
 ```bash
-# Check pod status
-kubectl describe pod -n backstage <pod-name>
-
-# Check logs
-kubectl logs -n backstage <pod-name>
-
-# Check events
-kubectl get events -n backstage --sort-by='.lastTimestamp'
+kubectl -n devops-portal get deploy,pods,svc,ingress
+kubectl -n devops-portal rollout status deploy/devops-portal --timeout=10m
 ```
 
-**Common causes:**
-- Image pull errors (check image name and pull secrets)
-- Missing secrets (check secret exists and has correct keys)
-- Resource limits too low (increase CPU/memory limits)
-- Health check failures (check /healthcheck endpoint)
-
-#### 2. Database Connection Errors
+Check health:
 
 ```bash
-# Check PostgreSQL pod
-kubectl get pods -n backstage -l app=postgres
-
-# Test database connectivity from backstage pod
-kubectl exec -it -n backstage <backstage-pod> -- \
-  sh -c 'apk add postgresql-client && \
-  psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB'
+curl https://your-host/api/health
+curl -H "Authorization: Bearer $METRICS_AUTH_TOKEN" https://your-host/api/metrics
 ```
 
-**Solutions:**
-- Verify POSTGRES_HOST points to correct service
-- Check PostgreSQL pod is running
-- Verify credentials in secrets
-- Check network policies
+Check auth mode behavior:
 
-#### 3. GitHub Integration Not Working
+- if `AUTH_MODE=keycloak-only`, Keycloak must be configured or auth is unhealthy
+- if `AUTH_MODE=multi`, verify the intended providers are present on the login screen
 
-```bash
-# Check GitHub token
-kubectl get secret backstage-secrets -n backstage -o jsonpath='{.data.GITHUB_TOKEN}' | base64 -d
+Check tenant behavior:
 
-# Test GitHub API from pod
-kubectl exec -it -n backstage <backstage-pod> -- \
-  sh -c 'curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user'
-```
+- sign in
+- select an organization
+- verify authenticated API calls carry valid org context
 
-**Solutions:**
-- Verify token has correct permissions (repo, read:org, read:user)
-- Check token hasn't expired
-- Verify GITHUB_ORG is correct
-- Check network egress rules
+## Production Notes
 
-#### 4. Ingress Not Working
+### Security
 
-```bash
-# Check ingress
-kubectl describe ingress -n backstage
+- set `AUTH_SECRET` or `NEXTAUTH_SECRET`
+- set `TOKEN_ENCRYPTION_KEY`
+- set `METRICS_AUTH_TOKEN`
+- prefer sealed or external secrets over inline secret values
+- keep `networkPolicy.enabled=true` unless you have a deliberate reason not to
+- review service account and security-scan RBAC before enabling in-cluster scans
 
-# Check ingress controller logs
-kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx
+### Reliability
 
-# Test service directly
-kubectl port-forward -n backstage service/backstage-gitops 7007:80
-```
+- keep readiness and liveness probes on `/api/health`
+- keep HPA and PDB enabled unless your environment has a reason to disable them
+- review DB and object-storage persistence sizing before production rollout
+- monitor init container failures; schema push happens before app start
 
-**Solutions:**
-- Verify ingress controller is installed
-- Check DNS resolves to cluster
-- Verify TLS certificate is valid
-- Check ingress class name
+### Cost
 
-### Debugging Commands
+- bundled PostgreSQL, Redis, and MinIO are convenient but add stateful storage cost
+- Trivy Operator and image scanning increase cluster workload and registry traffic
+- Prometheus scraping and long retention can materially increase monitoring cost
 
-```bash
-# Get all resources
-kubectl get all -n backstage
+## Known Runtime Gaps
 
-# Describe deployment
-kubectl describe deployment backstage-gitops -n backstage
+- worker startup is not clearly wired from the inspected startup paths
+- credential sourcing is still split between encrypted DB credentials, Redis token storage, org settings JSON, and env fallback
+- some multi-tenant enforcement still depends on explicit route filtering rather than centralized Prisma auto-scoping
 
-# Check resource usage
-kubectl top pods -n backstage
+## Historical Version
 
-# Get pod shell
-kubectl exec -it -n backstage <pod-name> -- /bin/sh
+The replaced Backstage-era deployment guide now lives at:
 
-# Check environment variables
-kubectl exec -it -n backstage <pod-name> -- env
-
-# View configuration
-kubectl get configmap backstage-config -n backstage -o yaml
-
-# Export resources for debugging
-kubectl get deployment backstage-gitops -n backstage -o yaml > deployment-debug.yaml
-```
-
----
-
-## Monitoring and Maintenance
-
-### Health Checks
-
-```bash
-# Check health endpoint
-curl https://backstage.yourdomain.com/healthcheck
-
-# From within cluster
-kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- \
-  curl http://backstage-gitops.backstage.svc.cluster.local/healthcheck
-```
-
-### Logs
-
-```bash
-# Tail logs
-kubectl logs -f -n backstage deployment/backstage-gitops
-
-# Get logs from all replicas
-kubectl logs -n backstage -l app.kubernetes.io/name=backstage-gitops --all-containers=true
-
-# Export logs
-kubectl logs -n backstage deployment/backstage-gitops --since=1h > backstage-logs.txt
-```
-
-### Scaling
-
-```bash
-# Manual scaling
-kubectl scale deployment backstage-gitops -n backstage --replicas=3
-
-# Enable autoscaling
-kubectl autoscale deployment backstage-gitops -n backstage \
-  --cpu-percent=80 \
-  --min=2 \
-  --max=5
-
-# Check HPA status
-kubectl get hpa -n backstage
-```
-
-### Updates and Rollbacks
-
-```bash
-# Update image
-kubectl set image deployment/backstage-gitops -n backstage \
-  backstage-gitops=ghcr.io/radiantlogic-saas/backstage-gitops:1.0.1
-
-# Check rollout status
-kubectl rollout status deployment/backstage-gitops -n backstage
-
-# View rollout history
-kubectl rollout history deployment/backstage-gitops -n backstage
-
-# Rollback to previous version
-kubectl rollout undo deployment/backstage-gitops -n backstage
-
-# Rollback to specific revision
-kubectl rollout undo deployment/backstage-gitops -n backstage --to-revision=2
-```
-
-### Backup and Restore
-
-#### Backup PostgreSQL
-
-```bash
-# Backup database
-kubectl exec -n backstage <postgres-pod> -- \
-  pg_dump -U backstage backstage > backstage-backup-$(date +%Y%m%d).sql
-
-# Or use pg_dumpall for all databases
-kubectl exec -n backstage <postgres-pod> -- \
-  pg_dumpall -U backstage > backstage-full-backup-$(date +%Y%m%d).sql
-```
-
-#### Restore PostgreSQL
-
-```bash
-# Restore database
-kubectl exec -i -n backstage <postgres-pod> -- \
-  psql -U backstage backstage < backstage-backup-20250129.sql
-```
-
-### Cleanup
-
-```bash
-# Uninstall Helm chart
-helm uninstall backstage-gitops -n backstage
-
-# Delete namespace (removes all resources)
-kubectl delete namespace backstage
-
-# Delete PVCs (if needed)
-kubectl delete pvc -n backstage --all
-```
-
----
-
-## Production Checklist
-
-Before deploying to production:
-
-- [ ] Docker image built and pushed to registry
-- [ ] Secrets created with production credentials
-- [ ] Custom values.yaml configured for production
-- [ ] Ingress configured with valid domain and TLS
-- [ ] Resource limits set appropriately
-- [ ] Auto-scaling enabled
-- [ ] Database backups configured
-- [ ] Monitoring and alerting setup
-- [ ] Load testing completed
-- [ ] Disaster recovery plan documented
-- [ ] Security scan completed on Docker image
-- [ ] Network policies configured
-- [ ] RBAC policies reviewed
-
----
-
-## Next Steps
-
-- Review [Admin Guide](./docs/guides/admin-guide.md) for operational procedures
-- Check [Troubleshooting Guide](./docs/guides/troubleshooting.md) for common issues
-- See [API Reference](./docs/reference/api-reference.md) for automation
-
-## Support
-
-For issues or questions:
-- Documentation: http://your-backstage-url/documentation
-- Email: platform-team@radiantlogic.com
+- `docs/legacy/backstage-era/deployment/DEPLOY_GUIDE.md`

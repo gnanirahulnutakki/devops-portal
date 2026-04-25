@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "devops-portal.fullname" . }}-config
+  labels:
+    {{- include "devops-portal.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  # Application Configuration (non-sensitive)
+  NODE_ENV: "production"
+  LOG_LEVEL: {{ .Values.config.logLevel | default "info" | quote }}
+  NEXTAUTH_URL: {{ .Values.config.baseUrl | quote }}
+  
+  # Session configuration
+  NEXTAUTH_SESSION_MAX_AGE: {{ .Values.config.nextAuth.sessionMaxAge | default 28800 | quote }}
+  
+  # Feature flags
+  ENABLE_CREDENTIALS_AUTH: {{ .Values.config.enableCredentialsAuth | default false | quote }}
+  
+  # S3 Configuration (non-sensitive)
+  {{- if or .Values.minio.enabled .Values.externalS3.enabled }}
+  S3_BUCKET: {{ include "devops-portal.s3Bucket" . | quote }}
+  AWS_REGION: {{ .Values.externalS3.region | default "us-east-1" | quote }}
+  {{- if include "devops-portal.s3Endpoint" . }}
+  S3_ENDPOINT: {{ include "devops-portal.s3Endpoint" . | quote }}
+  S3_PATH_STYLE: "true"
+  {{- end }}
+  {{- end }}
+  
+  # Integration URLs (non-sensitive)
+  {{- if .Values.integrations.argocd.enabled }}
+  ARGOCD_URL: {{ .Values.integrations.argocd.url | quote }}
+  ARGOCD_INSECURE: {{ .Values.integrations.argocd.insecure | default false | quote }}
+  {{- end }}
+  
+  {{- if .Values.integrations.grafana.enabled }}
+  GRAFANA_URL: {{ .Values.integrations.grafana.url | quote }}
+  NEXT_PUBLIC_GRAFANA_URL: {{ .Values.integrations.grafana.url | quote }}
+  {{- end }}
+  
+  {{- if .Values.integrations.prometheus.enabled }}
+  PROMETHEUS_URL: {{ .Values.integrations.prometheus.url | quote }}
+  {{- end }}
+  
+  {{- if .Values.integrations.keycloak.enabled }}
+  KEYCLOAK_ISSUER: {{ .Values.integrations.keycloak.issuer | quote }}
+  {{- end }}

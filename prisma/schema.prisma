@@ -1,0 +1,665 @@
+// =============================================================================
+// DevOps Portal v2 - Prisma Schema
+// Multi-tenant architecture with Row Level Security (RLS)
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// Multi-Tenancy
+// =============================================================================
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  logoUrl     String?
+  
+  // Settings
+  settings    Json     @default("{}")
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  memberships    Membership[]
+  clusters       Cluster[]
+  deployments    Deployment[]
+  bulkOperations BulkOperation[]
+  auditLogs      AuditLog[]
+  alertRules     AlertRule[]
+  integrationCredentials IntegrationCredential[]
+  securityScans  SecurityScan[]
+  scorecards     Scorecard[]
+  scorecardResults ScorecardResult[]
+
+  @@map("organizations")
+}
+
+model Membership {
+  id             String   @id @default(cuid())
+  role           Role     @default(USER)
+  /**
+   * Per-user feature overrides for this organization.
+   * Example shape:
+   * {
+   *   "vulnerability": { "enabled": false },
+   *   "mcp": { "enabled": true }
+   * }
+   */
+  featureFlags   Json     @default("{}")
+  
+  // Relations
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  @@unique([userId, organizationId])
+  @@map("memberships")
+}
+
+enum Role {
+  USER      // Read-only
+  READWRITE // Read + write operations
+  ADMIN     // Full access including user management
+}
+
+// =============================================================================
+// Authentication (NextAuth.js)
+// =============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  
+  // Credentials auth (for development/simple deployments)
+  passwordHash  String?
+  
+  // Auth
+  accounts      Account[]
+  sessions      Session[]
+  
+  // Organization membership
+  memberships   Membership[]
+  
+  // Activity
+  auditLogs     AuditLog[]
+  bulkOperations BulkOperation[]
+  integrationCredentials IntegrationCredential[]
+  securityScans SecurityScan[]
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// =============================================================================
+// Clusters & Deployments
+// =============================================================================
+
+model Cluster {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String
+  provider    String   // aws, gcp, azure, on-prem
+  region      String
+  environment String   // production, staging, development
+  
+  // Connection
+  kubeconfig  String?  @db.Text // Encrypted
+  argocdUrl   String?
+  config      Json?    @map("config")
+  
+  // Status
+  status      ClusterStatus @default(UNKNOWN)
+  lastHealthCheck DateTime? @map("last_health_check")
+  
+  // Organization scope
+  organizationId String @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  deployments Deployment[]
+  
+  // Timestamps
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  // Compound unique for safe tenant-scoped lookups
+  @@unique([id, organizationId])
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@map("clusters")
+}
+
+enum ClusterStatus {
+  HEALTHY
+  DEGRADED
+  UNHEALTHY
+  UNKNOWN
+}
+
+model Deployment {
+  id          String   @id @default(cuid())
+  name        String
+  namespace   String
+  
+  // Source
+  repository  String
+  branch      String
+  path        String   @default(".")
+  
+  // ArgoCD
+  argoAppName String?
+  syncStatus  SyncStatus @default(UNKNOWN)
+  healthStatus HealthStatus @default(UNKNOWN)
+  
+  // Version
+  currentVersion String?
+  targetVersion  String?
+  
+  // Organization & Cluster scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clusterId      String
+  cluster        Cluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastSyncAt  DateTime?
+  
+  // Compound unique for safe tenant-scoped lookups
+  @@unique([id, organizationId])
+  @@unique([clusterId, namespace, name])
+  @@index([organizationId])
+  @@map("deployments")
+}
+
+enum SyncStatus {
+  SYNCED
+  OUT_OF_SYNC
+  SYNCING
+  UNKNOWN
+}
+
+enum HealthStatus {
+  HEALTHY
+  DEGRADED
+  PROGRESSING
+  SUSPENDED
+  MISSING
+  UNKNOWN
+}
+
+// =============================================================================
+// Bulk Operations
+// =============================================================================
+
+model BulkOperation {
+  id          String   @id @default(cuid())
+  type        BulkOperationType
+  status      BulkOperationStatus @default(PENDING)
+  
+  // Input/Output
+  input       Json
+  output      Json?
+  
+  // Progress
+  totalItems  Int      @default(0)
+  completedItems Int   @default(0)
+  failedItems Int      @default(0)
+  
+  // Error handling
+  errors      Json?
+  
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Creator
+  createdById String
+  createdBy   User @relation(fields: [createdById], references: [id])
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  startedAt   DateTime?
+  completedAt DateTime?
+  
+  // Compound unique for safe tenant-scoped lookups
+  @@unique([id, organizationId])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@map("bulk_operations")
+}
+
+enum BulkOperationType {
+  FILE_UPDATE
+  SYNC
+  ROLLBACK
+  SCALE
+  RESTART
+}
+
+enum BulkOperationStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// =============================================================================
+// Audit Logging
+// =============================================================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  
+  // Action
+  action      String
+  resource    String
+  resourceId  String?
+  
+  // Details
+  details     Json?
+  metadata    Json?
+  
+  // Result
+  success     Boolean
+  errorMessage String?
+  
+  // Actor
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  ipAddress   String?
+  userAgent   String?
+  
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Tracing
+  traceId     String?
+  spanId      String?
+  
+  // Timestamp
+  createdAt   DateTime @default(now())
+  
+  @@index([organizationId, createdAt])
+  @@index([action, createdAt])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
+
+// =============================================================================
+// Alerting
+// =============================================================================
+
+model AlertRule {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  
+  // Rule definition
+  type        String   // cpu, memory, sync_failure, health_degraded
+  condition   Json     // { threshold: 80, operator: "gt" }
+  
+  // Notification
+  channels    Json     // ["email", "slack"]
+  recipients  Json     // email addresses or webhook URLs
+  
+  // Status
+  enabled     Boolean  @default(true)
+  
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Compound unique for safe tenant-scoped lookups
+  @@unique([id, organizationId])
+  @@index([organizationId])
+  @@map("alert_rules")
+}
+
+// =============================================================================
+// User Preferences
+// =============================================================================
+
+model UserPreference {
+  id          String   @id @default(cuid())
+  userId      String   @unique @map("user_id")
+  
+  // UI preferences
+  theme       String   @default("system") // light, dark, system
+  sidebarCollapsed Boolean @default(false)
+  dashboardLayout Json?
+  
+  // Notification preferences
+  emailNotifications Boolean @default(true)
+  slackNotifications Boolean @default(false)
+  
+  // Timestamps
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  @@map("user_preferences")
+}
+
+// =============================================================================
+// Integration Credentials (Per-Org Secrets)
+// =============================================================================
+
+model IntegrationCredential {
+  id          String   @id @default(cuid())
+  
+  // Integration type
+  provider    IntegrationProvider
+  name        String   // User-friendly name
+  
+  // Encrypted credentials (AES-256-GCM)
+  // Store as JSON: { apiKey, url, token, etc. }
+  credentials String   @db.Text // Encrypted JSON blob
+  
+  // Status
+  enabled     Boolean  @default(true)
+  lastUsedAt  DateTime?
+  lastErrorAt DateTime?
+  lastError   String?
+
+  // Health monitoring
+  expiresAt          DateTime?
+  rotatedAt          DateTime?
+  lastHealthCheckAt  DateTime?
+  healthStatus       String?    @default("unknown")  // healthy | degraded | unhealthy | unknown
+
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Audit
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  healthChecks CredentialHealthCheck[]
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Compound unique for safe tenant-scoped lookups
+  @@unique([id, organizationId])
+  // Allow multiple credentials per provider per org (distinct by name)
+  @@unique([organizationId, provider, name])
+  @@index([organizationId])
+  @@map("integration_credentials")
+}
+
+enum IntegrationProvider {
+  ARGOCD
+  GRAFANA
+  PROMETHEUS
+  GITHUB
+  GITLAB
+  S3
+  SLACK
+  PAGERDUTY
+  LLM
+  UPTIME_KUMA
+  SUPABASE
+  VANTA
+}
+
+// =============================================================================
+// Credential Health Checks (Audit Trail)
+// =============================================================================
+
+model CredentialHealthCheck {
+  id           String   @id @default(cuid())
+  credentialId String
+  credential   IntegrationCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  status       String   // healthy | degraded | unhealthy
+  latencyMs    Int?
+  error        String?  // sanitized, never raw secrets
+  checkedAt    DateTime @default(now())
+
+  @@index([credentialId, checkedAt])
+  @@map("credential_health_checks")
+}
+
+// =============================================================================
+// Security Scanning (Vulnerability Reports)
+// =============================================================================
+
+enum SecurityScanType {
+  TRIVY_IMAGE
+  TRIVY_CLUSTER
+  DOCKER_SCOUT_IMAGE
+}
+
+enum SecurityScanStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model SecurityScan {
+  id        String            @id @default(cuid())
+  type      SecurityScanType
+  status    SecurityScanStatus @default(PENDING)
+
+  // Target (e.g., image ref) and tool metadata
+  target    String
+  tool      String?           // trivy, docker-scout, etc.
+  toolVersion String?
+
+  // K8s execution details (for in-cluster scans)
+  k8sNamespace String?
+  k8sJobName   String?
+  k8sPodName   String?
+
+  // Execution details
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  // Results (store normalized summary + raw)
+  summary     Json?           // {critical,high,medium,low,...}
+  reportJson  Json?           // tool JSON output when available
+  reportText  String?         @db.Text // raw output (for download/debug)
+
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Actor
+  createdById String
+  createdBy   User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
+  @@map("security_scans")
+}
+
+// =============================================================================
+// Service Scorecards (Maturity Tracking)
+// =============================================================================
+
+enum ScorecardLevel {
+  BASIC
+  BRONZE
+  SILVER
+  GOLD
+}
+
+enum RuleStatus {
+  PASS
+  WARN
+  FAIL
+}
+
+enum RuleCategory {
+  RELIABILITY
+  SECURITY
+  OBSERVABILITY
+  DELIVERY
+  OWNERSHIP
+}
+
+enum CheckSource {
+  ARGOCD
+  DORA
+  GRAFANA
+  GITHUB
+  SECURITY
+  CUSTOM
+}
+
+model Scorecard {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  projectFilter String?  // Optional ArgoCD project filter
+  enabled       Boolean  @default(true)
+
+  // Organization scope
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  rules   ScorecardRule[]
+  results ScorecardResult[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@map("scorecards")
+}
+
+model ScorecardRule {
+  id            String       @id @default(cuid())
+  name          String
+  description   String?
+  category      RuleCategory
+  source        CheckSource
+  level         ScorecardLevel
+
+  // Rule configuration (source-specific)
+  config        Json         @default("{}")
+  warnThreshold Json?        // Optional WARN threshold
+
+  sortOrder     Int          @default(0)
+  enabled       Boolean      @default(true)
+  weight        Int          @default(1)
+
+  // Parent scorecard
+  scorecardId   String
+  scorecard     Scorecard    @relation(fields: [scorecardId], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([scorecardId])
+  @@map("scorecard_rules")
+}
+
+model ScorecardResult {
+  id             String         @id @default(cuid())
+
+  // What was evaluated
+  scorecardId    String
+  scorecard      Scorecard      @relation(fields: [scorecardId], references: [id], onDelete: Cascade)
+  appName        String
+  appNamespace   String         @default("")
+  appProject     String         @default("")
+
+  // Computed results
+  level          ScorecardLevel
+  score          Json           // { total, passed, warned, failed }
+  ruleResults    Json           // [{ ruleId, ruleName, status, message, detail }]
+
+  evaluatedAt    DateTime       @default(now())
+
+  // Organization scope
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([scorecardId, appName, appNamespace, organizationId])
+  @@index([organizationId])
+  @@index([scorecardId])
+  @@map("scorecard_results")
+}

@@ -1,0 +1,39 @@
+# Ollama Helm values for self-hosted LLM stack
+# Chart: ollama-helm/ollama (https://otwld.github.io/ollama-helm/)
+# Deploy: helm install ollama ollama-helm/ollama -n duploservices-saasops1 -f ollama-values.yaml
+# Node: m5a.4xlarge (16 vCPU, 64GB RAM, CPU-only)
+
+ollama:
+  models:
+    pull:
+      - qwen2.5:3b
+    run:
+      - qwen2.5:3b       # Preload into memory on boot
+
+  gpu:
+    enabled: false        # CPU-only on m5a.4xlarge
+
+resources:
+  requests:
+    cpu: "6"
+    memory: "16Gi"
+  limits:
+    cpu: "14"             # Leave 2 cores for kubelet/OS
+    memory: "48Gi"        # Leave 16Gi for OS + other pods
+
+persistentVolume:
+  enabled: true
+  size: 20Gi              # qwen2.5:3b is ~2GB, room for more models
+
+service:
+  type: ClusterIP
+  port: 11434
+
+nodeSelector:
+  tenantname: duploservices-saasops1
+
+extraEnv:
+  - name: OLLAMA_NUM_PARALLEL
+    value: "6"            # 16 cores can handle more concurrent requests
+  - name: OLLAMA_MAX_LOADED_MODELS
+    value: "2"            # 64GB RAM can hold 2 models simultaneously

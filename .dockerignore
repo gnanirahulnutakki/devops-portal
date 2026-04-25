@@ -1,0 +1,70 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Testing
+coverage
+.nyc_output
+
+# Next.js
+.next
+out
+
+# Large unused dirs for build
+packages
+plugins
+v2
+dist-types
+docs
+deployment
+grafana
+helm
+examples
+
+# Build
+dist
+build
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Local artifacts / accidental duplicates
+*.tgz
+* 2*
+
+# Misc
+*.md
+LICENSE
+.editorconfig
+.eslintrc*
+.prettierrc*
+tsconfig.tsbuildinfo

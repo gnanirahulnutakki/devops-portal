@@ -1,0 +1,23 @@
+{{- if .Values.mailpit.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "devops-portal.fullname" . }}-mailpit
+  labels:
+    {{- include "devops-portal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mailpit
+spec:
+  type: {{ .Values.mailpit.service.type | default "ClusterIP" }}
+  selector:
+    {{- include "devops-portal.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mailpit
+  ports:
+    - name: smtp
+      port: {{ .Values.mailpit.service.smtpPort | default 1025 }}
+      targetPort: smtp
+      protocol: TCP
+    - name: http
+      port: {{ .Values.mailpit.service.uiPort | default 8025 }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

@@ -1,0 +1,217 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Radiant Logic brand-aligned color scheme */
+    --background: 0 0% 100%;
+    --foreground: 222 47% 14%;
+    
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 14%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 14%;
+    
+    /* Primary: Radiant Logic Navy */
+    --primary: 227 75% 14%;
+    --primary-foreground: 0 0% 100%;
+    
+    /* Secondary: Radiant Logic Orange */
+    --secondary: 18 82% 49%;
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    
+    /* Accent: Radiant Logic Blue */
+    --accent: 203 88% 56%;
+    --accent-foreground: 0 0% 100%;
+    
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 227 75% 14%;
+    
+    --radius: 0.5rem;
+    
+    /* Success: Radiant Logic Green */
+    --success: 145 100% 35%;
+    --success-foreground: 0 0% 100%;
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+    
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+    
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+    
+    /* Primary stays navy but lighter for contrast */
+    --primary: 203 88% 56%;
+    --primary-foreground: 222 47% 8%;
+    
+    /* Secondary orange */
+    --secondary: 18 82% 49%;
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    
+    --destructive: 0 62% 55%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 203 88% 56%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Custom scrollbar */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 3px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+  }
+}
+
+/* Gradient backgrounds */
+@layer utilities {
+  .bg-gradient-rl {
+    background: linear-gradient(135deg, #09143F 0%, #0d1a4f 50%, #1a2355 100%);
+  }
+  
+  .bg-gradient-rl-orange {
+    background: linear-gradient(135deg, #e25a1a 0%, #ff7a3d 100%);
+  }
+}
+
+/* Status indicators */
+@layer components {
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+  
+  .status-dot-healthy {
+    @apply bg-rl-green;
+  }
+  
+  .status-dot-degraded {
+    @apply bg-yellow-500;
+  }
+  
+  .status-dot-unhealthy {
+    @apply bg-red-500;
+  }
+  
+  .status-dot-unknown {
+    @apply bg-gray-400;
+  }
+  
+  .status-dot-synced {
+    @apply bg-rl-green;
+  }
+  
+  .status-dot-out-of-sync {
+    @apply bg-rl-orange;
+  }
+  
+  .status-dot-syncing {
+    @apply bg-rl-blue animate-pulse;
+  }
+}
+
+/* Card hover effects */
+@layer components {
+  .card-hover {
+    @apply transition-all duration-200 hover:shadow-md hover:border-rl-blue/30;
+  }
+}
+
+/* Loading skeleton animation */
+@layer utilities {
+  .skeleton {
+    @apply relative overflow-hidden bg-muted;
+  }
+  
+  .skeleton::after {
+    @apply absolute inset-0 -translate-x-full;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--muted-foreground) / 0.1),
+      transparent
+    );
+    animation: shimmer 2s infinite;
+    content: '';
+  }
+}
+
+/* Focus ring style */
+@layer utilities {
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-rl-blue focus:ring-offset-2 focus:ring-offset-background;
+  }
+}
+
+/* Code styling */
+@layer components {
+  .code-block {
+    @apply bg-muted rounded-md p-4 font-mono text-sm overflow-x-auto;
+  }
+  
+  .inline-code {
+    @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
+  }
+}
+
+/* Animation for syncing */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}

@@ -1,0 +1,83 @@
+{{- if .Values.keycloakBootstrap.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "devops-portal.fullname" . }}-kc-bootstrap
+  labels:
+    {{- include "devops-portal.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  # Retry up to 3 times in case Keycloak isn't fully ready yet
+  backoffLimit: 3
+  # Hard deadline — never let the hook block ArgoCD sync indefinitely
+  activeDeadlineSeconds: {{ .Values.keycloakBootstrap.activeDeadlineSeconds | default 300 }}
+  # Clean up completed job after 10 minutes
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "devops-portal.name" . }}-kc-bootstrap
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "devops-portal.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: kc-bootstrap
+          # curl-capable image — minimal and reliable for REST API calls
+          image: curlimages/curl:8.11.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/scripts/bootstrap.sh"]
+          env:
+            # Master realm admin password (to obtain token)
+            - name: KC_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloakBootstrap.adminPasswordSecret }}
+                  key: {{ .Values.keycloakBootstrap.adminPasswordKey }}
+            # Default password assigned to newly created users
+            - name: KC_DEFAULT_USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloakBootstrap.adminPasswordSecret }}
+                  key: KEYCLOAK_DEFAULT_USER_PASSWORD
+                  optional: true
+            # OIDC client secret (injected into the client registration)
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.integrations.keycloak.existingSecret | default "devops-portal-keycloak" }}
+                  key: {{ .Values.integrations.keycloak.clientSecretKey | default "KEYCLOAK_CLIENT_SECRET" }}
+          volumeMounts:
+            - name: bootstrap-scripts
+              mountPath: /scripts
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: bootstrap-scripts
+          configMap:
+            name: {{ include "devops-portal.fullname" . }}-kc-bootstrap
+            defaultMode: 0755
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,18 @@
+dependencies:
+- name: postgresql
+  repository: https://charts.bitnami.com/bitnami
+  version: 15.5.38
+- name: redis
+  repository: https://charts.bitnami.com/bitnami
+  version: 19.6.4
+- name: minio
+  repository: https://charts.bitnami.com/bitnami
+  version: 14.7.16
+- name: sealed-secrets
+  repository: https://bitnami-labs.github.io/sealed-secrets
+  version: 2.16.2
+- name: trivy-operator
+  repository: https://aquasecurity.github.io/helm-charts
+  version: 0.31.0
+digest: sha256:2a3dc1f71101d51784417ad143449f73933778b0c573ce245eb02d147399d5c9
+generated: "2026-02-09T19:58:45.579332-06:00"

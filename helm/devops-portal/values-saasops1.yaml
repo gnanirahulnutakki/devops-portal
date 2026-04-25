@@ -1,0 +1,200 @@
+# =============================================================================
+# DevOps Portal - saasops1 Deployment Values
+# Cluster: self-managed-test-dev01
+# Namespace: duploservices-saasops1
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: rahulnutakki/devops-portal
+  tag: "v2-llm-stack"
+  pullPolicy: Always
+
+config:
+  baseUrl: "https://devops-portal.dev01.radiantlogic.io"
+  enableCredentialsAuth: false  # Keycloak-only login (catch auth issues early)
+  logLevel: "info"
+  bcryptRounds: 10
+
+# Disable autoscaling for dev
+autoscaling:
+  enabled: false
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 200m
+    memory: 512Mi
+
+# Use existing ALB ingress (managed by DuploCloud)
+ingress:
+  enabled: false  # Ingress already exists
+
+# Enable Trivy Operator for runtime vulnerability reports
+trivyOperator:
+  enabled: false
+
+# Mailpit: capture Keycloak verification emails in dev
+mailpit:
+  # NOTE: This cluster appears to restrict pod-to-pod traffic on non-standard ports (1025/8025),
+  # so we run Mailpit as a sidecar in the Keycloak deployment instead.
+  enabled: false
+
+# Pass-through values to the trivy-operator dependency chart
+trivy-operator:
+  operator:
+    # Avoid generating ClusterComplianceReport resources (CRD may not be present)
+    clusterComplianceEnabled: false
+  compliance:
+    specs: []
+
+# Use existing secret for app configuration
+secrets:
+  useSealedSecrets: false
+  # NOTE: In this environment, `devops-portal-secrets` is managed by a SealedSecret (recommended for GitOps).
+  existingSecret: "devops-portal-secrets"
+
+# PostgreSQL - disabled, using external
+postgresql:
+  enabled: false
+
+externalDatabase:
+  host: "devops-portal-postgres"
+  port: 5432
+  database: "devops_portal"
+  username: "postgres"
+  existingSecret: "devops-portal-secrets"
+  existingSecretPasswordKey: "POSTGRES_PASSWORD"
+  sslMode: "disable"
+
+# Redis - disabled, use mock/in-memory
+redis:
+  enabled: false
+
+externalRedis:
+  host: "localhost"  # Not used
+  port: 6379
+  existingSecret: "devops-portal-secrets"
+  existingSecretPasswordKey: "REDIS_PASSWORD"
+
+# MinIO - disabled (use external if needed)
+minio:
+  enabled: false
+
+# Integrations - connect to namespace services
+integrations:
+  argocd:
+    enabled: true
+    url: "https://argocd-server.duploservices-saasops1.svc.cluster.local"
+    existingSecret: "devops-portal-secrets"
+    tokenKey: "ARGOCD_TOKEN"
+    insecure: true
+  
+  grafana:
+    enabled: true
+    url: "http://grafana-local.duploservices-saasops1.svc.cluster.local:80"
+    existingSecret: "devops-portal-secrets"
+    apiKeyKey: "GRAFANA_API_KEY"
+  
+  prometheus:
+    enabled: true
+    url: "http://prom-local-prometheus-server.duploservices-saasops1.svc.cluster.local:80"
+  
+  github:
+    enabled: true
+    existingSecret: "devops-portal-secrets"
+    clientIdKey: "GITHUB_OAUTH_CLIENT_ID"
+    clientSecretKey: "GITHUB_OAUTH_CLIENT_SECRET"
+  
+  keycloak:
+    enabled: true
+    existingSecret: "devops-portal-keycloak"
+    issuer: "" # read from secret via issuerKey
+    clientIdKey: "KEYCLOAK_CLIENT_ID"
+    clientSecretKey: "KEYCLOAK_CLIENT_SECRET"
+    issuerKey: "KEYCLOAK_ISSUER"
+
+# Disable network policies
+networkPolicy:
+  enabled: false
+
+# Disable PDB for single replica
+podDisruptionBudget:
+  enabled: false
+
+# Disable ServiceMonitor
+serviceMonitor:
+  enabled: false
+
+# DuploCloud node selector
+nodeSelector:
+  tenantname: duploservices-saasops1
+
+# Init containers - wait for DB then run migrations automatically
+initContainers:
+  waitForDb:
+    enabled: true
+    timeoutSeconds: 120  # Fail after 2 min instead of hanging forever
+  migrate:
+    enabled: true
+
+# Prometheus alerting rules (requires Prometheus Operator CRDs)
+prometheusRules:
+  enabled: true
+
+# Seed database with demo data
+jobs:
+  seed:
+    enabled: false
+
+# Keycloak realm bootstrap - idempotently recreates realm/client/users after DB wipe
+keycloakBootstrap:
+  enabled: true
+  keycloakInternalUrl: "http://keycloak:8080/keycloak"
+  realm: "devops-portal"
+  adminUser: "admin"
+  adminPasswordSecret: "devops-portal-secrets"
+  adminPasswordKey: "KEYCLOAK_ADMIN_PASSWORD"
+  clientRedirectUris:
+    - "http://localhost:3000/*"
+    - "https://devops-portal.dev01.radiantlogic.io/*"
+  defaultUsers:
+    - username: "rahul"
+      email: "rahul@radiantlogic.io"
+      firstName: "Rahul"
+      lastName: "Nutakki"
+    - username: "admin"
+      email: "admin@radiantlogic.io"
+      firstName: "Admin"
+      lastName: "Admin"
+
+# Extra environment variables
+extraEnv:
+  - name: AUTH_TRUST_HOST
+    value: "true"
+  - name: AUTH_URL
+    value: "https://devops-portal.dev01.radiantlogic.io"
+  - name: AUTH_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: devops-portal-secrets
+        key: NEXTAUTH_SECRET
+  - name: AUTH_MODE
+    value: "keycloak-only"
+  - name: DEFAULT_ORG_SLUG
+    value: "radiantlogic"
+  - name: DEFAULT_ORG_ROLE
+    value: "USER"
+  # GitHub tokens are now managed via UI (Settings > Configurations > GitHub)
+  # No hardcoded tokens needed at deployment time.
+  # Security scan jobs default namespace (where portal runs)
+  - name: SECURITY_SCAN_NAMESPACE
+    value: "duploservices-saasops1"
+  # Self-hosted LLM stack (Ollama + OpenWebUI)
+  - name: OLLAMA_URL
+    value: "http://ollama.duploservices-saasops1.svc.cluster.local:11434/v1"
+  - name: OPENWEBUI_URL
+    value: "http://openwebui-open-webui.duploservices-saasops1.svc.cluster.local:80"

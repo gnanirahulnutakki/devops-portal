@@ -2439,24 +2439,25 @@ export async function createRouter(
   });
   logger.info('Local Auth Service initialized');
 
-  // Create default admin user if it doesn't exist
-  try {
-    const existingAdmin = await localAuthService.getUserByUsername?.('admin');
-    if (!existingAdmin) {
-      await localAuthService.createUser({
-        username: 'admin',
-        email: 'admin@devops-portal.local',
-        password: 'Admin@123!',
-        displayName: 'Portal Admin',
-        role: 'admin',
-      });
-      logger.info('Default admin user created (username: admin, password: Admin@123!)');
-    } else {
-      logger.info('Default admin user already exists');
+  // Create default admin user if it doesn't exist (password from env only)
+  const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD;
+  if (defaultAdminPassword) {
+    try {
+      const existingAdmin = await localAuthService.getUserByUsername?.('admin');
+      if (!existingAdmin) {
+        await localAuthService.createUser({
+          username: 'admin',
+          email: process.env.DEFAULT_ADMIN_EMAIL || 'admin@devops-portal.local',
+          password: defaultAdminPassword,
+          displayName: 'Portal Admin',
+          role: 'admin',
+        });
+        logger.info('Default admin user created from DEFAULT_ADMIN_PASSWORD env var');
+      }
+    } catch (err: any) {
+      // User might already exist or table not ready yet - that's ok
+      logger.debug(`Could not create default admin user: ${err.message}`);
     }
-  } catch (err: any) {
-    // User might already exist or table not ready yet - that's ok
-    logger.debug(`Could not create default admin user: ${err.message}`);
   }
 
   // Apply local auth middleware to extract user from JWT

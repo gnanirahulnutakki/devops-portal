@@ -1,0 +1,444 @@
+import { NextResponse } from 'next/server';
+import { ZodError, ZodSchema } from 'zod';
+import { auth } from './auth';
+import { logger } from './logger';
+import { Ratelimit } from '@upstash/ratelimit';
+import { getRedis } from './redis';
+import { 
+  withApiContext, 
+  ApiContext, 
+  requireRole, 
+  logAuditEvent 
+} from './api-context';
+import { canAccessFeature, defaultFeaturePolicy, mergeFeaturePolicy, type FeatureKey, type MembershipFeatureOverrides } from './features';
+import {
+  recordHttpRequest,
+  recordRateLimitHit,
+} from './metrics';
+
+// =============================================================================
+// API Response Helpers
+// =============================================================================
+
+export interface ApiResponse<T = unknown> {
+  data?: T;
+  error?: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+  meta?: {
+    page?: number;
+    pageSize?: number;
+    total?: number;
+  };
+}
+
+export function successResponse<T>(data: T, meta?: ApiResponse['meta']): NextResponse<ApiResponse<T>> {
+  return NextResponse.json({ data, meta });
+}
+
+export function errorResponse(
+  code: string,
+  message: string,
+  status: number = 400,
+  details?: unknown
+): NextResponse<ApiResponse> {
+  return NextResponse.json(
+    { error: { code, message, details } },
+    { status }
+  );
+}
+
+export function validationError(error: ZodError): NextResponse<ApiResponse> {
+  return errorResponse(
+    'VALIDATION_ERROR',
+    'Invalid request data',
+    400,
+    error.errors.map(e => ({
+      path: e.path.join('.'),
+      message: e.message,
+    }))
+  );
+}
+
+export function unauthorizedError(message = 'Authentication required'): NextResponse<ApiResponse> {
+  return errorResponse('UNAUTHORIZED', message, 401);
+}
+
+export function forbiddenError(message = 'Permission denied'): NextResponse<ApiResponse> {
+  return errorResponse('FORBIDDEN', message, 403);
+}
+
+export function notFoundError(resource: string): NextResponse<ApiResponse> {
+  return errorResponse('NOT_FOUND', `${resource} not found`, 404);
+}
+
+export function serverError(error: unknown): NextResponse<ApiResponse> {
+  logger.error({ error }, 'Internal server error');
+  return errorResponse('INTERNAL_ERROR', 'An unexpected error occurred', 500);
+}
+
+// =============================================================================
+// Request Validation
+// =============================================================================
+
+export async function validateRequest<T>(
+  request: Request,
+  schema: ZodSchema<T>
+): Promise<{ data: T } | { error: NextResponse<ApiResponse> }> {
+  try {
+    const body = await request.json();
+    const data = schema.parse(body);
+    return { data };
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return { error: validationError(error) };
+    }
+    return { error: errorResponse('INVALID_JSON', 'Invalid JSON body', 400) };
+  }
+}
+
+export function validateQuery<T>(
+  searchParams: URLSearchParams,
+  schema: ZodSchema<T>
+): { data: T } | { error: NextResponse<ApiResponse> } {
+  try {
+    const params = Object.fromEntries(searchParams.entries());
+    const data = schema.parse(params);
+    return { data };
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return { error: validationError(error) };
+    }
+    return { error: errorResponse('INVALID_PARAMS', 'Invalid query parameters', 400) };
+  }
+}
+
+// =============================================================================
+// Auth Middleware
+// =============================================================================
+
+export interface AuthContext {
+  userId: string;
+  email: string;
+  hasGitHub: boolean;
+}
+
+export async function requireApiAuth(): Promise<AuthContext | NextResponse<ApiResponse>> {
+  const session = await auth();
+  
+  if (!session?.user?.id) {
+    return unauthorizedError();
+  }
+  
+  return {
+    userId: session.user.id,
+    email: session.user.email || '',
+    hasGitHub: session.user.hasGitHubConnection || false,
+  };
+}
+
+// =============================================================================
+// Rate Limiting (Redis-based, optional)
+// =============================================================================
+
+function createRateLimiters() {
+  const redis = getRedis();
+  if (!redis) {
+    // Return no-op rate limiters when Redis is not available
+    return null;
+  }
+  
+  return {
+    general: new Ratelimit({
+      redis: redis as any,
+      limiter: Ratelimit.slidingWindow(
+        parseInt(process.env.RATE_LIMIT_GENERAL || '100'),
+        '1 m'
+      ),
+      analytics: true,
+      prefix: 'ratelimit:general',
+    }),
+    bulk: new Ratelimit({
+      redis: redis as any,
+      limiter: Ratelimit.slidingWindow(
+        parseInt(process.env.RATE_LIMIT_BULK || '10'),
+        '1 m'
+      ),
+      analytics: true,
+      prefix: 'ratelimit:bulk',
+    }),
+    sync: new Ratelimit({
+      redis: redis as any,
+      limiter: Ratelimit.slidingWindow(
+        parseInt(process.env.RATE_LIMIT_SYNC || '30'),
+        '1 m'
+      ),
+      analytics: true,
+      prefix: 'ratelimit:sync',
+    }),
+    auth: new Ratelimit({
+      redis: redis as any,
+      limiter: Ratelimit.slidingWindow(
+        parseInt(process.env.RATE_LIMIT_AUTH || '5'),
+        '1 m'
+      ),
+      analytics: true,
+      prefix: 'ratelimit:auth',
+    }),
+    // Grafana render rate limit: image generation is expensive
+    render: new Ratelimit({
+      redis: redis as any,
+      limiter: Ratelimit.slidingWindow(
+        parseInt(process.env.RATE_LIMIT_RENDER || '20'),
+        '1 m'
+      ),
+      analytics: true,
+      prefix: 'ratelimit:render',
+    }),
+  };
+}
+
+// Lazy initialization of rate limiters
+let _rateLimiters: ReturnType<typeof createRateLimiters> | undefined;
+function getRateLimiters() {
+  if (_rateLimiters === undefined) {
+    _rateLimiters = createRateLimiters();
+  }
+  return _rateLimiters;
+}
+
+export type RateLimitType = 'general' | 'bulk' | 'sync' | 'auth' | 'render';
+
+export async function checkRateLimit(
+  type: RateLimitType,
+  identifier: string
+): Promise<{ success: boolean; limit: number; remaining: number; reset: number }> {
+  const rateLimiters = getRateLimiters();
+  if (!rateLimiters) {
+    // No rate limiting when Redis is not available
+    return { success: true, limit: 999, remaining: 999, reset: Date.now() + 60000 };
+  }
+  const limiter = rateLimiters[type];
+  const result = await limiter.limit(identifier);
+  
+  return {
+    success: result.success,
+    limit: result.limit,
+    remaining: result.remaining,
+    reset: result.reset,
+  };
+}
+
+export async function withRateLimit(
+  type: RateLimitType,
+  identifier: string
+): Promise<NextResponse<ApiResponse> | null> {
+  const result = await checkRateLimit(type, identifier);
+  
+  if (!result.success) {
+    const response = errorResponse(
+      'RATE_LIMIT_EXCEEDED',
+      'Too many requests, please try again later',
+      429
+    );
+    
+    response.headers.set('X-RateLimit-Limit', result.limit.toString());
+    response.headers.set('X-RateLimit-Remaining', result.remaining.toString());
+    response.headers.set('X-RateLimit-Reset', result.reset.toString());
+    response.headers.set('Retry-After', Math.ceil((result.reset - Date.now()) / 1000).toString());
+    
+    return response;
+  }
+  
+  return null; // No rate limit hit
+}
+
+// =============================================================================
+// API Route Handler Wrapper
+// =============================================================================
+
+ 
+type ApiHandler = (request: Request, context?: any) => Promise<NextResponse>;
+
+/**
+ * Basic API handler wrapper (auth + rate limiting, NO tenant context)
+ * Use this for routes that don't need organization scoping
+ */
+export function withApiHandler(
+  handler: ApiHandler,
+  options: {
+    rateLimit?: RateLimitType;
+    requireAuth?: boolean;
+  } = {}
+): ApiHandler {
+  return async (request: Request, context?: unknown) => {
+    try {
+      // Auth check
+      if (options.requireAuth) {
+        const authResult = await requireApiAuth();
+        if (authResult instanceof NextResponse) {
+          return authResult;
+        }
+      }
+      
+      // Rate limiting
+      if (options.rateLimit) {
+        const session = await auth();
+        const identifier = session?.user?.id || 
+          request.headers.get('x-forwarded-for')?.split(',')[0] || 
+          'anonymous';
+        
+        const rateLimitResponse = await withRateLimit(options.rateLimit, identifier);
+        if (rateLimitResponse) {
+          return rateLimitResponse;
+        }
+      }
+      
+      return await handler(request, context);
+    } catch (error) {
+      return serverError(error);
+    }
+  };
+}
+
+// =============================================================================
+// Tenant-Aware API Handler - For all organization-scoped routes
+// =============================================================================
+
+/**
+ * Handler function signature for tenant-aware routes
+ */
+type TenantApiHandler = (
+  request: Request,
+  ctx: ApiContext
+) => Promise<NextResponse>;
+
+export interface TenantApiOptions {
+  rateLimit?: RateLimitType;
+  requiredRole?: 'USER' | 'READWRITE' | 'ADMIN';
+  requiredFeature?: import('./features').FeatureKey;
+  audit?: {
+    action: string;
+    resource: string;
+    getResourceId?: (request: Request) => string;
+  };
+}
+
+/**
+ * Tenant-aware API handler wrapper
+ * 
+ * This wrapper:
+ * 1. Validates authentication
+ * 2. Validates organization membership
+ * 3. Sets up AsyncLocalStorage context for tenant isolation
+ * 4. Applies rate limiting per organization
+ * 5. Optionally validates required role
+ * 6. Optionally logs audit events
+ * 7. Records metrics for monitoring
+ * 
+ * ALWAYS use this for routes that access tenant-scoped data
+ */
+export function withTenantApiHandler(
+  handler: TenantApiHandler,
+  options: TenantApiOptions = {}
+): ApiHandler {
+  return async (request: Request) => {
+    const startTime = Date.now();
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const method = request.method;
+    
+    try {
+      // This throws if auth fails or membership invalid
+      return await withApiContext(async (ctx) => {
+        // Role check
+        if (options.requiredRole) {
+          requireRole(ctx, options.requiredRole);
+        }
+
+        // Feature check (org policy + per-user overrides)
+        if (options.requiredFeature) {
+          const feature = options.requiredFeature as FeatureKey;
+          const org = await ctx.db.organization.findUnique({
+            where: { id: ctx.tenant.organizationId },
+            select: { settings: true },
+          });
+          const membership = await ctx.db.membership.findUnique({
+            where: {
+              userId_organizationId: {
+                userId: ctx.tenant.userId,
+                organizationId: ctx.tenant.organizationId,
+              },
+            },
+            select: { featureFlags: true },
+          });
+          const settings = (org?.settings as any) || {};
+          const orgFeaturePolicy = mergeFeaturePolicy(defaultFeaturePolicy(), (settings.features || {}) as any);
+          const overrides = (membership?.featureFlags as MembershipFeatureOverrides) || {};
+          const ok = canAccessFeature(ctx.tenant.userRole, orgFeaturePolicy, feature, overrides);
+          if (!ok) {
+            recordHttpRequest(method, path, 403, Date.now() - startTime, ctx.tenant.organizationId);
+            return forbiddenError('This feature is disabled for your account or role.');
+          }
+        }
+        
+        // Organization-scoped rate limiting
+        if (options.rateLimit) {
+          const identifier = `${ctx.tenant.organizationId}:${ctx.tenant.userId}`;
+          const rateLimitResponse = await withRateLimit(options.rateLimit, identifier);
+          if (rateLimitResponse) {
+            // Record rate limit hit
+            recordRateLimitHit(options.rateLimit, ctx.tenant.organizationId);
+            recordHttpRequest(method, path, 429, Date.now() - startTime, ctx.tenant.organizationId);
+            return rateLimitResponse;
+          }
+        }
+        
+        // Execute handler
+        const response = await handler(request, ctx);
+        
+        // Record metrics
+        recordHttpRequest(method, path, response.status, Date.now() - startTime, ctx.tenant.organizationId);
+        
+        // Audit logging
+        if (options.audit && response.status < 400) {
+          const resourceId = options.audit.getResourceId?.(request) ?? 'unknown';
+          await logAuditEvent(
+            ctx,
+            options.audit.action,
+            options.audit.resource,
+            resourceId
+          );
+        }
+        
+        return response;
+      });
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      
+      // Handle specific errors gracefully
+      if (error instanceof Error) {
+        if (error.message.includes('does not have access')) {
+          recordHttpRequest(method, path, 403, duration);
+          return forbiddenError('You do not have access to this organization');
+        }
+        if (error.message.includes('requires') && error.message.includes('role')) {
+          recordHttpRequest(method, path, 403, duration);
+          return forbiddenError(error.message);
+        }
+        if (error.message.includes('x-organization-id')) {
+          recordHttpRequest(method, path, 400, duration);
+          return errorResponse('ORGANIZATION_REQUIRED', error.message, 400);
+        }
+      }
+      
+      recordHttpRequest(method, path, 500, duration);
+      return serverError(error);
+    }
+  };
+}
+
+// Re-export context utilities for route handlers
+export { requireRole, logAuditEvent, type ApiContext };

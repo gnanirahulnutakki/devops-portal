@@ -1,0 +1,37 @@
+{{- if .Values.securityScans.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "devops-portal.fullname" . }}-security-scans
+  namespace: {{ .Values.securityScans.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "devops-portal.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "devops-portal.fullname" . }}-security-scans
+  namespace: {{ .Values.securityScans.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "devops-portal.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "devops-portal.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "devops-portal.fullname" . }}-security-scans
+{{- end }}
+
