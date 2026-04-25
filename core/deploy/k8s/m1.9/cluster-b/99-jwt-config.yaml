@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jwt-config
+  namespace: m19-mcp
+  labels:
+    app.kubernetes.io/part-of: m19-mcp-federation
+data:
+  token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJpYXQiOjE1MTYyMzkwMjJ9.MOCK_SIGNATURE"

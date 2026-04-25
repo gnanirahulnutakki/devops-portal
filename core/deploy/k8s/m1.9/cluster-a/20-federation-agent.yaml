@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: federation-agent
+  namespace: m19-mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: secret-reader
+  namespace: m19-mcp
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["github-pat"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: federation-agent-read-secrets
+  namespace: m19-mcp
+subjects:
+- kind: ServiceAccount
+  name: federation-agent
+  namespace: m19-mcp
+roleRef:
+  kind: Role
+  name: secret-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: federation-agent
+  namespace: m19-mcp
+  labels:
+    app.kubernetes.io/name: federation-agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: m19-mcp-federation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: federation-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: federation-agent
+    spec:
+      serviceAccountName: federation-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: agent
+        image: ghcr.io/m19-federation/agent:m1.9
+        args:
+        - "--gateway=http://gateway.m19-mcp.svc.cluster.local:8080"
+        - "--agent-name=cluster-a-agent"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]

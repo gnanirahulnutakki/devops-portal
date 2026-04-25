@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: federation-agent
+  namespace: m19-mcp
+  labels:
+    app.kubernetes.io/name: federation-agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: m19-mcp-federation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: federation-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: federation-agent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: agent
+        image: ghcr.io/m19-federation/agent:m1.9
+        args:
+        - "--gateway=http://host.docker.internal:8080"
+        - "--agent-name=cluster-b-agent"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]

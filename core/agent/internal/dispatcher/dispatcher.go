@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/TBD_PROJECT_NAME/core/adapters/k8sgetpods"
+	"github.com/TBD_PROJECT_NAME/core/adapters/mcpclient"
 )
 
 // Dispatcher routes adapter operations by name using a kubeconfig path for Kubernetes adapters.
@@ -23,6 +24,8 @@ func (d *Dispatcher) Execute(ctx context.Context, adapterName string, params map
 	case "k8s-get-pods":
 		ns, _ := params["namespace"].(string)
 		return k8sgetpods.GetPods(ctx, d.kubeconfig, ns)
+	case "mcp-client":
+		return mcpclient.CallTool(ctx, params)
 	default:
 		return nil, fmt.Errorf("unknown adapter: %s", adapterName)
 	}

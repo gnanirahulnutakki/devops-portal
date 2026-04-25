@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-mcp
+  namespace: m19-mcp
+  labels:
+    app.kubernetes.io/name: github-mcp
+    app.kubernetes.io/component: server
+    app.kubernetes.io/part-of: m19-mcp-federation
+spec:
+  selector:
+    app.kubernetes.io/name: github-mcp
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-mcp
+  namespace: m19-mcp
+  labels:
+    app.kubernetes.io/name: github-mcp
+    app.kubernetes.io/component: server
+    app.kubernetes.io/part-of: m19-mcp-federation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: github-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: github-mcp
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: mcp-server
+        image: ghcr.io/github/github-mcp-server:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        env:
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-pat
+              key: token

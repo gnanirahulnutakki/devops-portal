@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: m19-mcp
+  labels:
+    app.kubernetes.io/part-of: m19-mcp-federation
