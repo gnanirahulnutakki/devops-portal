@@ -50,17 +50,19 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy necessary files
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/prisma ./prisma
-
-# Set correct permissions for prerender cache
-RUN mkdir .next
-RUN chown nextjs:nodejs .next
-
-# Copy standalone build
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Copy app + node_modules (custom server.ts needs the full tree at runtime —
+# standalone output is disabled in next.config.ts since it omits ws/jose/etc.)
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/server.ts ./server.ts
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/ws ./src/lib/ws
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/services ./src/lib/services
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/encryption.ts ./src/lib/encryption.ts
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/logger.ts ./src/lib/logger.ts
+COPY --from=builder --chown=nextjs:nodejs /app/tsconfig.json ./tsconfig.json
 
 USER nextjs
 
@@ -73,4 +75,6 @@ ENV HOSTNAME="0.0.0.0"
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
-CMD ["node", "server.js"]
+# `npm start` runs `tsx server.ts` per package.json — the custom server boots
+# Next.js via app.prepare() and adds /api/ws/* WebSocket dispatch on top.
+CMD ["npm", "start"]

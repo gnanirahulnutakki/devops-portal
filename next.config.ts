@@ -2,8 +2,10 @@ import type { NextConfig } from 'next';
 import path from 'path';
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
-  // Fix Next workspace-root inference when multiple lockfiles exist.
+  // standalone output is incompatible with our custom WebSocket server
+  // (server.ts wraps Next.js + dispatches /api/ws/* upgrades). Standalone
+  // does not include arbitrary deps (ws, jose, @kubernetes/client-node) in
+  // its bundle. Trade-off: larger image (~500MB vs ~150MB) for working pod-exec.
   outputFileTracingRoot: path.join(__dirname),
   // Don't expose framework in response headers
   poweredByHeader: false,
