@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { Writable } from 'node:stream';
 import { withTenantApiHandler, errorResponse } from '@/lib/api';
 import { getClusterOrThrow } from '@/app/api/clusters/utils';
 import { loadKubeConfigFromClusterAsync } from '@/lib/services/kubernetes';
@@ -64,8 +65,9 @@ export const GET = withTenantApiHandler(
         }, 25_000);
 
         const log = new k8s.Log(kubeConfig);
-        // Use a writable stream that pushes chunks to the SSE controller.
-        const { Writable } = await import('node:stream');
+        // Writable is imported statically at module top — Next.js's bundler
+        // does not reliably surface named exports of node: built-ins via a
+        // dynamic await import().
         const sink = new Writable({
           write(chunk, _enc, cb) {
             try {

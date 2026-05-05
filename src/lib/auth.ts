@@ -22,24 +22,7 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  // Support legacy SHA-256 hashes during migration — auto-upgrade to bcrypt on match
-  if (hash.length === 64 && /^[a-f0-9]+$/.test(hash)) {
-    const crypto = await import('crypto');
-    const sha256Hash = crypto.createHash('sha256').update(password).digest('hex');
-    if (sha256Hash === hash) {
-      logger.warn('Legacy SHA-256 password matched — will be upgraded to bcrypt by caller');
-      return true;
-    }
-  }
   return bcrypt.compare(password, hash);
-}
-
-/**
- * Check if a hash is a legacy SHA-256 (needs upgrade to bcrypt).
- * Callers should re-hash the password after successful login.
- */
-export function isLegacySha256Hash(hash: string): boolean {
-  return hash.length === 64 && /^[a-f0-9]+$/.test(hash);
 }
 
 // =============================================================================

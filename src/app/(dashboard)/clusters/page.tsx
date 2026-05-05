@@ -595,10 +595,15 @@ export default function ClustersPage() {
         {hasCluster && allNamespaces.length > 0 && (
           <div className="border-t px-2 py-2 space-y-1">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1">Namespace</span>
-            <Select value={nsFilter} onValueChange={setNsFilter}>
+            <Select
+              value={nsFilter || '__all__'}
+              onValueChange={(v) => setNsFilter(v === '__all__' ? '' : v)}
+            >
               <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="All namespaces" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All namespaces</SelectItem>
+                {/* Radix Select forbids empty-string values (reserved for placeholder),
+                    so we use a sentinel and translate at the boundary. */}
+                <SelectItem value="__all__">All namespaces</SelectItem>
                 {allNamespaces.map((ns) => <SelectItem key={ns} value={ns}>{ns}</SelectItem>)}
               </SelectContent>
             </Select>

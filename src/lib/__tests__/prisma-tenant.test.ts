@@ -2,7 +2,7 @@
 // Tenant Isolation Tests - Prisma Extension
 // =============================================================================
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   withTenantContext,
   createTenantContext,
@@ -10,15 +10,7 @@ import {
   getTenantContextOrNull,
 } from '../tenant-context';
 
-// Mock logger to avoid console output
-vi.mock('../logger', () => ({
-  logger: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+// Logger is silenced globally via LOG_LEVEL=silent in src/test/setup.ts.
 
 describe('Tenant Context', () => {
   const mockContext = createTenantContext({

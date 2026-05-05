@@ -14,10 +14,11 @@ export const GET = withTenantApiHandler(
       const namespace = url.searchParams.get('namespace') || undefined;
       const { clients } = await getKubeClientsForCluster(ctx, clusterId);
 
-      const response = namespace
-        ? await (clients.core as any).listNamespacedPod(namespace)
-        : await (clients.core as any).listPodForAllNamespaces();
-      const pods = (response as any).body || response;
+      // @kubernetes/client-node v1 takes an options object and returns the
+      // V1PodList body directly (no { body, response } wrapper).
+      const pods = namespace
+        ? await clients.core.listNamespacedPod({ namespace })
+        : await clients.core.listPodForAllNamespaces();
 
       const items = (pods.items || []).map((pod: any) => {
         const containers = pod.spec?.containers || [];
