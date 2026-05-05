@@ -21,7 +21,7 @@ A self-hostable, multi-cluster Kubernetes operations portal. Connect any number 
 
 ## What's coming
 
-See [`docs/superpowers/plans/2026-05-05-portal-agent-design.md`](docs/superpowers/plans/2026-05-05-portal-agent-design.md) for the next major feature: an in-cluster Portal Agent that connects clusters via outbound mTLS tunnel — for environments where the central portal can't reach the cluster's K8s API directly. v0.5 target.
+The next major feature is an in-cluster **Portal Agent** that connects clusters via an outbound mTLS tunnel — for environments where the central portal can't reach the cluster's K8s API directly. Three configurable identity postures are planned: a built-in CA (zero-dependency), bring-your-own-CA (cert-manager / Vault PKI / AWS Private CA), and SPIFFE/SPIRE federation. Read-only first; mutations gated behind a separate security review. v0.5 target. Discussion / design RFC will land as a GitHub Discussion when implementation kicks off.
 
 ## Tech stack
 

@@ -30,7 +30,7 @@ Open a GitHub Discussion (preferred) or Issue. Describe:
 - Why this is the right place to solve it (vs. a separate tool)
 - Sketch of the proposed solution
 
-For substantial features, expect a design-doc step before implementation. See `docs/superpowers/plans/` for examples.
+For substantial features, expect a design-doc step before implementation. Open a GitHub Discussion with a draft and iterate there before code lands.
 
 ## Submitting code
 

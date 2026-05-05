@@ -12,8 +12,7 @@ First public release. Portal works against any Kubernetes cluster reachable via 
 - **Apache 2.0 license** (`LICENSE`)
 - **OSS community files**: `README.md` (rewritten), `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `QUICKSTART.md`
 - **Package metadata**: `package.json` now declares `name: devops-portal`, `version: 0.1.0`, `license: Apache-2.0`, repository, homepage, bugs, and keywords for discoverability
-- **Design docs** for the planned in-cluster Portal Agent (v0.5+ target):
-  - `docs/superpowers/plans/2026-05-05-portal-agent-design.md` — three-posture identity (built-in CA / BYO-CA / SPIFFE-SPIRE), FRP transport, OSS-first
+- **Roadmap entry** for the planned in-cluster Portal Agent (v0.5+ target): three-posture identity (built-in CA / BYO-CA / SPIFFE-SPIRE), outbound mTLS tunnel, OSS-first. Public design RFC to follow.
 
 ### Changed
 - **K8s Job labels** in security-scans: replaced custom-domain labels (`devops-portal.radiantlogic.io/security-scan`) with K8s standard recommended labels (`app.kubernetes.io/component=security-scan`, `managed-by=devops-portal`, `instance=<scanId>`)

@@ -48,7 +48,7 @@ Good-faith vulnerability research conducted under this policy is welcomed. We wi
 
 ## Threat model summary
 
-For a full threat model see [`docs/superpowers/plans/2026-05-05-portal-agent-design.md`](docs/superpowers/plans/2026-05-05-portal-agent-design.md) §4 (covers the agent path; central-only path is similar minus tunnel concerns).
+A formal threat model will be published with the v0.5 Portal Agent release (the current release is kubeconfig-federation only — central calls the K8s API directly using stored credentials; threat model concerns are limited to the central process and its database).
 
 In-scope adversaries:
 - Network attackers (passive + active MITM)

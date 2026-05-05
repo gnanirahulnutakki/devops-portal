@@ -9,10 +9,10 @@ Use the current-runtime docs first. Treat everything else as unverified until cr
 Primary references for the live application:
 
 - [Current Runtime Architecture Deep Dive](architecture/CURRENT_RUNTIME_ARCHITECTURE.md)
-- [Current Runtime Maintainer Handoff](development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md)
-- [Notion-Ready Architecture Summary](architecture/CURRENT_RUNTIME_ARCHITECTURE_NOTION_READY.md)
-- [Legacy Docs And Workflows Cleanup Plan](development/LEGACY_DOCS_AND_WORKFLOWS_CLEANUP_PLAN.md)
+- [Maintainer Notes](development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md)
 - [Root README](../README.md)
+- [Quickstart](../QUICKSTART.md)
+- [Contributing](../CONTRIBUTING.md)
 
 ## What Actually Runs
 

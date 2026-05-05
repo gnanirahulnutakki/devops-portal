@@ -1,20 +1,15 @@
-# Current Runtime Maintainer Handoff
+# Maintainer Notes
 
-This is the short handoff for engineers who need to work on the portal that runs from the repository root today.
-
-For the full analysis, read:
-
-- `docs/architecture/CURRENT_RUNTIME_ARCHITECTURE.md`
+Short orientation for new contributors who need to work on the portal codebase. For the full architecture deep dive, see [`docs/architecture/CURRENT_RUNTIME_ARCHITECTURE.md`](../architecture/CURRENT_RUNTIME_ARCHITECTURE.md).
 
 ## What Runs Today
 
-- The active application is the root Next.js app under `src/`.
+- The active application is the Next.js app under `src/`.
 - The active schema is `prisma/schema.prisma`.
 - The active deployment assets are:
   - `Dockerfile`
   - `docker-compose.yml`
   - `helm/devops-portal/`
-- `packages/`, `plugins/`, and many older docs/workflows are historical Backstage-era material, not the primary runtime.
 
 ## Start Here
 
@@ -109,39 +104,20 @@ The main request path is:
 - Integration configuration can come from DB credentials, org settings, or env vars, which increases drift risk
 - Docs and CI are partially stale and still reference Backstage-era layouts
 
-## Local Worktree Note
+## First-time setup checklist
 
-The current local worktree contains a credential-health feature slice that is not part of committed `HEAD`:
+```bash
+npm install
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
 
-- schema additions for credential expiry and health checks
-- a new monitoring page
-- new API routes
-- new metrics
-- a dedicated worker
+All five should succeed cleanly on `main`. If any fail, that's a bug — please open an issue.
 
-At inspection time, that slice looked mid-implementation and the UI/API contract was not fully aligned.
+## Areas with active follow-up work
 
-## Immediate Follow-Up Work
-
-Once Node is available in the shell, do this first:
-
-1. `npm ci`
-2. `npm run lint`
-3. `npm run typecheck`
-4. `npm test`
-5. `npm run build`
-
-Then verify operational wiring:
-
-1. confirm whether any worker startup is expected in the web process
-2. confirm which integrations are configured from encrypted DB credentials versus env fallback
-3. decide whether to extend the Prisma tenant extension to `SecurityScan`, `Scorecard`, and `ScorecardResult`
-4. clean up or archive the legacy Backstage-era docs and workflows
-
-## Verification Limits
-
-This handoff is based on static repo inspection only.
-
-- `node` and `npm` were not installed in the current shell
-- no runtime startup or integration calls were performed
-- build, lint, typecheck, and tests remain unverified in this pass
+- The Prisma tenant-context extension currently auto-scopes 6 models (`Cluster`, `Deployment`, `BulkOperation`, `AuditLog`, `AlertRule`, `IntegrationCredential`). Extending coverage to `SecurityScan`, `Scorecard`, and `ScorecardResult` is on the roadmap.
+- BullMQ worker handlers contain TODOs for real bulk GitHub updates, ArgoCD syncs, and deployment restarts (`src/lib/queue.ts`).
+- Integration configuration today can come from DB credentials, org settings JSON, or env-var fallback. Consolidating onto encrypted DB credentials is in progress.
