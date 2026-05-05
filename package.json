@@ -1,8 +1,31 @@
 {
-  "name": "devops-portal-v2",
-  "version": "2.0.0",
-  "private": true,
-  "description": "Enterprise DevOps Portal - Next.js 15 Implementation",
+  "name": "devops-portal",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Self-hostable, multi-cluster Kubernetes operations portal. Browse pods/workloads/services/ingresses, view live events and logs, and proxy your existing platform tooling (ArgoCD, Prometheus, Grafana, Loki) — all from one UI.",
+  "license": "Apache-2.0",
+  "author": "Gnani Rahul Nutakki",
+  "homepage": "https://github.com/gnanirahulnutakki/devops-portal#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gnanirahulnutakki/devops-portal.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gnanirahulnutakki/devops-portal/issues"
+  },
+  "keywords": [
+    "kubernetes",
+    "k8s",
+    "devops",
+    "platform-engineering",
+    "argocd",
+    "prometheus",
+    "grafana",
+    "multi-cluster",
+    "internal-developer-platform",
+    "idp",
+    "nextjs"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "node scripts/copy-monaco.js && prisma generate && next build",

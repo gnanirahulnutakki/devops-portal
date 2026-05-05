@@ -1,285 +1,183 @@
-# DevOps Portal v2
-# README.md
+# DevOps Portal
 
-Enterprise-grade DevOps Management Portal built with Next.js 15, React 19, and a modern security-first stack.
+A self-hostable, multi-cluster Kubernetes operations portal. Connect any number of clusters, browse pods/workloads/services/ingresses, view live events and logs, and proxy your existing platform tooling (ArgoCD, Prometheus, Grafana, Loki, and more) — all from one UI.
 
-## Features
+**Status**: pre-1.0. Core multi-cluster read paths are working and tested end-to-end against [kind](https://kind.sigs.k8s.io/). See the [roadmap](#roadmap) below for what's coming.
 
-- **Dashboard**: Real-time overview of deployments, services, and infrastructure health
-- **ArgoCD Integration**: Manage GitOps deployments, view sync status, and application health
-- **Grafana Integration**: Embedded dashboards and monitoring
-- **S3 Browser**: Browse, upload, and download files from S3/MinIO
-- **Team Management**: Role-based access control with user management
-- **Multi-tenant**: Organization-based isolation with RLS
-- **GitHub OAuth**: Sign in with GitHub
-- **Keycloak SSO**: Enterprise SSO integration
+**License**: [Apache 2.0](LICENSE)
 
-## Tech Stack
+---
 
-- **Frontend**: Next.js 15, React 19, TailwindCSS, shadcn/ui
-- **Backend**: Next.js API Routes, Prisma ORM
-- **Database**: PostgreSQL 16
-- **Cache**: Redis 7
+## What it does today
+
+- **Register Kubernetes clusters** by uploading a kubeconfig — no agent install required.
+- **Browse cluster state**: nodes, namespaces, pods, deployments, statefulsets, daemonsets, services, ingresses, CRDs, events.
+- **Live pod log streaming** over Server-Sent Events.
+- **YAML viewer** with Monaco editor for any resource.
+- **ArgoCD integration**: view applications, app projects, ApplicationSets across registered clusters.
+- **Prometheus / Grafana / Loki** integrations for monitoring views.
+- **Multi-tenant**: organizations isolate their own clusters and integrations via Postgres Row-Level Security.
+- **Auth**: email/password (bcrypt), Keycloak SSO, GitHub OAuth, Google OAuth, Azure AD.
+
+## What's coming
+
+See [`docs/superpowers/plans/2026-05-05-portal-agent-design.md`](docs/superpowers/plans/2026-05-05-portal-agent-design.md) for the next major feature: an in-cluster Portal Agent that connects clusters via outbound mTLS tunnel — for environments where the central portal can't reach the cluster's K8s API directly. v0.5 target.
+
+## Tech stack
+
+- **Frontend**: Next.js 15 (App Router), React 19, TailwindCSS, shadcn/ui, Monaco Editor
+- **Backend**: Next.js API Routes, Prisma 6 ORM
+- **Database**: PostgreSQL 16 (with Row-Level Security for multi-tenancy)
+- **Cache / Queue**: Redis 7, BullMQ
 - **Object Storage**: MinIO / AWS S3
-- **Authentication**: NextAuth.js v5
-- **Logging**: Pino
+- **Authentication**: NextAuth v5
+- **Logging**: Pino (JSON structured)
+- **Container runtime**: Node.js 22+
 
-## Quick Start
+## Quick start (local development)
 
 ### Prerequisites
 
 - Node.js 22+
-- Docker & Docker Compose
-- npm or pnpm
+- Docker (or Docker-compatible runtime — [OrbStack](https://orbstack.dev/) and [Colima](https://github.com/abiosoft/colima) both work)
+- A Kubernetes cluster you can produce a kubeconfig for. If you don't have one, install [kind](https://kind.sigs.k8s.io/) and create a local cluster:
+  ```bash
+  kind create cluster --name portal-demo
+  ```
 
-### Development Setup
-
-1. **Clone and install dependencies:**
+### Install in 5 minutes
 
 ```bash
+# 1. Clone
 git clone https://github.com/gnanirahulnutakki/devops-portal.git
 cd devops-portal
+
+# 2. Install dependencies
 npm install
-```
 
-2. **Start infrastructure:**
+# 3. Bring up Postgres + Redis + MinIO
+docker compose up -d postgres redis minio minio-init
 
-```bash
-docker-compose up -d
-```
-
-This starts:
-- PostgreSQL on port 5432
-- Redis on port 6379
-- MinIO on ports 9000 (API) and 9001 (Console)
-
-3. **Configure environment:**
-
-```bash
+# 4. Generate a .env from the template, plus two secrets
 cp .env.example .env
-# Edit .env with your settings
-```
+SECRET1=$(openssl rand -base64 32)
+SECRET2=$(openssl rand -base64 32)
+sed -i.bak \
+  -e "s|NEXTAUTH_SECRET=your-secret-here|NEXTAUTH_SECRET=${SECRET1}|" \
+  -e "s|TOKEN_ENCRYPTION_KEY=your-base64-key-here|TOKEN_ENCRYPTION_KEY=${SECRET2}|" \
+  .env && rm -f .env.bak
 
-4. **Setup database:**
+# Allow local credentials sign-in for the first run
+cat >> .env <<'EOF'
 
-```bash
-npm run db:migrate
+# Local-dev overrides
+AUTH_MODE=multi
+ENABLE_CREDENTIALS_AUTH=true
+OTEL_ENABLED=false
+EOF
+
+# 5. Push the schema and seed an admin user
+npm run db:push
+npm run db:setup-rls
 npm run db:seed
-```
 
-5. **Start development server:**
-
-```bash
+# 6. Start the dev server
 npm run dev
 ```
 
-6. **Open http://localhost:3000**
+Open <http://localhost:3000>. Sign in with the seeded admin: `admin@example.com` / `admin123`.
 
-Default credentials: `admin@example.com` / `admin123`
+> **Production**: don't ship the seeded credentials. Change them via the Settings page or run with `ENABLE_CREDENTIALS_AUTH=false` and use SSO/OAuth.
 
-### MinIO Console
+### Add your first cluster
 
-Access MinIO Console at http://localhost:9001
-- Username: `minioadmin`
-- Password: `minioadmin`
+1. Click **Clusters** in the sidebar.
+2. Click **Add cluster**.
+3. Paste your kubeconfig YAML (e.g. from `kind get kubeconfig --name portal-demo`).
+4. Set the cluster name, environment, provider (`on-prem` for kind/k3s).
+5. Save. Your cluster appears in the sidebar; click into it to see nodes, namespaces, pods, etc.
 
-## Kubernetes Deployment
+### What you'll see
 
-### Helm Chart
+- **Cluster overview**: node count, namespace list, workload health.
+- **Per-cluster pages**: Pods, Workloads, Services, Ingresses, Events, CRDs, Helm releases, Argo Rollouts (if installed).
+- **Pod detail**: Logs (live SSE stream), Exec, Metrics, YAML, Info tabs.
+- **Per-namespace filtering**: dropdown at the top of the cluster sidebar.
 
-The Helm chart includes all dependencies as sub-charts:
-- PostgreSQL (Bitnami)
-- Redis (Bitnami)
-- MinIO (Bitnami)
+## Configuration
 
-#### Quick Install
+See [`.env.example`](.env.example) for all environment variables. The minimum to run is `DATABASE_URL`, `REDIS_URL`, `NEXTAUTH_SECRET`, `TOKEN_ENCRYPTION_KEY`, and `NEXTAUTH_URL`.
 
-```bash
-# Add Bitnami repo for dependencies
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm repo update
-
-# Update dependencies
-cd helm/devops-portal
-helm dependency update
-
-# Install (development)
-helm install devops-portal . -f values-dev.yaml -n devops-portal --create-namespace
-
-# Install (production)
-helm install devops-portal . -f values-prod.yaml -n devops-portal --create-namespace
-```
-
-#### Sealed Secrets
-
-For GitOps deployments, use sealed secrets:
-
-```bash
-# Generate secrets
-cd helm/devops-portal/scripts
-./generate-secrets.sh devops-portal kube-system
-
-# Apply sealed secrets
-kubectl apply -f sealed-secrets/ -n devops-portal
-```
-
-#### Integration Configuration
-
-Configure internal service URLs in values.yaml:
-
-```yaml
-integrations:
-  argocd:
-    url: "https://argocd-server.argocd.svc.cluster.local"
-  grafana:
-    url: "http://grafana.monitoring.svc.cluster.local:3000"
-  prometheus:
-    url: "http://prometheus-server.monitoring.svc.cluster.local:80"
-```
+Optional integrations (set the URLs and tokens to enable):
+- `ARGOCD_URL` + `ARGOCD_TOKEN`
+- `GRAFANA_URL` + `GRAFANA_API_KEY`
+- `PROMETHEUS_URL`
+- `GITHUB_TOKEN` + `GITHUB_ORGANIZATION`
+- `KEYCLOAK_ID` + `KEYCLOAK_SECRET` + `KEYCLOAK_ISSUER`
 
 ## Architecture
 
-For a code-grounded walkthrough of the active runtime, see:
-
-- [docs/architecture/CURRENT_RUNTIME_ARCHITECTURE.md](docs/architecture/CURRENT_RUNTIME_ARCHITECTURE.md)
-- [docs/development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md](docs/development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md)
-- [docs/development/LEGACY_DOCS_AND_WORKFLOWS_CLEANUP_PLAN.md](docs/development/LEGACY_DOCS_AND_WORKFLOWS_CLEANUP_PLAN.md)
-- [docs/legacy/README.md](docs/legacy/README.md)
-- [docs/legacy/SOURCE_TREE_STATUS.md](docs/legacy/SOURCE_TREE_STATUS.md)
-
-## Legacy Source Trees
-
-The repository still contains preserved Backstage-era source under `packages/`, `plugins/`, and `deployment/docker/`.
-
-Those paths are not the active runtime. Before using them, read:
-
-- [docs/legacy/SOURCE_TREE_STATUS.md](docs/legacy/SOURCE_TREE_STATUS.md)
-
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Ingress                               │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-┌─────────────────────▼───────────────────────────────────────┐
-│                  DevOps Portal                               │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │                   Next.js App                         │   │
-│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐      │   │
-│  │  │   Pages    │  │    API     │  │   Auth     │      │   │
-│  │  │ (React 19) │  │  Routes    │  │ (NextAuth) │      │   │
-│  │  └────────────┘  └────────────┘  └────────────┘      │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-        ┌─────────────┼─────────────┐
-        │             │             │
-┌───────▼───────┐ ┌───▼───┐ ┌──────▼──────┐
-│  PostgreSQL   │ │ Redis │ │ MinIO / S3  │
-│   (Prisma)    │ │       │ │             │
-└───────────────┘ └───────┘ └─────────────┘
+┌──────────────────┐
+│  Next.js App     │  React UI + API routes
+│  (port 3000)     │
+└────────┬─────────┘
+         │
+   ┌─────┼─────┬──────┐
+   │     │     │      │
+┌──▼─┐ ┌─▼──┐ ┌▼───┐ ┌▼────────────────┐
+│ PG │ │ Rd │ │ S3 │ │ Cluster kube-API│
+│    │ │    │ │    │ │ (per registered │
+│    │ │    │ │    │ │  cluster)       │
+└────┘ └────┘ └────┘ └─────────────────┘
 ```
 
-## API Endpoints
+Multi-tenant boundaries enforced at three layers:
 
-### Authentication
-- `POST /api/auth/signin` - Sign in
-- `POST /api/auth/signout` - Sign out
-- `GET /api/auth/session` - Get session
+1. **NextAuth session** ↔ user
+2. **Per-org cookie / `x-organization-id` header** ↔ org context (validated against membership in the JWT)
+3. **Postgres Row-Level Security** on tenant-scoped tables (`clusters`, `deployments`, `audit_logs`, `bulk_operations`, `alert_rules`, `integration_credentials`)
 
-### Users
-- `GET /api/users` - List organization users
-- `POST /api/users` - Create user (admin only)
-- `PATCH /api/users/:id` - Update user (admin only)
-- `DELETE /api/users/:id` - Remove user (admin only)
+For a deeper architecture walkthrough see [`docs/architecture/CURRENT_RUNTIME_ARCHITECTURE.md`](docs/architecture/CURRENT_RUNTIME_ARCHITECTURE.md).
 
-### ArgoCD
-- `GET /api/argocd/applications` - List applications
-- `GET /api/argocd/applications/:name` - Get application details
-- `POST /api/argocd/applications/:name/sync` - Trigger sync
-
-### Grafana
-- `GET /api/grafana/dashboards` - List dashboards
-- `GET /api/grafana/datasources` - List datasources
-
-### Storage (S3)
-- `GET /api/storage/s3` - List objects
-- `POST /api/storage/s3` - Generate signed URL
-- `DELETE /api/storage/s3` - Delete object
-
-## Role-Based Access Control
-
-| Role | Description |
-|------|-------------|
-| `ADMIN` | Full access, can manage users and settings |
-| `READWRITE` | Can create/edit resources, upload files |
-| `USER` | Read-only access, can download files |
-
-## Environment Variables
-
-See [.env.example](.env.example) for all configuration options.
-
-Key variables:
-- `ENABLE_CREDENTIALS_AUTH` - Enable email/password login
-- `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string
-- `S3_ENDPOINT` - MinIO/S3 endpoint
-- `ARGOCD_URL` - ArgoCD server URL
-- `GRAFANA_URL` - Grafana URL
-
-## Development
-
-### Commands
+## Tests
 
 ```bash
-# Development
-npm run dev          # Start dev server
-npm run build        # Build for production
-npm run start        # Start production server
-npm run lint         # Run ESLint
-npm run test         # Run tests
-
-# Database
-npm run db:migrate   # Run migrations
-npm run db:seed      # Seed database
-npm run db:studio    # Open Prisma Studio
-npm run db:reset     # Reset database
-
-# Docker
-docker-compose up -d              # Start infrastructure
-docker-compose --profile tools up # Start with pgAdmin & Redis Commander
-docker-compose down               # Stop all services
+npm test                  # unit + integration (Vitest, no mocks per project policy)
+npm run lint              # ESLint with --max-warnings 0
+npm run typecheck         # tsc --noEmit
 ```
 
-### Project Structure
+The test suite uses real services (Postgres, Redis on localhost via the docker-compose stack). There are no `vi.mock()` / `jest.mock()` calls — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the rationale.
 
-```
-├── src/
-│   ├── app/                 # Next.js App Router
-│   │   ├── (auth)/         # Auth pages (login)
-│   │   ├── (dashboard)/    # Dashboard pages
-│   │   └── api/            # API routes
-│   ├── components/         # React components
-│   │   └── ui/            # shadcn/ui components
-│   ├── hooks/              # React hooks
-│   ├── lib/               # Utilities and services
-│   └── middleware.ts      # NextAuth middleware
-├── prisma/
-│   ├── schema.prisma      # Database schema
-│   └── seed.ts            # Database seeder
-├── helm/
-│   └── devops-portal/     # Helm chart
-├── docker-compose.yml     # Local infrastructure
-└── package.json
-```
+## Deployment
 
-## License
+For Kubernetes, see the Helm chart at [`helm/devops-portal/`](helm/devops-portal/). Note: the chart was originally written for a private deployment and may need adjustment for OSS use cases. Improvements welcome.
 
-MIT License - see [LICENSE](LICENSE) for details.
+For a single-node Docker deployment, see [`Dockerfile`](Dockerfile).
+
+## Roadmap
+
+- **v0.1** (current): kubeconfig-based cluster federation, 9 platform integrations, multi-tenant central
+- **v0.5**: in-cluster Portal Agent (outbound-only mTLS tunnel) for unreachable / air-gapped clusters; first mutations behind security review
+- **v1.0**: full mutation set (scale, restart, exec) with audit + step-up auth; CNCF Sandbox application
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make changes
-4. Run tests
-5. Submit a pull request
+PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup, testing policy (no mocks), and review process.
+
+## Security
+
+For security disclosure, see [`SECURITY.md`](SECURITY.md). **Please do not open public issues for vulnerabilities.**
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By participating you agree to abide by it.
+
+## License
+
+[Apache License 2.0](LICENSE) — see the LICENSE file for the full text.
+
+---
+
+Built originally as internal tooling, opened for community use under Apache 2.0. If you find it useful, drop a star or open a discussion.
