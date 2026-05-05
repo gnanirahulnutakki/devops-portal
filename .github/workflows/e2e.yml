@@ -7,7 +7,6 @@ on:
     branches: [main, dev]
   workflow_dispatch: {}
 
-# Cancel in-progress runs on the same ref to save minutes
 concurrency:
   group: e2e-${{ github.ref }}
   cancel-in-progress: true
@@ -57,23 +56,32 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      minio:
-        image: bitnami/minio:latest
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-          MINIO_DEFAULT_BUCKETS: devops-portal-storage
-        ports:
-          - '9000:9000'
-          - '9001:9001'
-        options: >-
-          --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
 
     steps:
       - uses: actions/checkout@v4
+
+      # MinIO can't run as a GHA `services:` entry because the upstream
+      # minio/minio image needs `server /data` as arguments to its
+      # entrypoint, and `services:` can't pass command args. Run as a
+      # plain detached container instead.
+      - name: Start MinIO + create default bucket
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 -p 9001:9001 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data --console-address :9001
+          # Wait for MinIO to be healthy
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/live 2>/dev/null; then
+              echo "MinIO ready after ${i}s"; break
+            fi
+            sleep 2
+          done
+          # Pre-create the default bucket so the portal's S3 client doesn't 404
+          docker run --rm --network host \
+            -e MC_HOST_local="http://minioadmin:minioadmin@localhost:9000" \
+            minio/mc:latest mb -p local/devops-portal-storage || true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -139,6 +147,10 @@ jobs:
         if: failure()
         run: tail -300 /tmp/devops-portal-logs/portal.log || true
 
+      - name: Show MinIO log on failure
+        if: failure()
+        run: docker logs minio 2>&1 | tail -100 || true
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -153,4 +165,6 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: bash .github/scripts/e2e/cleanup.sh || true
+        run: |
+          bash .github/scripts/e2e/cleanup.sh || true
+          docker rm -f minio 2>/dev/null || true
