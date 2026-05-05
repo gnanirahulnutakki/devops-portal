@@ -309,7 +309,7 @@ export default function GitHubConfigurationsPage() {
             </div>
             <div className="space-y-2">
               <Label>Default organization (optional)</Label>
-              <Input value={createForm.organization} onChange={(e) => setCreateForm((p) => ({ ...p, organization: e.target.value }))} placeholder="radiantlogic-devops" />
+              <Input value={createForm.organization} onChange={(e) => setCreateForm((p) => ({ ...p, organization: e.target.value }))} placeholder="my-github-org" />
             </div>
             <CredentialExpiryField
               id="github-create-expiry"

@@ -47,8 +47,9 @@ export function buildTrivyImageScanJob(params: {
       namespace,
       labels: {
         'app.kubernetes.io/name': 'devops-portal',
-        'devops-portal.radiantlogic.io/security-scan': 'true',
-        ...(scanId ? { 'devops-portal.radiantlogic.io/security-scan-id': scanId } : {}),
+        'app.kubernetes.io/component': 'security-scan',
+        'app.kubernetes.io/managed-by': 'devops-portal',
+        ...(scanId ? { 'app.kubernetes.io/instance': scanId } : {}),
       },
     },
     spec: {
@@ -59,9 +60,10 @@ export function buildTrivyImageScanJob(params: {
         metadata: {
           labels: {
             'app.kubernetes.io/name': 'devops-portal',
+            'app.kubernetes.io/component': 'security-scan',
+            'app.kubernetes.io/managed-by': 'devops-portal',
             'job-name': name,
-            'devops-portal.radiantlogic.io/security-scan': 'true',
-            ...(scanId ? { 'devops-portal.radiantlogic.io/security-scan-id': scanId } : {}),
+            ...(scanId ? { 'app.kubernetes.io/instance': scanId } : {}),
           },
         },
         spec: {

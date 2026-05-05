@@ -238,7 +238,7 @@ export const authConfig: NextAuthConfig = {
       );
 
       // Optional: Gate GitHub OAuth to specific org members
-      // Enable by setting GITHUB_ALLOWED_ORG env var (e.g., "radiantlogic-devops")
+      // Enable by setting GITHUB_ALLOWED_ORG env var (e.g., "my-github-org")
       if (account?.provider === 'github' && process.env.GITHUB_ALLOWED_ORG) {
         try {
           const res = await fetch('https://api.github.com/user/orgs', {
