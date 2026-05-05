@@ -1,3 +1,5 @@
+import pkg from '../../package.json' with { type: 'json' };
+
 const organizationHeader = {
   name: 'x-organization-id',
   in: 'header',
@@ -33,7 +35,7 @@ export const OPENAPI_SPEC = {
   openapi: '3.1.0',
   info: {
     title: 'DevOps Portal API',
-    version: '1.0.0',
+    version: pkg.version,
     description:
       'API reference for DevOps Portal. Most routes require session auth and an organization header.',
   },
@@ -696,6 +698,25 @@ export const OPENAPI_SPEC = {
       },
     },
     '/api/clusters/{id}': {
+      get: {
+        tags: ['Clusters'],
+        summary: 'Get cluster by id',
+        parameters: [
+          organizationHeader,
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: {
+            description: 'Cluster',
+            content: {
+              'application/json': {
+                schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Cluster' } } },
+              },
+            },
+          },
+          404: { description: 'Not found', content: { 'application/json': { schema: apiResponseSchema } } },
+        },
+      },
       patch: {
         tags: ['Clusters'],
         summary: 'Update cluster',

@@ -1,0 +1,168 @@
+name: Integration (full platform stack — heavy)
+
+# Heavy integration tests that install ArgoCD, Prometheus, Grafana, Loki
+# in kind via Helm. Too heavy for every PR — runs nightly + manual.
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 06:00 UTC daily
+  workflow_dispatch: {}
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  NEXTAUTH_SECRET: ci-only-secret-not-for-production-use-32chars
+  TOKEN_ENCRYPTION_KEY: ci-only-key-not-for-production-use-32chars
+  NEXTAUTH_URL: http://localhost:3000
+  NEXT_PUBLIC_APP_URL: http://localhost:3000
+  AUTH_MODE: multi
+  ENABLE_CREDENTIALS_AUTH: 'true'
+  OTEL_ENABLED: 'false'
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/devops_portal?schema=public
+  REDIS_URL: redis://localhost:6379
+  PORTAL_URL: http://localhost:3000
+
+jobs:
+  integration:
+    name: integration (kind + ArgoCD + Prom + Grafana + Loki)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: devops_portal }
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: 'npm' }
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with: { version: 'latest' }
+
+      - name: Install deps + DB schema
+        run: |
+          npm ci --legacy-peer-deps
+          npm run db:generate
+          npm run db:push
+          npm run db:setup-rls
+          npm run db:seed
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: portal-demo
+          config: .github/kind/portal-demo.yaml
+          wait: 120s
+
+      - name: Apply demo workloads
+        run: |
+          kubectl --context kind-portal-demo wait --for=condition=Ready nodes --all --timeout=120s
+          kubectl --context kind-portal-demo apply -f .github/kind/demo-app.yaml
+          kubectl --context kind-portal-demo -n demo-app rollout status deploy/web --timeout=120s
+          kubectl --context kind-portal-demo -n demo-app rollout status deploy/api --timeout=120s
+
+      - name: Install ArgoCD
+        run: |
+          helm --kube-context kind-portal-demo repo add argo https://argoproj.github.io/argo-helm
+          helm --kube-context kind-portal-demo repo update
+          helm --kube-context kind-portal-demo install argocd argo/argo-cd \
+            --namespace argocd --create-namespace \
+            --set 'server.extraArgs={--insecure}' \
+            --set server.service.type=ClusterIP \
+            --wait --timeout 8m
+
+      - name: Install kube-prometheus-stack
+        run: |
+          helm --kube-context kind-portal-demo repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm --kube-context kind-portal-demo repo update
+          helm --kube-context kind-portal-demo install kube-prom prometheus-community/kube-prometheus-stack \
+            --namespace monitoring --create-namespace \
+            --set grafana.adminPassword=admin123 \
+            --set prometheus.prometheusSpec.maximumStartupDurationSeconds=300 \
+            --wait --timeout 12m
+
+      - name: Install Loki (single-binary)
+        run: |
+          helm --kube-context kind-portal-demo repo add grafana https://grafana.github.io/helm-charts
+          helm --kube-context kind-portal-demo repo update
+          helm --kube-context kind-portal-demo install loki grafana/loki \
+            --namespace loki --create-namespace \
+            --set deploymentMode=SingleBinary \
+            --set singleBinary.replicas=1 \
+            --set loki.commonConfig.replication_factor=1 \
+            --set loki.storage.type=filesystem \
+            --set chunksCache.enabled=false \
+            --set resultsCache.enabled=false \
+            --set test.enabled=false \
+            --set lokiCanary.enabled=false \
+            --wait --timeout 10m
+
+      - name: Port-forward services
+        run: |
+          kubectl --context kind-portal-demo -n argocd port-forward svc/argocd-server 8081:80 > /tmp/argocd-pf.log 2>&1 &
+          kubectl --context kind-portal-demo -n monitoring port-forward svc/kube-prom-kube-prometheus-prometheus 9090:9090 > /tmp/prom-pf.log 2>&1 &
+          kubectl --context kind-portal-demo -n monitoring port-forward svc/kube-prom-grafana 3001:80 > /tmp/grafana-pf.log 2>&1 &
+          kubectl --context kind-portal-demo -n loki port-forward svc/loki 3100:3100 > /tmp/loki-pf.log 2>&1 &
+          sleep 10
+          curl -fsS http://localhost:9090/-/healthy
+          curl -fsS http://localhost:3001/api/health | head -c 200
+          curl -fsS http://localhost:3100/ready
+
+      - name: Start portal with stack URLs
+        env:
+          PROMETHEUS_URL: http://localhost:9090
+          GRAFANA_URL: http://localhost:3001
+          LOKI_URL: http://localhost:3100
+          ARGOCD_URL: http://localhost:8081
+          ARGOCD_INSECURE: 'true'
+        run: |
+          mkdir -p /tmp/devops-portal-logs
+          nohup npm run dev > /tmp/devops-portal-logs/portal.log 2>&1 &
+          for i in $(seq 1 120); do
+            if curl -m 3 -fsS http://localhost:3000/api/health 2>/dev/null | grep -q healthy; then
+              echo "Portal ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Portal failed to start"
+          tail -200 /tmp/devops-portal-logs/portal.log
+          exit 1
+
+      - name: Run base e2e + (placeholder) integration phases
+        run: |
+          bash .github/scripts/e2e/setup-portal.sh
+          bash .github/scripts/e2e/setup-kind.sh
+          bash .github/scripts/e2e/run-all.sh
+          # Future: phase-4-argocd.sh / phase-5-prometheus-grafana.sh / phase-6-loki.sh
+          echo "Stack-install integration test completed (full adapter tests pending)"
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          tail -300 /tmp/devops-portal-logs/portal.log || true
+          kubectl --context kind-portal-demo get pods -A
+          kubectl --context kind-portal-demo -n monitoring describe pods | tail -100
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-artifacts
+          path: |
+            /tmp/devops-portal-logs/
+            /tmp/*-pf.log
+            /tmp/e2e-results.jsonl
+          retention-days: 14
+          if-no-files-found: warn

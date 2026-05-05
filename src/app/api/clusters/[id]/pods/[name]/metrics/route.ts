@@ -76,14 +76,14 @@ export const GET = withTenantApiHandler(
       const customApi = kubeConfig.makeApiClient(k8s.CustomObjectsApi);
 
       try {
-        const response: any = await (customApi as any).getNamespacedCustomObject(
-          'metrics.k8s.io',
-          'v1beta1',
+        // v1 client: options-object signature; body returned directly.
+        const obj: any = await customApi.getNamespacedCustomObject({
+          group: 'metrics.k8s.io',
+          version: 'v1beta1',
           namespace,
-          'pods',
-          podName,
-        );
-        const obj = response?.body || response;
+          plural: 'pods',
+          name: podName,
+        });
         const containers = (obj?.containers || []).map((c: any) => ({
           name: c.name,
           cpuMilli: parseCpu(c.usage?.cpu || ''),
@@ -95,8 +95,15 @@ export const GET = withTenantApiHandler(
           containers,
         });
       } catch (err: any) {
-        const status = err?.response?.statusCode || err?.statusCode;
-        if (status === 404) {
+        // v1 client surfaces HTTP status in different places; check all of
+        // them, plus the embedded message ('404 page not found' / 'NotFound').
+        const status =
+          err?.code ||
+          err?.statusCode ||
+          err?.response?.statusCode ||
+          err?.body?.code;
+        const message: string = err?.message ?? '';
+        if (status === 404 || /HTTP-Code:\s*404|404 page not found|"reason":"NotFound"/.test(message)) {
           return errorResponse(
             'METRICS_SERVER_UNAVAILABLE',
             'metrics-server is not installed in this cluster, or this pod has no metrics yet.',
