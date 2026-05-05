@@ -137,7 +137,7 @@ jobs:
 
       - name: Login + register kind cluster in portal
         run: |
-          bash .github/scripts/e2e/setup-portal.sh
+          bash .github/scripts/e2e/login.sh
           bash .github/scripts/e2e/setup-kind.sh
 
       - name: Run all e2e phases

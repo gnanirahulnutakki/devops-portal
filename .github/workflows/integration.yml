@@ -142,7 +142,7 @@ jobs:
 
       - name: Run base e2e + (placeholder) integration phases
         run: |
-          bash .github/scripts/e2e/setup-portal.sh
+          bash .github/scripts/e2e/login.sh
           bash .github/scripts/e2e/setup-kind.sh
           bash .github/scripts/e2e/run-all.sh
           # Future: phase-4-argocd.sh / phase-5-prometheus-grafana.sh / phase-6-loki.sh
