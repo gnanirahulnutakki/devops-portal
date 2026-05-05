@@ -469,7 +469,7 @@ export default function ClustersPage() {
           <div className="space-y-2 rounded-md border p-3">
             <div className="space-y-1">
               <Label className="text-xs">Duplo Host</Label>
-              <Input className="h-8 text-sm" value={form.duploHost} onChange={(e) => setForm((p) => ({ ...p, duploHost: e.target.value }))} placeholder="https://ops01.dc.radiantlogic.io" />
+              <Input className="h-8 text-sm" value={form.duploHost} onChange={(e) => setForm((p) => ({ ...p, duploHost: e.target.value }))} placeholder="https://your-tenant.duplocloud.net" />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">API Token {isEdit && <span className="text-muted-foreground">(leave blank to keep)</span>}</Label>
