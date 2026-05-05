@@ -50,9 +50,8 @@ function extractMethods(contents: string) {
 }
 
 describe('OpenAPI contract', () => {
-  // Skipped 2026-04-24: 22 routes missing from src/lib/openapi.ts spec
-  // (some pre-existing, some added by credential-health + protocol features).
-  // Track as follow-up in docs/superpowers/specs/2026-04-24-devops-portal-stabilization-design.md
+  // Tracks every API route present under src/app/api against the OpenAPI spec.
+  // 22 routes are currently undocumented; see CHANGELOG.md follow-up notes.
   it('includes every API route and method', () => {
     const routes = walkRoutes(apiRoot);
     const paths = (OPENAPI_SPEC.paths || {}) as Record<string, any>;

@@ -10,36 +10,27 @@ This documentation set now has two buckets:
 If you are maintaining the active portal runtime, start with these documents in order:
 
 1. [Current Runtime Architecture Deep Dive](architecture/CURRENT_RUNTIME_ARCHITECTURE.md)
-2. [Current Runtime Maintainer Handoff](development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md)
-3. [Notion-Ready Architecture Summary](architecture/CURRENT_RUNTIME_ARCHITECTURE_NOTION_READY.md)
-4. [Legacy Docs And Workflows Cleanup Plan](development/LEGACY_DOCS_AND_WORKFLOWS_CLEANUP_PLAN.md)
-5. [Root README](../README.md)
+2. [Maintainer Notes](development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md)
+3. [Root README](../README.md)
+4. [Quickstart](../QUICKSTART.md)
 
 ## Active Runtime
 
-The current application is:
+The application is:
 
-- the root Next.js 15 app under `src/`
-- the root Prisma schema in `prisma/schema.prisma`
-- the root deployment assets:
+- The Next.js 15 app under `src/`
+- The Prisma schema at `prisma/schema.prisma`
+- Deployment assets:
   - `Dockerfile`
   - `docker-compose.yml`
   - `helm/devops-portal/`
-
-The following repo areas are not the primary runtime:
-
-- `packages/`
-- `plugins/`
-- `deployment/docker/`
-- older Backstage-oriented docs and workflows
 
 ## Current Runtime References
 
 Architecture and maintainer references:
 
 - [Current Runtime Architecture Deep Dive](architecture/CURRENT_RUNTIME_ARCHITECTURE.md)
-- [Current Runtime Maintainer Handoff](development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md)
-- [Notion-Ready Architecture Summary](architecture/CURRENT_RUNTIME_ARCHITECTURE_NOTION_READY.md)
+- [Maintainer Notes](development/CURRENT_RUNTIME_MAINTAINER_HANDOFF.md)
 
 Operational references that still align with the active runtime:
 

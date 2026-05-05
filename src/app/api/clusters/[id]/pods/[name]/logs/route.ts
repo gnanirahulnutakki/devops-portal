@@ -27,19 +27,18 @@ export const GET = withTenantApiHandler(
 
       const { clients } = await getKubeClientsForCluster(ctx, clusterId);
 
-      const response = await (clients.core as any).readNamespacedPodLog(
-        podName,
+      // v1 client: options-object signature; readNamespacedPodLog returns
+      // the log text directly (string).
+      const response = await clients.core.readNamespacedPodLog({
+        name: podName,
         namespace,
-        container,           // container
-        false,               // follow
-        undefined,           // limitBytes
-        undefined,           // pretty
-        false,               // previous
-        undefined,           // sinceSeconds
-        tailLines,           // tailLines
-        true,                // timestamps
-      );
-      const logs = typeof response === 'string' ? response : (response?.body || String(response));
+        container,
+        follow: false,
+        previous: false,
+        tailLines,
+        timestamps: true,
+      });
+      const logs = typeof response === 'string' ? response : String(response ?? '');
 
       return successResponse({ logs, tailLines });
     } catch (error) {

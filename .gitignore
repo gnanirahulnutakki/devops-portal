@@ -79,4 +79,44 @@ prisma/migrations/*.sql.tmp
 
 # Playwright test artifacts (screenshots, videos)
 .playwright-cli/
+.playwright-mcp/
 output/
+
+# Local credential / config files that shouldn't be public
+*.kubeconfig
+kubeconfig.yaml
+.cluster-creds/
+
+# Generated artifacts that shouldn't be tracked
+*.bak
+.idx/
+
+# OSS-mode reports / scratch docs (not for repo)
+security_best_practices_report.md
+SECURITY_AUDIT_*.md
+
+# AI assistant / agent artifacts — keep local, don't ship to OSS
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+COPILOT.md
+.cursorrules
+.cursor/
+.windsurfrules
+.windsurf/
+.aider*
+.continue/
+.codeium/
+.github/copilot/
+docs/superpowers/
+docs/.session-*/
+**/SESSION-SUMMARY-*.md
+**/*-handoff.md
+**/HANDOFF-*.md
+
+# Local decision logs / internal planning docs
+DECISIONS.md
+DECISIONS/
+docs/decisions/
+docs/adr/internal/
+docs/internal/

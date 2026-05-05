@@ -1,178 +1,18 @@
 /**
- * GitOps Studio API Tests
- * 
- * Tests for the GitOps Studio backend APIs:
- * - Branches API
- * - Contents API
- * - Tree API
- * - Pull Requests API
- * - Bulk Commit API
+ * GitOps Studio — local validation/format helpers.
+ *
+ * NOTE: this file used to mock @/lib/http-client and global fetch with ~170
+ * lines of GitHub API stand-ins, but none of the tests below actually invoked
+ * those mocks — they exercised pure JavaScript helpers (string checks, base64
+ * round-trips, array/Map operations). The mocks were dead code and have been
+ * removed under the project's no-mocks policy. Real API integration belongs in
+ * a separate suite that talks to a real GitHub fixture, not in unit tests.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-// Mock fetch globally
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
-
-// Mock GitHub client
-vi.mock('@/lib/http-client', () => ({
-  createGitHubClient: vi.fn(() => ({
-    get: vi.fn().mockImplementation((url: string) => {
-      // Mock responses based on URL
-      if (url.includes('/branches')) {
-        return Promise.resolve({
-          json: () => Promise.resolve([
-            { name: 'main', commit: { sha: 'abc123' }, protected: true },
-            { name: 'develop', commit: { sha: 'def456' }, protected: false },
-          ]),
-        });
-      }
-      if (url.includes('/contents/')) {
-        return Promise.resolve({
-          json: () => Promise.resolve({
-            name: 'values.yaml',
-            path: 'helm/values.yaml',
-            sha: 'sha123',
-            size: 1024,
-            type: 'file',
-            content: Buffer.from('key: value\nfoo: bar').toString('base64'),
-            encoding: 'base64',
-          }),
-        });
-      }
-      if (url.includes('/git/trees/')) {
-        return Promise.resolve({
-          json: () => Promise.resolve({
-            sha: 'tree123',
-            tree: [
-              { path: 'README.md', type: 'blob', sha: 'sha1', size: 100 },
-              { path: 'helm/values.yaml', type: 'blob', sha: 'sha2', size: 500 },
-              { path: 'helm', type: 'tree', sha: 'sha3' },
-            ],
-            truncated: false,
-          }),
-        });
-      }
-      if (url.includes('/git/refs/heads/')) {
-        return Promise.resolve({
-          json: () => Promise.resolve({
-            ref: 'refs/heads/main',
-            object: { sha: 'abc123', type: 'commit' },
-          }),
-        });
-      }
-      if (url.includes('/pulls')) {
-        return Promise.resolve({
-          json: () => Promise.resolve([
-            {
-              id: 1,
-              number: 42,
-              title: 'Test PR',
-              body: 'Test body',
-              state: 'open',
-              html_url: 'https://github.com/test/repo/pull/42',
-              head: { ref: 'feature', sha: 'abc' },
-              base: { ref: 'main' },
-              user: { login: 'testuser', avatar_url: 'https://avatar.url' },
-              created_at: '2024-01-01T00:00:00Z',
-              updated_at: '2024-01-02T00:00:00Z',
-              merged_at: null,
-              mergeable: true,
-              mergeable_state: 'clean',
-            },
-          ]),
-        });
-      }
-      return Promise.reject(new Error('Unknown URL'));
-    }),
-    put: vi.fn().mockImplementation(() => {
-      return Promise.resolve({
-        json: () => Promise.resolve({
-          content: { name: 'values.yaml', path: 'helm/values.yaml', sha: 'new_sha' },
-          commit: { sha: 'commit_sha', message: 'Update values.yaml', html_url: 'https://github.com/...' },
-        }),
-      });
-    }),
-    post: vi.fn().mockImplementation((url: string) => {
-      if (url.includes('/git/refs')) {
-        return Promise.resolve({
-          json: () => Promise.resolve({
-            ref: 'refs/heads/new-branch',
-            object: { sha: 'abc123', type: 'commit' },
-          }),
-        });
-      }
-      if (url.includes('/pulls')) {
-        return Promise.resolve({
-          json: () => Promise.resolve({
-            id: 2,
-            number: 43,
-            title: 'New PR',
-            html_url: 'https://github.com/test/repo/pull/43',
-            head: { ref: 'feature' },
-            base: { ref: 'main' },
-            state: 'open',
-          }),
-        });
-      }
-      return Promise.reject(new Error('Unknown URL'));
-    }),
-  })),
-  fetchJson: vi.fn().mockImplementation(async (client: unknown, url: string) => {
-    if (url.includes('/branches?')) {
-      return [
-        { name: 'main', commit: { sha: 'abc123' }, protected: true },
-        { name: 'develop', commit: { sha: 'def456' }, protected: false },
-      ];
-    }
-    if (url.includes('/branches/')) {
-      return { commit: { sha: 'abc123' } };
-    }
-    if (url.includes('/git/refs/heads/')) {
-      return {
-        ref: 'refs/heads/main',
-        object: { sha: 'abc123', type: 'commit' },
-      };
-    }
-    if (url.includes('/git/trees/')) {
-      return {
-        sha: 'tree123',
-        tree: [
-          { path: 'README.md', type: 'blob', sha: 'sha1', size: 100 },
-          { path: 'helm/values.yaml', type: 'blob', sha: 'sha2', size: 500 },
-        ],
-        truncated: false,
-      };
-    }
-    if (url.includes('/pulls')) {
-      return [
-        {
-          id: 1,
-          number: 42,
-          title: 'Test PR',
-          body: 'Test body',
-          state: 'open',
-          html_url: 'https://github.com/test/repo/pull/42',
-          head: { ref: 'feature', sha: 'abc' },
-          base: { ref: 'main' },
-          user: { login: 'testuser', avatar_url: 'https://avatar.url' },
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-02T00:00:00Z',
-          merged_at: null,
-          mergeable: true,
-          mergeable_state: 'clean',
-        },
-      ];
-    }
-    throw new Error(`Unknown URL: ${url}`);
-  }),
-}));
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 describe('GitOps Studio API', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    // Set env vars
     process.env.GITHUB_TOKEN = 'test_token';
   });
 

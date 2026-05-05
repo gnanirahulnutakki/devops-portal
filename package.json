@@ -1,12 +1,36 @@
 {
-  "name": "devops-portal-v2",
-  "version": "2.0.0",
-  "private": true,
-  "description": "Enterprise DevOps Portal - Next.js 15 Implementation",
+  "name": "devops-portal",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Self-hostable, multi-cluster Kubernetes operations portal. Browse pods/workloads/services/ingresses, view live events and logs, and proxy your existing platform tooling (ArgoCD, Prometheus, Grafana, Loki) — all from one UI.",
+  "license": "Apache-2.0",
+  "author": "Gnani Rahul Nutakki",
+  "homepage": "https://github.com/gnanirahulnutakki/devops-portal#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gnanirahulnutakki/devops-portal.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gnanirahulnutakki/devops-portal/issues"
+  },
+  "keywords": [
+    "kubernetes",
+    "k8s",
+    "devops",
+    "platform-engineering",
+    "argocd",
+    "prometheus",
+    "grafana",
+    "multi-cluster",
+    "internal-developer-platform",
+    "idp",
+    "nextjs"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "node scripts/copy-monaco.js && prisma generate && next build",
-    "start": "next start",
+    "start": "tsx server.ts",
+    "start:next-only": "next start",
     "lint": "eslint src --ext .ts,.tsx --max-warnings 0",
     "lint:fix": "next lint --fix",
     "format": "prettier --write .",
@@ -50,6 +74,8 @@
     "@tanstack/react-query": "^5.62.0",
     "@tremor/react": "^3.18.0",
     "@upstash/ratelimit": "^2.0.8",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "axios": "^1.15.2",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.28.2",
@@ -75,8 +101,10 @@
     "swr": "^2.4.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
+    "tsx": "^4.19.0",
     "undici": "^7.21.0",
     "whatwg-url": "^16.0.0",
+    "ws": "^8.18.0",
     "zod": "^3.24.0",
     "zustand": "^5.0.0"
   },
@@ -90,6 +118,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/swagger-ui-react": "^5.18.0",
+    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^2.1.0",
     "@vitest/ui": "^2.1.0",
     "autoprefixer": "^10.4.0",
@@ -100,7 +129,6 @@
     "prettier-plugin-tailwindcss": "^0.6.0",
     "prisma": "^6.3.0",
     "tailwindcss": "^3.4.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"
   },

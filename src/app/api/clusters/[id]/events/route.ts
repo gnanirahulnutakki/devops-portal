@@ -14,10 +14,10 @@ export const GET = withTenantApiHandler(
       const namespace = url.searchParams.get('namespace') || undefined;
       const { clients } = await getKubeClientsForCluster(ctx, clusterId);
 
-      const response = namespace
-        ? await (clients.core as any).listNamespacedEvent(namespace)
-        : await (clients.core as any).listEventForAllNamespaces();
-      const events = (response as any).body || response;
+      // v1 client: options-object signature; body returned directly.
+      const events = namespace
+        ? await clients.core.listNamespacedEvent({ namespace })
+        : await clients.core.listEventForAllNamespaces();
 
       const items = (events.items || [])
         .map((e: any) => ({

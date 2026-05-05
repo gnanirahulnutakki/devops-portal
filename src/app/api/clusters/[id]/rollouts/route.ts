@@ -22,11 +22,20 @@ export const GET = withTenantApiHandler(
       const api = kubeConfig.makeApiClient(k8s.CustomObjectsApi);
 
       try {
-        const result: any = namespace
-          ? await (api as any).listNamespacedCustomObject('argoproj.io', 'v1alpha1', namespace, 'rollouts')
-          : await (api as any).listClusterCustomObject('argoproj.io', 'v1alpha1', 'rollouts');
-        
-        const obj = result?.body || result;
+        // v1 client: options-object signature; body returned directly.
+        const obj: any = namespace
+          ? await api.listNamespacedCustomObject({
+              group: 'argoproj.io',
+              version: 'v1alpha1',
+              namespace,
+              plural: 'rollouts',
+            })
+          : await api.listClusterCustomObject({
+              group: 'argoproj.io',
+              version: 'v1alpha1',
+              plural: 'rollouts',
+            });
+
         const items = (obj?.items || []).map((r: any) => {
           const spec = r.spec || {};
           const status = r.status || {};
@@ -59,9 +68,20 @@ export const GET = withTenantApiHandler(
         });
         return successResponse(items);
       } catch (err: any) {
-        const status = err?.response?.statusCode || err?.statusCode;
-        if (status === 404) {
-          return errorResponse('ROLLOUTS_CRD_NOT_INSTALLED', 'argo-rollouts CRDs not installed in this cluster', 404);
+        // v1 client surfaces HTTP status in different places depending on the
+        // failure mode; check all of them, plus the embedded message.
+        const status =
+          err?.code ||
+          err?.statusCode ||
+          err?.response?.statusCode ||
+          err?.body?.code;
+        const message: string = err?.message ?? '';
+        if (status === 404 || /HTTP-Code:\s*404|404 page not found/.test(message)) {
+          return errorResponse(
+            'ROLLOUTS_CRD_NOT_INSTALLED',
+            'argo-rollouts CRDs not installed in this cluster',
+            404
+          );
         }
         throw err;
       }

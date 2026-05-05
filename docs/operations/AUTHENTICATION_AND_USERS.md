@@ -58,7 +58,7 @@ The login page automatically renders whichever providers are configured (via `/a
 - `GITHUB_CLIENT_ID`
 - `GITHUB_CLIENT_SECRET`
 - Optional org gate:
-  - `GITHUB_ALLOWED_ORG` (e.g. `radiantlogic-devops`)
+  - `GITHUB_ALLOWED_ORG` (e.g. `my-github-org`)
 
 ### Google
 

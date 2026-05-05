@@ -1,42 +1,25 @@
 // =============================================================================
-// Test Setup - Global test configuration and mocks
+// Test Setup - Global test configuration
 // =============================================================================
+// No-mock policy: this project does not mock its own modules in tests. Tests
+// run against the real logger, real crypto, and (where the test needs them)
+// real Postgres/Redis on localhost via the docker-compose stack.
 
-import { vi, beforeEach, afterEach } from 'vitest';
-
-// Mock environment variables
 // @ts-expect-error - NODE_ENV assignment for test environment
 process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
-process.env.REDIS_URL = 'redis://localhost:6379';
-process.env.NEXTAUTH_SECRET = 'test-secret-key-at-least-32-characters';
-process.env.NEXTAUTH_URL = 'http://localhost:3000';
-process.env.TOKEN_ENCRYPTION_KEY = 'test-encryption-key-32-chars!!!';
+process.env.DATABASE_URL =
+  process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/devops_portal?schema=public';
+process.env.REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+process.env.NEXTAUTH_SECRET =
+  process.env.NEXTAUTH_SECRET ?? 'test-secret-key-at-least-32-characters';
+process.env.NEXTAUTH_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
+process.env.TOKEN_ENCRYPTION_KEY =
+  process.env.TOKEN_ENCRYPTION_KEY ?? 'test-encryption-key-32-chars!!!';
 
-// Mock logger globally
-vi.mock('@/lib/logger', () => ({
-  logger: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    child: vi.fn(() => ({
-      debug: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-    })),
-  },
-}));
-
-// Reset mocks between tests
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+// Silence the real pino logger instead of mocking it. Pino treats 'silent'
+// as a valid level that drops all log records before any I/O.
+// Must be set before any module imports `@/lib/logger`, hence: setupFiles.
+process.env.LOG_LEVEL = process.env.LOG_LEVEL ?? 'silent';
 
 // Global test utilities
 export const mockOrganizationId = 'org-test-123';

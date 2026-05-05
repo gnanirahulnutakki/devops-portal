@@ -18,10 +18,11 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Tables that require RLS (Prisma uses camelCase column names)
-// Format: { table, column } - column needs to be quoted for camelCase
+// Tables that require RLS.
+// `clusters` uses @map("organization_id") in the Prisma schema, so its column
+// is snake_case in Postgres. The rest don't @map and stay camelCase.
 const RLS_TABLES = [
-  { table: 'clusters', column: '"organizationId"' },
+  { table: 'clusters', column: '"organization_id"' },
   { table: 'deployments', column: '"organizationId"' },
   { table: 'bulk_operations', column: '"organizationId"' },
   { table: 'audit_logs', column: '"organizationId"' },
@@ -107,7 +108,7 @@ async function main() {
     // Note: Prisma may have already created these indexes, but we ensure they exist
     console.log('\n📊 Creating performance indexes...');
     const indexes = [
-      { table: 'clusters', column: '"organizationId"', name: 'idx_clusters_org_rls' },
+      { table: 'clusters', column: '"organization_id"', name: 'idx_clusters_org_rls' },
       { table: 'deployments', column: '"organizationId"', name: 'idx_deployments_org_rls' },
       { table: 'bulk_operations', column: '"organizationId"', name: 'idx_bulk_operations_org_rls' },
       { table: 'audit_logs', column: '"organizationId"', name: 'idx_audit_logs_org_rls' },

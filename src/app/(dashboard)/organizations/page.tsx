@@ -43,7 +43,7 @@ type OrganizationItem = {
 };
 
 const segmentRules = [
-  { key: 'infra', label: 'Infra (Duplo)', icon: Server, match: ['duplo', 'infra', 'platform'] },
+  { key: 'infra', label: 'Infrastructure', icon: Server, match: ['duplo', 'infra', 'platform'] },
   { key: 'security', label: 'Security', icon: ShieldCheck, match: ['security', 'sec', 'audit'] },
   { key: 'apps', label: 'Apps', icon: Layers, match: ['app', 'portal', 'product'] },
   { key: 'core', label: 'Core', icon: Building2, match: [] },
@@ -207,7 +207,7 @@ export default function OrganizationsPage() {
             Organization Segments
           </CardTitle>
           <CardDescription>
-            Use these segments to separate infra (Duplo), security, apps, and core teams
+            Use these segments to separate infra, security, apps, and core teams
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

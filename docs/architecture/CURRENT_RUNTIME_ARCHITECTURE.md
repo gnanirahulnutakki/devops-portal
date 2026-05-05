@@ -2,13 +2,12 @@
 
 This document describes the active runtime in the current repository state. It is based on the root Next.js application, root Prisma schema, root API routes, Redis/BullMQ support, the production Dockerfile, local `docker-compose.yml`, and `helm/devops-portal/`.
 
-It intentionally does **not** treat `packages/`, `plugins/`, or the older Backstage-era docs and workflows as the main runtime. Those directories still exist in the repo, but they are historical context, not the primary application described here.
+The repository was originally a Backstage app and was rewritten as a Next.js application. Historical Backstage-era source has been removed; this document describes the current Next.js runtime only.
 
 ## Scope And Intent
 
-- Audience: engineers maintaining or extending the current portal runtime.
-- Source of truth: code and active deployment assets, not historical docs.
-- Validation limit: this pass is static analysis only. `node`/`npm` are unavailable in the current shell, so build, lint, typecheck, tests, and runtime startup were not re-verified here.
+- Audience: engineers maintaining or extending the portal runtime.
+- Source of truth: code and active deployment assets.
 
 ## Runtime At A Glance
 
@@ -198,7 +197,7 @@ The current schema models are defined in [`prisma/schema.prisma`](../../prisma/s
 - Async and audit: `BulkOperation`, `AuditLog`
 - User/org config: `UserPreference`, `IntegrationCredential`
 - Security and maturity: `SecurityScan`, `Scorecard`, `ScorecardRule`, `ScorecardResult`
-- Local uncommitted addition: `CredentialHealthCheck` appears in the working tree but is not part of committed `HEAD`
+- `CredentialHealthCheck` model tracks per-credential health probe results
 
 ## API Surface By Subsystem
 
@@ -346,37 +345,12 @@ The chart also defines:
 - Security and scorecard models are org-scoped in the schema but not covered by the Prisma tenant extension's automatic model list.
 - Some services still use org settings or env fallback in addition to encrypted integration records, so credential ownership is not fully unified.
 
-### Local uncommitted worktree additions
-
-At the time of this deep dive, the local worktree also contains an uncommitted credential-health feature slice:
-
-- schema additions for credential expiry and health checks
-- dashboard UI under `monitoring/credential-health`
-- new API routes
-- new metrics
-- a dedicated health-check worker
-
-This slice is not part of committed `HEAD` and currently appears mid-implementation. In the inspected local code, the UI expects a different JSON shape than the new health and expiring-credential endpoints currently return.
-
-## Legacy Context That Should Not Be Confused With The Active Runtime
-
-The repository still includes older Backstage-oriented assets:
-
-- `packages/app`
-- `packages/backend`
-- `plugins/gitops`
-- `plugins/gitops-backend`
-- several docs under `docs/` that still describe the portal as Backstage-based
-- GitHub workflows that still reference `packages/`, `plugins/`, or a `v2/` subdirectory layout
-
-Those assets matter for repo archaeology and cleanup planning, but they should not be treated as the primary runtime for the current root application.
-
 ## Risk Notes
 
 - **Tenant isolation is strong but not completely uniform.** Middleware, JWT membership checks, and the Prisma extension form a solid base, but some org-scoped models are enforced by route-level filters rather than the extension itself.
 - **Background work may look more complete than it is.** Queue infrastructure, stats, and health checks exist, but worker execution paths still contain TODO placeholders and discovered startup wiring is incomplete.
 - **Integration configuration is flexible but fragmented.** Some services can source credentials from encrypted DB records, org settings, or env vars, which increases fallback complexity and configuration drift risk.
-- **Repo documentation and CI are partially stale.** Some docs and workflows still point to the historical Backstage layout and can mislead maintainers if read without checking the current root runtime.
+- **Documentation may lag code in pre-1.0 releases.** When in doubt, the source under `src/` is authoritative.
 
 ## Verification Limits
 

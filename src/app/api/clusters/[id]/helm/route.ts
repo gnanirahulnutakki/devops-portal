@@ -20,13 +20,13 @@ export const GET = withTenantApiHandler(
     try {
       const kc = await loadKubeConfigFromClusterAsync(cluster);
       const clients = createKubeClients(kc);
-      const response = await (clients.core as any).listSecretForAllNamespaces(
-        undefined,
-        undefined,
-        undefined,
-        'owner=helm'
-      );
-      const list = (response as any).body || response;
+      // Helm v3 stores releases as Secrets with type `helm.sh/release.v1` and
+      // label `owner=helm`. v1 client takes an options object; the 4th
+      // positional arg in v0.x was fieldSelector — when called positionally
+      // against v1, the arg was silently dropped and ALL secrets returned.
+      const list = await clients.core.listSecretForAllNamespaces({
+        labelSelector: 'owner=helm',
+      });
       const releases = (list.items || []).map((item: any) => {
         const labels = item.metadata?.labels || {};
         return {
