@@ -14,6 +14,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib/common.sh"
 
+# Pick up ORG_ID + COOKIE_FILE from the env file login.sh writes. Each
+# `bash X.sh` is a fresh process — exports from login.sh don't survive.
+if [[ -f /tmp/e2e-env.sh ]]; then
+  # shellcheck disable=SC1091
+  source /tmp/e2e-env.sh
+fi
+if [[ -z "${ORG_ID:-}" ]]; then
+  echo "ORG_ID not set; run login.sh first or export ORG_ID before this script" >&2
+  exit 2
+fi
+
 CLUSTER_NAME="${KIND_CLUSTER_NAME:-portal-demo}"
 KIND_CONFIG="${KIND_CONFIG:-$SCRIPT_DIR/../../kind/portal-demo.yaml}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-/tmp/kind-portal-demo.kubeconfig}"
