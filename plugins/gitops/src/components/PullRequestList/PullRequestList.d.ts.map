@@ -1,1 +1,0 @@
-{"version":3,"file":"PullRequestList.d.ts","sourceRoot":"","sources":["PullRequestList.tsx"],"names":[],"mappings":"AAAA,OAAO,KAA8B,MAAM,OAAO,CAAC;AA4EnD,UAAU,oBAAoB;IAC5B,UAAU,EAAE,MAAM,CAAC;IACnB,kBAAkB,CAAC,EAAE,CAAC,QAAQ,EAAE,MAAM,KAAK,IAAI,CAAC;CACjD;AAED,eAAO,MAAM,eAAe,EAAE,KAAK,CAAC,EAAE,CAAC,oBAAoB,CA+L1D,CAAC"}

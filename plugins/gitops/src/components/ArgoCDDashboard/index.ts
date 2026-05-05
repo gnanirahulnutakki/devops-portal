@@ -1,1 +1,0 @@
-export { ArgoCDDashboard } from './ArgoCDDashboard';
