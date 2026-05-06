@@ -6,12 +6,22 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
-// Paths that don't require organization context
+// Paths that don't require auth at all.
+//
+// `/api/metrics` is here because Prometheus scrapers can't carry session
+// cookies. The metrics route enforces its own auth via METRICS_AUTH_TOKEN
+// env var (required in production, optional in development).
+//
+// `/api/openapi` is here because the API spec is meant to be discoverable
+// for client generators, third-party tooling, and human readers. There is
+// nothing tenant-specific in the spec.
 const PUBLIC_PATHS = [
   '/login',
   '/auth/popup-complete',
   '/api/auth',
   '/api/health',
+  '/api/metrics',
+  '/api/openapi',
   '/_next',
   '/favicon.ico',
 ];
@@ -19,8 +29,6 @@ const PUBLIC_PATHS = [
 // Paths that require auth but not organization context
 const ORG_OPTIONAL_PATHS = [
   '/api/organizations',
-  '/api/metrics',
-  '/api/health',
   '/select-organization',
 ];
 
