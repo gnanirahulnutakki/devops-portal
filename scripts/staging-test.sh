@@ -42,8 +42,9 @@ kubectl -n "$STAGING_NAMESPACE" port-forward "svc/$SVC" \
   "$LOCAL_PORT:$SVC_PORT" >/tmp/staging-pf.log 2>&1 &
 PF_PID=$!
 
-# Always clean up the port-forward
-trap 'kill -9 $PF_PID 2>/dev/null || true; wait $PF_PID 2>/dev/null || true' EXIT
+# Always clean up the port-forward. Use SIGTERM (default) first so kubectl
+# can close its websocket cleanly; we don't need SIGKILL for a port-forward.
+trap 'kill $PF_PID 2>/dev/null || true; wait $PF_PID 2>/dev/null || true' EXIT
 
 # Wait for the forward to be ready
 for i in $(seq 1 30); do

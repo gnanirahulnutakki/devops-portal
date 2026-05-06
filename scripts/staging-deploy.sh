@@ -21,14 +21,17 @@ set -euo pipefail
 : "${IMAGE_TAG:?IMAGE_TAG is required}"
 
 RELEASE="${STAGING_RELEASE:-devops-portal}"
+# The chart writes the runtime Secret to "<fullname>-secrets" — see
+# helm/devops-portal/templates/sealed-secret.yaml. Match it here so we can
+# read prior values back across redeploys.
+SECRET_NAME="${RELEASE}-secrets"
 
-# Generate strong secrets if not already provided. We'll pass these as helm
-# values so the Helm-managed Secret holds them. Repeat runs reuse the same
-# values by reading them out of the existing Secret if present (so existing
-# data — encrypted credentials, etc. — remains decryptable).
-NEXTAUTH_SECRET=$(kubectl -n "$STAGING_NAMESPACE" get secret "${RELEASE}-portal" \
+# Generate strong secrets if not already provided. Re-use existing values
+# from the previously-deployed Secret if present, so encrypted DB rows
+# remain decryptable across redeploys.
+NEXTAUTH_SECRET=$(kubectl -n "$STAGING_NAMESPACE" get secret "$SECRET_NAME" \
   -o jsonpath='{.data.NEXTAUTH_SECRET}' 2>/dev/null | base64 -d || true)
-TOKEN_ENCRYPTION_KEY=$(kubectl -n "$STAGING_NAMESPACE" get secret "${RELEASE}-portal" \
+TOKEN_ENCRYPTION_KEY=$(kubectl -n "$STAGING_NAMESPACE" get secret "$SECRET_NAME" \
   -o jsonpath='{.data.TOKEN_ENCRYPTION_KEY}' 2>/dev/null | base64 -d || true)
 [[ -z "$NEXTAUTH_SECRET"     ]] && NEXTAUTH_SECRET=$(openssl rand -base64 32)
 [[ -z "$TOKEN_ENCRYPTION_KEY" ]] && TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)
@@ -39,28 +42,75 @@ echo "→ Image tag       : $IMAGE_TAG"
 echo "→ Host            : ${STAGING_HOST:-<none>}"
 echo ""
 
-# Build optional helm value overrides
-EXTRA_VALUES=()
-[[ -n "${STAGING_HOST:-}"             ]] && EXTRA_VALUES+=(--set "ingress.enabled=true" --set "ingress.hosts[0].host=${STAGING_HOST}")
-[[ -n "${STAGING_ARGOCD_URL:-}"       ]] && EXTRA_VALUES+=(--set-string "integrations.argocd.url=${STAGING_ARGOCD_URL}")
-[[ -n "${STAGING_PROMETHEUS_URL:-}"   ]] && EXTRA_VALUES+=(--set-string "integrations.prometheus.url=${STAGING_PROMETHEUS_URL}")
-[[ -n "${STAGING_GRAFANA_URL:-}"      ]] && EXTRA_VALUES+=(--set-string "integrations.grafana.url=${STAGING_GRAFANA_URL}")
-[[ -n "${STAGING_LOKI_URL:-}"         ]] && EXTRA_VALUES+=(--set-string "integrations.loki.url=${STAGING_LOKI_URL}")
+# Build a temp values file. Two reasons over `--set`:
+#   1. Secrets passed via --set show up in `ps aux` while helm runs;
+#      values files are read once at startup and don't leak.
+#   2. The chart's value structure has nested keys (config.*, secrets.*,
+#      secrets.values.*) that --set's dot-path is awkward for.
+#
+# The chart's structure (verified in helm/devops-portal/values.yaml):
+#   - config.enableCredentialsAuth → toggles credentials login
+#   - secrets.create=true          → produce a regular Secret (vs sealed)
+#   - secrets.useSealedSecrets=false → don't expect a SealedSecret to exist
+#   - secrets.values.NEXTAUTH_SECRET / .TOKEN_ENCRYPTION_KEY → the actual values
+#   - extraEnv: [{name: AUTH_MODE, value: multi}] → AUTH_MODE has no top-level
+#     key in the chart; pipe it through extraEnv.
+VALUES_FILE=$(mktemp /tmp/staging-values.XXXXXX.yaml)
+trap 'rm -f "$VALUES_FILE"' EXIT
 
-# Update chart deps before install — needed once the lockfile is missing or
-# the chart has been modified. Cheap to run unconditionally.
-helm dependency update helm/devops-portal/ >/dev/null 2>&1 || true
+cat > "$VALUES_FILE" <<EOF
+image:
+  tag: "${IMAGE_TAG}"
+
+config:
+  enableCredentialsAuth: true
+  baseUrl: "https://${STAGING_HOST:-devops-portal.staging.local}"
+
+secrets:
+  useSealedSecrets: false
+  create: true
+  values:
+    NEXTAUTH_SECRET: "${NEXTAUTH_SECRET}"
+    TOKEN_ENCRYPTION_KEY: "${TOKEN_ENCRYPTION_KEY}"
+
+extraEnv:
+  - name: AUTH_MODE
+    value: multi
+EOF
+
+if [[ -n "${STAGING_HOST:-}" ]]; then
+  cat >> "$VALUES_FILE" <<EOF
+
+ingress:
+  enabled: true
+  hosts:
+    - host: "${STAGING_HOST}"
+      paths:
+        - path: /
+          pathType: Prefix
+EOF
+fi
+
+if [[ -n "${STAGING_ARGOCD_URL:-}${STAGING_PROMETHEUS_URL:-}${STAGING_GRAFANA_URL:-}${STAGING_LOKI_URL:-}" ]]; then
+  cat >> "$VALUES_FILE" <<EOF
+
+integrations:
+EOF
+  [[ -n "${STAGING_ARGOCD_URL:-}"     ]] && printf '  argocd:\n    url: %q\n'     "$STAGING_ARGOCD_URL"     >> "$VALUES_FILE"
+  [[ -n "${STAGING_PROMETHEUS_URL:-}" ]] && printf '  prometheus:\n    url: %q\n' "$STAGING_PROMETHEUS_URL" >> "$VALUES_FILE"
+  [[ -n "${STAGING_GRAFANA_URL:-}"    ]] && printf '  grafana:\n    url: %q\n'    "$STAGING_GRAFANA_URL"    >> "$VALUES_FILE"
+  [[ -n "${STAGING_LOKI_URL:-}"       ]] && printf '  loki:\n    url: %q\n'       "$STAGING_LOKI_URL"       >> "$VALUES_FILE"
+fi
+
+# Update chart deps. Don't suppress output or swallow errors — a missing
+# dependency or repo registry failure should be loud, especially in CI.
+helm dependency update helm/devops-portal/
 
 # Helm-deploy. --install makes upgrade idempotent (creates if missing).
 # --atomic rolls back if rollout fails. --wait blocks until pods Ready.
 helm upgrade --install "$RELEASE" helm/devops-portal/ \
   --namespace "$STAGING_NAMESPACE" \
-  --set "image.tag=${IMAGE_TAG}" \
-  --set-string "auth.nextAuthSecret=${NEXTAUTH_SECRET}" \
-  --set-string "auth.tokenEncryptionKey=${TOKEN_ENCRYPTION_KEY}" \
-  --set "auth.mode=multi" \
-  --set "auth.enableCredentialsAuth=true" \
-  "${EXTRA_VALUES[@]}" \
+  -f "$VALUES_FILE" \
   --atomic --wait --timeout 10m
 
 echo ""

@@ -118,10 +118,10 @@ TOKEN=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get secret "$SECRET_NAME" \
   -o jsonpath='{.data.token}' | base64 -d)
 CA=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get secret "$SECRET_NAME" \
   -o jsonpath='{.data.ca\.crt}')
-SERVER=$(kubectl --context "$CONTEXT" config view --raw -o json \
-  | jq -r --arg ctx "$CONTEXT" '.contexts[]|select(.name==$ctx).context.cluster as $c | .clusters[]|select(.name==$c).cluster.server')
-CLUSTER_NAME=$(kubectl --context "$CONTEXT" config view --raw -o json \
-  | jq -r --arg ctx "$CONTEXT" '.contexts[]|select(.name==$ctx).context.cluster')
+# --minify filters the kubeconfig to just the current context, removing the
+# need for a jq pipeline + cross-doc joins. Built-in to kubectl.
+SERVER=$(kubectl --context "$CONTEXT" config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+CLUSTER_NAME=$(kubectl --context "$CONTEXT" config view --minify -o jsonpath='{.clusters[0].name}')
 
 cat > "$OUTPUT" <<EOF
 apiVersion: v1
