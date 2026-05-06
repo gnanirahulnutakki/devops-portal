@@ -49,8 +49,11 @@ declare -a PAGES=(
 )
 
 PASS=0; FAIL=0; FAIL_PAGES=()
+# Next.js dev mode compiles pages on first hit (~5-10s for some routes in
+# CI). Use a generous per-page timeout so a slow compile doesn't fail
+# what's actually a working page.
 for path in "${PAGES[@]}"; do
-  CODE=$(curl -m 8 -sS -o /dev/null -w "%{http_code}" -b "$COOKIE_FILE" \
+  CODE=$(curl -m 60 -sS -o /dev/null -w "%{http_code}" -b "$COOKIE_FILE" \
     -H "x-organization-id: $ORG_ID" \
     -H "Cookie: $(awk '/authjs.session-token/ {print "authjs.session-token=" $7}' "$COOKIE_FILE")" \
     "${PORTAL_URL}${path}")
