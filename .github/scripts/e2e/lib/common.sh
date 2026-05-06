@@ -63,7 +63,7 @@ wait_for_portal() {
 login_and_get_org() {
   local csrf_raw csrf_token
   csrf_raw=$(curl -fsS -c "$COOKIE_FILE" "${PORTAL_URL}/api/auth/csrf")
-  csrf_token=$(echo "$csrf_raw" | sed -E 's/.*"csrfToken":"([^"]+)".*/\1/')
+  csrf_token=$(echo "$csrf_raw" | jq -r .csrfToken)
 
   local http_code
   http_code=$(curl -fsS -b "$COOKIE_FILE" -c "$COOKIE_FILE" \

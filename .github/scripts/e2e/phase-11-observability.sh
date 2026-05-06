@@ -36,8 +36,9 @@ else
   record_task fail 11.3 "/api/openapi returns spec with ≥30 paths" "got $PATHS_COUNT"
 fi
 
-# 11.4: Version in package.json matches openapi spec version
-PKG_VER=$(jq -r .version package.json)
+# 11.4: Version in package.json matches openapi spec version.
+# Path relative to SCRIPT_DIR so the script works no matter where it's run.
+PKG_VER=$(jq -r .version "$SCRIPT_DIR/../../../package.json")
 SPEC_VER=$(echo "$OPENAPI" | jq -r '.info.version' 2>/dev/null)
 if [[ "$PKG_VER" == "$SPEC_VER" ]]; then
   record_task ok 11.4 "OpenAPI spec version matches package.json"

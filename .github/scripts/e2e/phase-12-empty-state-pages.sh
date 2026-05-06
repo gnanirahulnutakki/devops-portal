@@ -53,9 +53,11 @@ PASS=0; FAIL=0; FAIL_PAGES=()
 # CI). Use a generous per-page timeout so a slow compile doesn't fail
 # what's actually a working page.
 for path in "${PAGES[@]}"; do
+  # `curl -b $COOKIE_FILE` reads and sends cookies from the jar already;
+  # the manual Cookie header is redundant and would also break on
+  # __Secure- prefixed cookies in production.
   CODE=$(curl -m 60 -sS -o /dev/null -w "%{http_code}" -b "$COOKIE_FILE" \
     -H "x-organization-id: $ORG_ID" \
-    -H "Cookie: $(awk '/authjs.session-token/ {print "authjs.session-token=" $7}' "$COOKIE_FILE")" \
     "${PORTAL_URL}${path}")
   case "$CODE" in
     200|307|308)  # 200 OK, 307/308 redirect (e.g. to login)
