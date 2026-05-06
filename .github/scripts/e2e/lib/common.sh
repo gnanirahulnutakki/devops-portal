@@ -12,6 +12,14 @@
 
 set -uo pipefail   # NOTE: no -e — phase scripts collect failures, don't bail
 
+# Auto-source the env file login.sh / setup-kind.sh write — each phase
+# script is its own bash process, so exports don't survive across them.
+# We use the on-disk env file as the cross-process channel.
+if [[ -f /tmp/e2e-env.sh ]]; then
+  # shellcheck disable=SC1091
+  source /tmp/e2e-env.sh
+fi
+
 PORTAL_URL="${PORTAL_URL:-http://localhost:3000}"
 COOKIE_FILE="${COOKIE_FILE:-/tmp/cookies.txt}"
 ORG_ID="${ORG_ID:-}"
