@@ -6,6 +6,7 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ### Fixed
 - **S3 path-style signed URLs** (`src/lib/services/s3.ts`): bucket name was duplicated in `${baseUrl}${canonicalUri}` because both halves included it for path-style endpoints (MinIO, LocalStack, `localhost`). Pre-signed PUT URLs landed at the wrong key (`bucket/bucket/key`) and signature validation depended on MinIO leniency. Fix moves the bucket out of `baseUrl` for path-style and updates `listObjects` to concat both halves. Found by Phase 8 of the v0.1.0 verification round.
+- **YAML editor server-side apply** (`src/app/api/clusters/[id]/yaml/route.ts`): `PUT /api/clusters/[id]/yaml` returned `500 / 415 Unsupported Media Type` from the apiserver because the `KubernetesObjectApi.patch()` 6th positional arg was being passed an options object (`{ headers: { 'Content-Type': '...' } }`) instead of the v1 client's expected `PatchStrategy` string. The v1 client silently ignored the options object and sent the request without a Content-Type. Fix replaces the literal with `k8s.PatchStrategy.ServerSideApply`. Found by Phase 3.4 of the v0.1.0 verification round.
 
 ## [0.1.0] — 2026-05-05
 
