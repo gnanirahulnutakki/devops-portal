@@ -4,6 +4,9 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Fixed
+- **S3 path-style signed URLs** (`src/lib/services/s3.ts`): bucket name was duplicated in `${baseUrl}${canonicalUri}` because both halves included it for path-style endpoints (MinIO, LocalStack, `localhost`). Pre-signed PUT URLs landed at the wrong key (`bucket/bucket/key`) and signature validation depended on MinIO leniency. Fix moves the bucket out of `baseUrl` for path-style and updates `listObjects` to concat both halves. Found by Phase 8 of the v0.1.0 verification round.
+
 ## [0.1.0] — 2026-05-05
 
 First public release. Portal works against any Kubernetes cluster reachable via kubeconfig — multi-cluster federation, multi-tenant via Postgres RLS, and per-cluster integrations with ArgoCD / Prometheus / Grafana / Loki and others.
