@@ -12,11 +12,12 @@ A self-hostable, multi-cluster Kubernetes operations portal. Connect any number 
 
 - **Register Kubernetes clusters** by uploading a kubeconfig — no agent install required.
 - **Browse cluster state**: nodes, namespaces, pods, deployments, statefulsets, daemonsets, services, ingresses, CRDs, events.
-- **Live pod log streaming** over Server-Sent Events.
-- **YAML viewer** with Monaco editor for any resource.
-- **ArgoCD integration**: view applications, app projects, ApplicationSets across registered clusters.
-- **Prometheus / Grafana / Loki** integrations for monitoring views.
-- **Multi-tenant**: organizations isolate their own clusters and integrations via Postgres Row-Level Security.
+- **Live pod log streaming** over Server-Sent Events; pod exec over websocket.
+- **YAML editor** with Monaco for any resource. Read shows redacted Secret values; write performs server-side apply with field manager `devops-portal` and refuses Secret manifests.
+- **ArgoCD integration**: view applications, AppProjects, ApplicationSets across registered ArgoCD instances.
+- **Embedded Grafana**: the entire Grafana SPA is reverse-proxied at `/grafana/*`. **Prometheus and Loki are accessed as Grafana datasources through this proxy** (the portal does not implement direct PromQL/LogQL endpoints — log and metric queries go through Grafana Explore).
+- **Object storage** (S3 / MinIO): browse buckets, generate pre-signed PUT/GET URLs.
+- **Multi-tenant**: organizations isolate their own clusters and integrations via Postgres Row-Level Security plus middleware-enforced org context.
 - **Auth**: email/password (bcrypt), Keycloak SSO, GitHub OAuth, Google OAuth, Azure AD.
 
 ## What's coming
