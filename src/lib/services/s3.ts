@@ -153,9 +153,10 @@ function buildS3Url(
     const host = endpointUrl.host;
     
     if (creds.pathStyle) {
-      // Path-style: http://endpoint/bucket/key
+      // Path-style: http://endpoint/bucket/key — bucket lives in canonicalUri,
+      // baseUrl is just protocol://host (so baseUrl + canonicalUri doesn't duplicate the bucket)
       return {
-        baseUrl: `${endpointUrl.protocol}//${host}/${creds.bucket}`,
+        baseUrl: `${endpointUrl.protocol}//${host}`,
         host,
         canonicalUri: '/' + creds.bucket + '/' + s3UriEncodePath(normalizedKey),
       };
@@ -184,8 +185,9 @@ function buildS3ListUrl(creds: ExtendedS3Credentials): { baseUrl: string; host: 
     const host = endpointUrl.host;
     
     if (creds.pathStyle) {
+      // Path-style: http://endpoint/bucket — bucket lives in canonicalUri only
       return {
-        baseUrl: `${endpointUrl.protocol}//${host}/${creds.bucket}`,
+        baseUrl: `${endpointUrl.protocol}//${host}`,
         host,
         canonicalUri: '/' + creds.bucket,
       };
@@ -390,8 +392,9 @@ export async function listObjects(
     requestHeaders['x-amz-security-token'] = creds.sessionToken;
   }
 
-  // Make request
-  const response = await fetch(`${baseUrl}?${queryString}`, {
+  // Make request — canonicalUri carries the bucket (path-style) or '/' (virtual-host).
+  // Always concat both so listing works for both URL styles.
+  const response = await fetch(`${baseUrl}${canonicalUri}?${queryString}`, {
     method: 'GET',
     headers: requestHeaders,
   });
