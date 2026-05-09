@@ -120,3 +120,8 @@ DECISIONS/
 docs/decisions/
 docs/adr/internal/
 docs/internal/
+
+# Obsidian vault — project knowledge base, kept inside the repo for convenience
+# but never committed (private/working notes).
+/devops-portal/
+.obsidian/
