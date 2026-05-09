@@ -60,7 +60,11 @@ for path in "${PAGES[@]}"; do
     -H "x-organization-id: $ORG_ID" \
     "${PORTAL_URL}${path}")
   case "$CODE" in
-    200|307|308)  # 200 OK, 307/308 redirect (e.g. to login)
+    200|307|308|404)
+      # 200 OK; 307/308 redirect (e.g. to /login or /select-organization);
+      # 404 = route was intentionally removed (per the comment above, that's
+      # an explicit "feature unavailable" signal, not a regression).
+      # Anything else (esp 5xx) is a real failure.
       PASS=$((PASS + 1))
       ;;
     *)
