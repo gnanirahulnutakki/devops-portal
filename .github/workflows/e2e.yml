@@ -1,0 +1,170 @@
+name: E2E (kind + portal + read paths)
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+  workflow_dispatch: {}
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  NEXTAUTH_SECRET: ci-only-secret-not-for-production-use-32chars
+  TOKEN_ENCRYPTION_KEY: ci-only-key-not-for-production-use-32chars
+  NEXTAUTH_URL: http://localhost:3000
+  NEXT_PUBLIC_APP_URL: http://localhost:3000
+  AUTH_MODE: multi
+  ENABLE_CREDENTIALS_AUTH: 'true'
+  OTEL_ENABLED: 'false'
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/devops_portal?schema=public
+  REDIS_URL: redis://localhost:6379
+  S3_ENDPOINT: http://localhost:9000
+  S3_PATH_STYLE: 'true'
+  AWS_ACCESS_KEY_ID: minioadmin
+  AWS_SECRET_ACCESS_KEY: minioadmin
+  S3_BUCKET: devops-portal-storage
+  AWS_REGION: us-east-1
+  PORTAL_URL: http://localhost:3000
+
+jobs:
+  e2e:
+    name: e2e (read paths against kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: devops_portal
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # MinIO can't run as a GHA `services:` entry because the upstream
+      # minio/minio image needs `server /data` as arguments to its
+      # entrypoint, and `services:` can't pass command args. Run as a
+      # plain detached container instead.
+      - name: Start MinIO + create default bucket
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 -p 9001:9001 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data --console-address :9001
+          # Wait for MinIO to be healthy
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/live 2>/dev/null; then
+              echo "MinIO ready after ${i}s"; break
+            fi
+            sleep 2
+          done
+          # Pre-create the default bucket so the portal's S3 client doesn't 404
+          docker run --rm --network host \
+            -e MC_HOST_local="http://minioadmin:minioadmin@localhost:9000" \
+            minio/mc:latest mb -p local/devops-portal-storage || true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Generate Prisma client + apply schema
+        run: |
+          npm run db:generate
+          npm run db:push
+          npm run db:setup-rls
+          npm run db:seed
+
+      - name: Verify required tools
+        run: |
+          jq --version
+          curl --version | head -1
+          docker --version
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: portal-demo
+          config: .github/kind/portal-demo.yaml
+          wait: 120s
+
+      - name: Set up demo workloads in kind
+        run: |
+          kubectl --context kind-portal-demo wait --for=condition=Ready nodes --all --timeout=120s
+          kubectl --context kind-portal-demo apply -f .github/kind/demo-app.yaml
+          kubectl --context kind-portal-demo -n demo-app rollout status deploy/web --timeout=120s
+          kubectl --context kind-portal-demo -n demo-app rollout status deploy/api --timeout=120s
+
+      - name: Start portal in background
+        run: |
+          mkdir -p /tmp/devops-portal-logs
+          nohup npm run dev > /tmp/devops-portal-logs/portal.log 2>&1 &
+          echo $! > /tmp/devops-portal.pid
+          for i in $(seq 1 90); do
+            if curl -m 3 -fsS http://localhost:3000/api/health 2>/dev/null | grep -q healthy; then
+              echo "Portal ready after ${i}s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Portal failed to come up — last 200 log lines:"
+          tail -200 /tmp/devops-portal-logs/portal.log
+          exit 1
+
+      - name: Login + register kind cluster in portal
+        run: |
+          bash .github/scripts/e2e/login.sh
+          bash .github/scripts/e2e/setup-kind.sh
+
+      - name: Run all e2e phases
+        run: bash .github/scripts/e2e/run-all.sh
+
+      - name: Show portal log on failure
+        if: failure()
+        run: tail -300 /tmp/devops-portal-logs/portal.log || true
+
+      - name: Show MinIO log on failure
+        if: failure()
+        run: docker logs minio 2>&1 | tail -100 || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            /tmp/devops-portal-logs/
+            /tmp/e2e-results.jsonl
+            /tmp/e2e-env.sh
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Tear down
+        if: always()
+        run: |
+          bash .github/scripts/e2e/cleanup.sh || true
+          docker rm -f minio 2>/dev/null || true

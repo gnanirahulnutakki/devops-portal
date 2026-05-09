@@ -48,6 +48,25 @@ function safeResponse(cluster: any) {
   };
 }
 
+export const GET = withTenantApiHandler(
+  async (request, ctx) => {
+    const clusterId = getClusterId(request);
+    if (!clusterId) {
+      return errorResponse('VALIDATION_ERROR', 'Cluster id is required', 400);
+    }
+    try {
+      const cluster = await ctx.db.cluster.findUnique({
+        where: { id_organizationId: { id: clusterId, organizationId: ctx.tenant.organizationId } },
+      });
+      if (!cluster) return errorResponse('NOT_FOUND', 'Cluster not found', 404);
+      return successResponse(safeResponse(cluster));
+    } catch (error) {
+      return errorResponse('CLUSTER_FETCH_FAILED', (error as Error).message, 500);
+    }
+  },
+  { rateLimit: 'general', requiredRole: 'USER' }
+);
+
 export const PATCH = withTenantApiHandler(
   async (request, ctx) => {
     const clusterId = getClusterId(request);

@@ -116,13 +116,18 @@ export const PUT = withTenantApiHandler(
       const api = kubeConfig.makeApiClient(k8s.KubernetesObjectApi);
 
       // Server-side apply with field manager `devops-portal`.
+      // 6th positional arg in @kubernetes/client-node v1 is `patchStrategy`
+      // (a string from `PatchStrategy`), NOT an options object — passing
+      // `{ headers: ... }` here used to silently fall through and let the
+      // request go out without a Content-Type, getting rejected by the
+      // apiserver with 415.
       const applied: any = await (api as any).patch(
         parsed,
         undefined, // pretty
         undefined, // dryRun
         'devops-portal', // fieldManager
         true, // force
-        { headers: { 'Content-Type': 'application/apply-patch+yaml' } },
+        k8s.PatchStrategy.ServerSideApply,
       );
       const obj = applied?.body || applied;
       const yamlOut = yaml.dump(stripManagedFields(obj), { lineWidth: 120, noRefs: true });
