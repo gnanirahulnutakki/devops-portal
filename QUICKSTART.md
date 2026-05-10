@@ -50,7 +50,7 @@ npm install
 docker compose up -d postgres redis minio minio-init
 ```
 
-Wait for them to become healthy (typically 10 seconds):
+Wait for them to become healthy (10–60 seconds, depending on whether the images are already pulled):
 
 ```bash
 docker compose ps
@@ -104,7 +104,7 @@ Guest:  guest@example.com / guest123
 npm run dev
 ```
 
-First compile takes ~90 seconds (Next.js + 1500+ modules). Subsequent reloads are <5s.
+First request to a route triggers an on-demand compile (typically a few seconds for `/login`, longer for richer pages). Subsequent reloads are <5s.
 
 When you see:
 ```
@@ -173,6 +173,13 @@ Pre-0.1.0 bug — fixed. Update to latest. If you hit this on 0.1.0+ please file
 
 ### Pod logs show "disconnected" with 0 lines
 Check `docker compose logs postgres redis` and the dev server output for errors. Most often: pod was terminated, or the container has no logs yet (just-started pod).
+
+### `docker compose up` fails with "container name already in use"
+A prior portal stack left a stopped container behind (the `minio-init` one-shot is the usual culprit). Clear them and retry:
+```bash
+docker rm -f $(docker ps -aq --filter name=devops-portal)
+docker compose up -d postgres redis minio minio-init
+```
 
 ## What's next
 
