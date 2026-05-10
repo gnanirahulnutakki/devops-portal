@@ -25,6 +25,16 @@ on:
       - 'instrumentation.ts'
       - '.github/workflows/docker-build-push.yml'
       - '.github/workflows/README.md'
+      # Docs / metadata: branch protection requires Quality Gates + Docker
+      # Build to be SUCCESS before merge. Without these, docs-only PRs hang
+      # forever (the workflow gets `paths`-skipped and never reports a
+      # status). Quality Gates is fast on a no-code diff; Docker Build
+      # exercises the production image which catches Dockerfile/asset bugs
+      # that docs PRs occasionally introduce (e.g. removing a referenced
+      # path from public/).
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE'
   pull_request:
     branches:
       - main
@@ -49,6 +59,16 @@ on:
       - 'instrumentation.ts'
       - '.github/workflows/docker-build-push.yml'
       - '.github/workflows/README.md'
+      # Docs / metadata: branch protection requires Quality Gates + Docker
+      # Build to be SUCCESS before merge. Without these, docs-only PRs hang
+      # forever (the workflow gets `paths`-skipped and never reports a
+      # status). Quality Gates is fast on a no-code diff; Docker Build
+      # exercises the production image which catches Dockerfile/asset bugs
+      # that docs PRs occasionally introduce (e.g. removing a referenced
+      # path from public/).
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE'
   workflow_dispatch:
     inputs:
       tag:

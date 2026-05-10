@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+- **CI staging-deploy workflow** (`.github/workflows/integration-staging.yml`, PR #26): opt-in long-lived Kubernetes deployment for PR review, gated on the `STAGING_ENABLED` repository variable so forks and the default OSS install stay no-cost. New helpers: `scripts/bootstrap-staging-rbac.sh`, `scripts/staging-deploy.sh`, `scripts/staging-test.sh`, and `docs/development/STAGING.md`.
+- **Architecture: `docs/architecture/MULTI-CLUSTER.md`**: cluster registration flow, kubeconfig storage + decryption, the three auth types (`standard` / `duplo` / `eks`), and how per-org ArgoCD/Grafana credentials are sourced. Filled the largest OSS-doc gap.
+- **Operations: RBAC matrix** added to `docs/operations/AUTHENTICATION_AND_USERS.md` showing which `USER` / `READWRITE` / `ADMIN` capabilities are enforced at which routes (cluster CRUD, pod exec, user management, etc.).
+- **Operations: RLS reference** added to `docs/operations/SECURITY_AND_RELIABILITY.md`: the six tenant-scoped tables protected by Postgres Row-Level Security, when `npm run db:setup-rls` is required, and the failure modes if the GUC isn't set.
+
+### Changed
+- **Security overrides** (PR #30): bumped `uuid` override from `^11.0.0` to `^11.1.1` (GHSA-w5hq-g745-h8pq) and added a new `postcss` override at `^8.5.10` (GHSA-qx2v-qp2m-jg93) to displace the vulnerable copy bundled inside `next@15.5.15`. `npm audit` clean.
+- **README**: added a one-line note up top clarifying that the active runtime is Next.js 15 + React 19; the Backstage-era trees were removed at v0.1.0 and live in `docs/legacy/` for historical reference.
+- **`docs/architecture/PROJECT-STRUCTURE.md`** moved to `docs/legacy/backstage-era/PROJECT-STRUCTURE.md` (it described the original Backstage monorepo layout, not the current `src/` tree, and was actively misleading new contributors).
+
+### Dependencies
+- `vite`, `@vitest/coverage-v8`, `@vitest/ui`, `vitest` bumped (PR #22)
+- `esbuild`, `@vitest/coverage-v8`, `@vitest/ui`, `vitest` bumped (PR #23)
+- `ip-address` 10.1.0 → 10.2.0 (PR #25)
+
 ### Fixed
 - **S3 path-style signed URLs** (`src/lib/services/s3.ts`): bucket name was duplicated in `${baseUrl}${canonicalUri}` because both halves included it for path-style endpoints (MinIO, LocalStack, `localhost`). Pre-signed PUT URLs landed at the wrong key (`bucket/bucket/key`) and signature validation depended on MinIO leniency. Fix moves the bucket out of `baseUrl` for path-style and updates `listObjects` to concat both halves. Found by Phase 8 of the v0.1.0 verification round.
 - **YAML editor server-side apply** (`src/app/api/clusters/[id]/yaml/route.ts`): `PUT /api/clusters/[id]/yaml` returned `500 / 415 Unsupported Media Type` from the apiserver because the `KubernetesObjectApi.patch()` 6th positional arg was being passed an options object (`{ headers: { 'Content-Type': '...' } }`) instead of the v1 client's expected `PatchStrategy` string. The v1 client silently ignored the options object and sent the request without a Content-Type. Fix replaces the literal with `k8s.PatchStrategy.ServerSideApply`. Found by Phase 3.4 of the v0.1.0 verification round.
