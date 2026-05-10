@@ -6,6 +6,8 @@ A self-hostable, multi-cluster Kubernetes operations portal. Connect any number 
 
 **License**: [Apache 2.0](LICENSE)
 
+> **Note on git history**: this repo started life as a Backstage app. The Next.js 15 + React 19 rewrite (in `src/`) is the current and only runtime. The legacy Backstage trees (`packages/`, `plugins/`, etc.) were removed at v0.1.0 — see [`docs/legacy/`](docs/legacy/) and the [v0.1.0 CHANGELOG entry](CHANGELOG.md#010--2026-05-05) for the cleanup details.
+
 ---
 
 ## What it does today
