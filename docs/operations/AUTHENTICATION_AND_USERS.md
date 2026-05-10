@@ -33,6 +33,49 @@ The login page automatically renders whichever providers are configured (via `/a
   - Change roles: `USER`, `READWRITE`, `ADMIN`
   - Reset passwords (for credentials-auth users)
 
+### Role hierarchy
+
+Internally, role gating is implemented in `src/lib/api-context.ts` via `requireRole(ctx, role)` and the `withApiContext` `requiredRole` option. The hierarchy is numeric — passing the threshold satisfies the gate:
+
+| Role        | Level | Intent                                                  |
+|-------------|-------|---------------------------------------------------------|
+| `USER`      | 1     | Read-only across the org's resources                    |
+| `READWRITE` | 2     | Mutating operations that act on cluster/tenant state    |
+| `ADMIN`     | 3     | Full administrative access — including team & integrations management |
+
+`requireRole(ctx, 'USER')` is satisfied by USER, READWRITE, or ADMIN; `requireRole(ctx, 'READWRITE')` is satisfied by READWRITE or ADMIN; only ADMIN satisfies `requireRole(ctx, 'ADMIN')`.
+
+### What each role can do
+
+This matrix is sourced from `requiredRole` declarations on the route handlers (`src/app/api/**/route.ts`) and the explicit `membership.role !== 'ADMIN'` checks in user/organization handlers. Roles inherit downward — entries list the **minimum** role required.
+
+| Capability                                                              | Min role     |
+|-------------------------------------------------------------------------|--------------|
+| Browse clusters, namespaces, pods, workloads, services, ingresses, CRDs | `USER`       |
+| Stream pod logs (SSE), view events, view YAML (read, with redactions)   | `USER`       |
+| Read Grafana dashboards / folders / panels (rendered or proxied)        | `USER`       |
+| List ArgoCD applications / projects / applicationsets                   | `USER`       |
+| Browse S3 / MinIO buckets, generate **GET** pre-signed URLs             | `USER`       |
+| List GitHub repos, PRs, branches, Actions runs                          | `USER`       |
+| List org integrations / scorecards / credentials, view queue stats      | `USER`       |
+| Read user preferences, notifications, dashboard summaries, features     | `USER`       |
+| Use the MCP chat endpoint (`POST /api/mcp/chat`)                        | `USER`       |
+| Generate **PUT** pre-signed URLs (S3 upload) — handler self-checks      | `USER` *     |
+| Run a scorecard evaluation (`POST /api/scorecards/evaluate`)            | `READWRITE`  |
+| Run an integration credential health check                              | `READWRITE`  |
+| Open a pod-exec websocket session                                       | `READWRITE`  |
+| Apply a YAML manifest (server-side apply on `PUT /api/clusters/[id]/yaml`) | `READWRITE` |
+| Delete an S3 object                                                     | `ADMIN`      |
+| Seed scorecard definitions                                              | `ADMIN`      |
+| Create / update / delete ArgoCD or GitHub integration accounts          | `ADMIN`      |
+| Update organization settings (`PUT /api/organizations/settings`)        | `ADMIN`      |
+| Add / remove org members, change member roles                           | `ADMIN`      |
+| Update / delete the organization itself                                 | `ADMIN`      |
+
+\* Some routes (e.g. S3 upload) declare `USER` as the base gate but do an additional check inside the handler before mutation.
+
+**Caveat**: this matrix reflects the v0.1 read-mostly portal. Most cluster mutations (scale, restart, exec, apply) are *currently* gated at `READWRITE`+; additional capabilities will land in v0.5+ behind the security review tracked in `SECURITY.md`.
+
 ## “Connections” (linked accounts)
 
 - **Settings → Connections** shows the user’s linked OAuth accounts and allows:

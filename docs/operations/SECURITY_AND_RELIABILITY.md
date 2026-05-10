@@ -29,6 +29,54 @@ Middleware:
 
 Tenant routes then use AsyncLocalStorage and tenant-aware API wrappers.
 
+## Row-Level Security (Postgres RLS)
+
+The portal layers Postgres Row-Level Security on top of the middleware-enforced tenant context. RLS is the second line of defense: even if a Prisma query is missing its `organizationId` filter (a bug at the application layer), the database refuses to return cross-tenant rows.
+
+### Tables protected
+
+The script `scripts/setup-rls.ts` (`npm run db:setup-rls`) enables RLS and installs an `org_isolation` policy on each of the following tenant-scoped tables:
+
+| Table                       | Tenant column        | Notes                                              |
+|-----------------------------|----------------------|----------------------------------------------------|
+| `clusters`                  | `organization_id`    | Snake_case via Prisma `@map`; the rest are camelCase |
+| `deployments`               | `organizationId`     |                                                    |
+| `bulk_operations`           | `organizationId`     |                                                    |
+| `audit_logs`                | `organizationId`     |                                                    |
+| `alert_rules`               | `organizationId`     |                                                    |
+| `integration_credentials`   | `organizationId`     | Stores encrypted ArgoCD / GitHub / Grafana tokens  |
+
+Per-row policy (paraphrased — see `scripts/setup-rls.ts:72` for the literal SQL):
+
+```sql
+CREATE POLICY org_isolation ON <table>
+  USING       (<tenantColumn> = current_setting('app.organization_id', true)::text)
+  WITH CHECK  (<tenantColumn> = current_setting('app.organization_id', true)::text);
+```
+
+### How the GUC gets set
+
+`src/lib/prisma-tenant.ts` issues `SELECT set_config('app.organization_id', <orgId>, true)` at the start of each tenant-aware transaction. The `true` third argument scopes the setting to the running transaction (equivalent to `SET LOCAL`), so it cannot leak to a later request when the underlying connection is recycled by the pool.
+
+If the GUC is never set, the policy's `USING` clause evaluates against `NULL` → false, and queries return zero rows. RLS does not "fail open" silently; a missing GUC just means the table looks empty.
+
+### When you need to run `db:setup-rls`
+
+| Scenario                                       | Action                                                           |
+|------------------------------------------------|------------------------------------------------------------------|
+| Fresh dev database after `prisma db push`      | Run `npm run db:setup-rls` once.                                 |
+| Adding a new tenant-scoped Prisma model        | Add the table+column to `RLS_TABLES` in `scripts/setup-rls.ts` and re-run. |
+| Production DB created from an older migration  | Run before exposing the deployment to traffic.                   |
+| Re-running the script                          | Idempotent — `ENABLE ROW LEVEL SECURITY` and policy `CREATE` are guarded. |
+
+### Failure modes worth knowing
+
+- **All cluster lists / dashboards return empty** in the UI even though seed data exists → likely the GUC isn't being set. Check that the route is using a tenant-aware Prisma client (`prisma`, not `unsafePrismaForBootstrap`).
+- **Bootstrap / migration scripts can't read tenant tables** → expected. They must run with the `BYPASSRLS` role attribute (which the migration role has) or use `unsafePrismaForBootstrap` (which executes a `BYPASSRLS` query path).
+- **One-off DB superuser sessions see everything** → expected. `BYPASSRLS` is on for the role you `psql` as in dev.
+
+See `scripts/setup-rls.ts` for the exact SQL applied. The risk noted in *Operational Risks* below — "Prisma tenant auto-scoping does not cover every org-backed model" — is the rationale for keeping RLS as a separate, non-bypassable boundary.
+
 ## Data Protection
 
 Sensitive integration credentials are stored encrypted in the database.
