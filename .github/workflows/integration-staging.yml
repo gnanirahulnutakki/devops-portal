@@ -1,0 +1,197 @@
+name: Integration (deploy to staging cluster + run e2e)
+
+# Deploys the portal to a long-lived staging namespace via Helm and runs
+# the e2e suite against the deployed instance.
+#
+# Triggers:
+#   - push: branches: [main]   → keeps staging at latest main after every merge
+#   - workflow_dispatch        → on-demand redeploy of any branch / SHA
+#
+# Gated by repository variable STAGING_ENABLED == "true". Forks without
+# the variable set will see this job skip cleanly.
+#
+# Required repo variables:
+#   STAGING_ENABLED   "true" to enable this workflow at all
+#   STAGING_NAMESPACE namespace to deploy into (e.g., duploservices-qaibtest)
+#
+# Required repo secrets:
+#   STAGING_KUBECONFIG  bearer-token kubeconfig with edit access to the namespace
+#                       (created via scripts/bootstrap-staging-rbac.sh)
+#
+# Optional repo secrets / vars:
+#   STAGING_HOST              external hostname for the Ingress (no Ingress if unset)
+#   STAGING_ARGOCD_URL        portal points at this ArgoCD
+#   STAGING_PROMETHEUS_URL    portal points at this Prometheus
+#   STAGING_GRAFANA_URL       portal points at this Grafana
+#   STAGING_LOKI_URL          portal points at this Loki
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to deploy (default: current default branch)"
+        required: false
+        default: ""
+
+# Only one staging deploy at a time; cancel-in-progress lets a newer push
+# supersede an in-flight deploy without leaving a broken state behind.
+concurrency:
+  group: integration-staging
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  guard:
+    # Cheap gate: skip everything if STAGING_ENABLED isn't true. Forks that
+    # don't have the variable set get a quick green "skipped" job.
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          STAGING_ENABLED: ${{ vars.STAGING_ENABLED }}
+        run: |
+          if [[ "$STAGING_ENABLED" == "true" ]]; then
+            echo "enabled=true"  >> $GITHUB_OUTPUT
+            echo "::notice::Staging deploy is ENABLED for this repo."
+          else
+            echo "enabled=false" >> $GITHUB_OUTPUT
+            echo "::notice::Staging deploy is disabled (vars.STAGING_ENABLED != true). Skipping."
+          fi
+
+  deploy:
+    needs: guard
+    if: needs.guard.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      STAGING_NAMESPACE: ${{ vars.STAGING_NAMESPACE }}
+      STAGING_HOST: ${{ vars.STAGING_HOST }}
+      STAGING_ARGOCD_URL: ${{ vars.STAGING_ARGOCD_URL }}
+      STAGING_PROMETHEUS_URL: ${{ vars.STAGING_PROMETHEUS_URL }}
+      STAGING_GRAFANA_URL: ${{ vars.STAGING_GRAFANA_URL }}
+      STAGING_LOKI_URL: ${{ vars.STAGING_LOKI_URL }}
+
+    steps:
+      - name: Resolve ref
+        id: ref
+        env:
+          DISPATCH_REF: ${{ github.event.inputs.ref }}
+          DEFAULT_REF: ${{ github.ref }}
+        run: |
+          if [[ -n "$DISPATCH_REF" ]]; then
+            echo "ref=$DISPATCH_REF" >> $GITHUB_OUTPUT
+          else
+            echo "ref=$DEFAULT_REF" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Resolve image tag
+        id: imgtag
+        run: |
+          # Use short SHA as image tag; aligns with what the docker-build-push
+          # workflow tags images as on every main push.
+          SHA=$(git rev-parse --short HEAD)
+          echo "tag=sha-$SHA" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with: { version: 'latest' }
+
+      - name: Configure kubectl from STAGING_KUBECONFIG
+        env:
+          KCFG: ${{ secrets.STAGING_KUBECONFIG }}
+        run: |
+          if [[ -z "$KCFG" ]]; then
+            echo "::error::STAGING_KUBECONFIG secret is not set. Run scripts/bootstrap-staging-rbac.sh and gh secret set STAGING_KUBECONFIG <kubeconfig>"
+            exit 1
+          fi
+          mkdir -p ~/.kube
+          printf '%s' "$KCFG" > ~/.kube/config
+          chmod 600 ~/.kube/config
+          # Sanity probe — the SA should have list pods access
+          kubectl -n "$STAGING_NAMESPACE" get pods -o name | head -3 || true
+          kubectl -n "$STAGING_NAMESPACE" auth can-i create deployments
+
+      - name: Install npm deps (for e2e scripts)
+        run: npm ci --legacy-peer-deps
+
+      - name: Wait for image availability
+        env:
+          IMG_TAG: ${{ steps.imgtag.outputs.tag }}
+        run: |
+          # On push:main the docker-build-push workflow runs in parallel —
+          # wait for ghcr image to exist before rolling out, so we don't
+          # deploy a tag that hasn't been pushed yet.
+          IMG="ghcr.io/${GITHUB_REPOSITORY}:${IMG_TAG}"
+          for i in $(seq 1 60); do
+            if docker manifest inspect "$IMG" >/dev/null 2>&1; then
+              echo "Image $IMG is available"
+              exit 0
+            fi
+            echo "[$(date +%H:%M:%S)] Waiting for $IMG (${i}/60)…"
+            sleep 30
+          done
+          echo "::warning::Image $IMG not found after 30 minutes. Will attempt deploy anyway — image may be private + unauthenticated check failing."
+
+      - name: Deploy to staging via Helm
+        env:
+          IMAGE_TAG: ${{ steps.imgtag.outputs.tag }}
+        run: bash scripts/staging-deploy.sh
+
+      - name: Run e2e suite against staging
+        run: bash scripts/staging-test.sh
+
+      - name: Show portal pod logs on failure
+        if: failure()
+        run: |
+          POD=$(kubectl -n "$STAGING_NAMESPACE" get pods \
+            -l app.kubernetes.io/component=portal \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
+          if [[ -n "$POD" ]]; then
+            kubectl -n "$STAGING_NAMESPACE" logs "$POD" --tail=300 || true
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-artifacts
+          path: |
+            /tmp/e2e-results.jsonl
+            /tmp/e2e-env.sh
+            /tmp/staging-pf.log
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          IMG_TAG: ${{ steps.imgtag.outputs.tag }}
+          REF: ${{ steps.ref.outputs.ref }}
+        run: |
+          {
+            echo "## Staging deploy"
+            echo ""
+            echo "- Ref: \`$REF\`"
+            echo "- Image: \`ghcr.io/${GITHUB_REPOSITORY}:${IMG_TAG}\`"
+            echo "- Namespace: \`$STAGING_NAMESPACE\`"
+            if [[ -n "${STAGING_HOST:-}" ]]; then
+              echo "- URL: https://${STAGING_HOST}"
+            fi
+          } >> $GITHUB_STEP_SUMMARY
