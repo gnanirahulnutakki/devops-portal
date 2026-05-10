@@ -71,7 +71,7 @@ If the GUC is never set, the policy's `USING` clause evaluates against `NULL` �
 
 ### Failure modes worth knowing
 
-- **All cluster lists / dashboards return empty** in the UI even though seed data exists → likely the GUC isn't being set. Check that the route is using a tenant-aware Prisma client (`prisma`, not `unsafePrismaForBootstrap`).
+- **All cluster lists / dashboards return empty** in the UI even though seed data exists → likely the GUC isn't being set. Check that the route handler is reading from the tenant-scoped Prisma client (`ctx.db` from the `withApiContext` / `withTenantApiHandler` wrapper) and not the bootstrap-only `unsafePrismaForBootstrap` or a bare global import — those skip the per-transaction `set_config` and the policy will see `NULL`.
 - **Bootstrap / migration scripts can't read tenant tables** → expected. They must run with the `BYPASSRLS` role attribute (which the migration role has) or use `unsafePrismaForBootstrap` (which executes a `BYPASSRLS` query path).
 - **One-off DB superuser sessions see everything** → expected. `BYPASSRLS` is on for the role you `psql` as in dev.
 
