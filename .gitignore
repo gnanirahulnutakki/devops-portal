@@ -125,3 +125,5 @@ docs/internal/
 # but never committed (private/working notes).
 /devops-portal/
 .obsidian/
+.claude
+.conductor
