@@ -56,5 +56,13 @@ export function register() {
       .catch((err) => {
         console.log('Failed to start credential-health worker', err);
       });
+
+    import('./queue')
+      .then(({ startWorker }) => {
+        startWorker();
+      })
+      .catch((err) => {
+        console.log('Failed to start bulk-operations worker', err);
+      });
   }
 }
