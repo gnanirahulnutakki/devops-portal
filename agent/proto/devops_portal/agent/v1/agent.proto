@@ -1,0 +1,639 @@
+syntax = "proto3";
+package devops_portal.agent.v1;
+
+option go_package = "github.com/gnanirahulnutakki/devops-portal/agent/proto/devops_portal/agent/v1";
+
+import "google/protobuf/timestamp.proto";
+
+// =============================================================================
+// Agent Service
+// =============================================================================
+
+service Agent {
+  // Lifecycle
+  rpc AgentMetadata(AgentMetadataRequest) returns (AgentMetadataResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc RenewCert(RenewCertRequest) returns (RenewCertResponse);
+
+  // K8s read RPCs
+  rpc ListNodes(K8sListRequest) returns (NodesResponse);
+  rpc ListNamespaces(K8sListRequest) returns (NamespacesResponse);
+  rpc ListPods(K8sListPodsRequest) returns (PodsResponse);
+  rpc GetPod(K8sGetPodRequest) returns (Pod);
+  rpc ListWorkloads(K8sListRequest) returns (WorkloadsResponse);
+  rpc ListServices(K8sListRequest) returns (ServicesResponse);
+  rpc ListIngresses(K8sListRequest) returns (IngressesResponse);
+  rpc ListEvents(K8sListRequest) returns (EventsResponse);
+  rpc ListCRDs(K8sListRequest) returns (CRDsResponse);
+  rpc GetYaml(K8sGetYamlRequest) returns (YamlResponse);
+
+  // Streaming
+  rpc StreamPodLogs(StreamPodLogsRequest) returns (stream LogChunk);
+  rpc WatchEvents(WatchEventsRequest) returns (stream Event);
+
+  // Service adapters (read-only Phase 1)
+  rpc ArgoListApplications(ArgoListAppsRequest) returns (ArgoApplicationsResponse);
+  rpc ArgoGetApplication(ArgoGetAppRequest) returns (ArgoApplication);
+  rpc ArgoListAppProjects(ArgoListProjectsRequest) returns (ArgoAppProjectsResponse);
+  rpc ArgoListApplicationSets(ArgoListAppSetsRequest) returns (ArgoApplicationSetsResponse);
+
+  rpc PromQuery(PromQueryRequest) returns (PromQueryResponse);
+  rpc PromQueryRange(PromQueryRangeRequest) returns (PromQueryResponse);
+  rpc PromListAlerts(PromListAlertsRequest) returns (PromAlertsResponse);
+  rpc PromListTargets(PromListTargetsRequest) returns (PromTargetsResponse);
+
+  rpc GrafanaListDashboards(GrafanaListDashboardsRequest) returns (GrafanaDashboardsResponse);
+  rpc GrafanaGetDashboard(GrafanaGetDashboardRequest) returns (GrafanaDashboard);
+  rpc GrafanaListDataSources(GrafanaListDataSourcesRequest) returns (GrafanaDataSourcesResponse);
+
+  rpc LokiQuery(LokiQueryRequest) returns (LokiQueryResponse);
+  rpc LokiQueryRange(LokiQueryRangeRequest) returns (LokiQueryResponse);
+
+  rpc ESListIndices(ESListIndicesRequest) returns (ESIndicesResponse);
+  rpc ESSearch(ESSearchRequest) returns (ESSearchResponse);
+  rpc ESHealth(ESHealthRequest) returns (ESHealthResponse);
+
+  rpc OSListIndices(ESListIndicesRequest) returns (ESIndicesResponse);
+  rpc OSSearch(ESSearchRequest) returns (ESSearchResponse);
+  rpc OSHealth(ESHealthRequest) returns (ESHealthResponse);
+
+  rpc KibanaListSavedObjects(KibanaListSavedObjectsRequest) returns (KibanaSavedObjectsResponse);
+  rpc KibanaListDashboards(KibanaListDashboardsRequest) returns (KibanaDashboardsResponse);
+
+  rpc FluentdGetMetrics(FluentdMetricsRequest) returns (FluentdMetricsResponse);
+  rpc FluentdGetPlugins(FluentdPluginsRequest) returns (FluentdPluginsResponse);
+
+  // Audit reconciliation
+  rpc ReportAuditCounts(ReportAuditCountsRequest) returns (ReportAuditCountsResponse);
+}
+
+// =============================================================================
+// Envelope (gRPC metadata header: x-agent-envelope)
+// =============================================================================
+
+message Envelope {
+  uint32 v = 1;                     // version, must be 1
+  string command_id = 2;          // UUIDv4
+  string issued_at = 3;           // RFC3339Nano
+  string user_id = 4;
+  string tenant_id = 5;
+  string cluster_id = 6;
+  string intent = 7;              // RPC method name, e.g. "ListPods"
+  string args_hash = 8;           // sha256:<hex> over canonical request body bytes
+  string issuer_kid = 9;          // key identifier, e.g. "central-issuer-2026-q2"
+  string sig = 10;                // ed25519:base64... over canonical envelope bytes (sans sig)
+}
+
+// =============================================================================
+// Lifecycle Messages
+// =============================================================================
+
+message AgentMetadataRequest {}
+
+message AgentMetadataResponse {
+  string version = 1;
+  string cluster_id = 2;
+  repeated string capabilities = 3;
+  repeated AdapterInfo adapters = 4;
+}
+
+message AdapterInfo {
+  string name = 1;
+  string version = 2;
+  bool healthy = 3;
+}
+
+message HeartbeatRequest {
+  google.protobuf.Timestamp timestamp = 1;
+}
+
+message HeartbeatResponse {
+  google.protobuf.Timestamp timestamp = 1;
+  string status = 2;              // "ok", "deprecation_warning", "revoke_pending"
+  string deprecation_notice = 3;  // optional
+}
+
+message RenewCertRequest {
+  string csr_pem = 1;
+}
+
+message RenewCertResponse {
+  string cert_pem = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// =============================================================================
+// K8s Messages
+// =============================================================================
+
+message K8sListRequest {
+  string namespace = 1;           // empty = all namespaces
+  string label_selector = 2;
+  int32 limit = 3;
+  string continue_token = 4;
+}
+
+message K8sListPodsRequest {
+  string namespace = 1;
+  string label_selector = 2;
+  string field_selector = 3;
+  int32 limit = 4;
+  string continue_token = 5;
+}
+
+message K8sGetPodRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message K8sGetYamlRequest {
+  string namespace = 1;
+  string name = 2;
+  string kind = 3;                // e.g. "Deployment"
+  string api_version = 4;         // e.g. "apps/v1"
+}
+
+message NodesResponse {
+  repeated K8sNode items = 1;
+}
+
+message NamespacesResponse {
+  repeated K8sNamespace items = 1;
+}
+
+message PodsResponse {
+  repeated K8sPod items = 1;
+}
+
+message Pod {
+  K8sPod pod = 1;
+}
+
+message WorkloadsResponse {
+  repeated K8sDeployment deployments = 1;
+  repeated K8sStatefulSet statefulsets = 2;
+  repeated K8sDaemonSet daemonsets = 3;
+  repeated K8sReplicaSet replicasets = 4;
+}
+
+message ServicesResponse {
+  repeated K8sService items = 1;
+}
+
+message IngressesResponse {
+  repeated K8sIngress items = 1;
+}
+
+message EventsResponse {
+  repeated K8sEvent items = 1;
+}
+
+message CRDsResponse {
+  repeated K8sCRD items = 1;
+}
+
+message YamlResponse {
+  string yaml = 1;
+}
+
+// =============================================================================
+// K8s Object Types (simplified — full fields omitted for brevity)
+// =============================================================================
+
+message K8sNode {
+  string name = 1;
+  string status = 2;
+  map<string, string> labels = 3;
+  string version = 4;
+  int64 cpu_capacity = 5;
+  int64 memory_capacity = 6;
+}
+
+message K8sNamespace {
+  string name = 1;
+  string status = 2;
+  map<string, string> labels = 3;
+}
+
+message K8sPod {
+  string name = 1;
+  string namespace = 2;
+  string status = 3;
+  string phase = 4;
+  repeated K8sContainer containers = 5;
+  map<string, string> labels = 6;
+}
+
+message K8sContainer {
+  string name = 1;
+  string image = 2;
+  bool ready = 3;
+  int32 restart_count = 4;
+}
+
+message K8sDeployment {
+  string name = 1;
+  string namespace = 2;
+  int32 replicas = 3;
+  int32 available_replicas = 4;
+  map<string, string> labels = 5;
+}
+
+message K8sStatefulSet {
+  string name = 1;
+  string namespace = 2;
+  int32 replicas = 3;
+  int32 ready_replicas = 4;
+}
+
+message K8sDaemonSet {
+  string name = 1;
+  string namespace = 2;
+  int32 desired = 3;
+  int32 current = 4;
+  int32 ready = 5;
+}
+
+message K8sReplicaSet {
+  string name = 1;
+  string namespace = 2;
+  int32 replicas = 3;
+}
+
+message K8sService {
+  string name = 1;
+  string namespace = 2;
+  string type = 3;
+  string cluster_ip = 4;
+  repeated string external_ips = 5;
+  repeated ServicePort ports = 6;
+}
+
+message ServicePort {
+  string name = 1;
+  int32 port = 2;
+  int32 target_port = 3;
+  string protocol = 4;
+}
+
+message K8sIngress {
+  string name = 1;
+  string namespace = 2;
+  string class = 3;
+  repeated string hosts = 4;
+}
+
+message K8sEvent {
+  string namespace = 1;
+  string reason = 2;
+  string message = 3;
+  string type = 4;                // Normal, Warning
+  string involved_object = 5;
+  google.protobuf.Timestamp last_timestamp = 6;
+  int32 count = 7;
+}
+
+message K8sCRD {
+  string name = 1;
+  string group = 2;
+  string version = 3;
+  string kind = 4;
+  string scope = 5;               // Namespaced or Cluster
+}
+
+// =============================================================================
+// Streaming Messages
+// =============================================================================
+
+message StreamPodLogsRequest {
+  string namespace = 1;
+  string pod_name = 2;
+  string container = 3;
+  bool follow = 4;                // always true for streaming
+  int64 tail_lines = 5;
+  bool timestamps = 6;
+}
+
+message LogChunk {
+  string line = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  bool truncated = 3;             // true if line exceeded 8KB
+}
+
+message WatchEventsRequest {
+  string namespace = 1;
+  string type = 2;                // filter: Normal or Warning
+  int64 timeout_seconds = 3;
+}
+
+message Event {
+  K8sEvent event = 1;
+  string watch_type = 2;          // ADDED, MODIFIED, DELETED
+}
+
+// =============================================================================
+// ArgoCD Messages
+// =============================================================================
+
+message ArgoListAppsRequest {
+  string project = 1;
+  string selector = 2;
+}
+
+message ArgoGetAppRequest {
+  string name = 1;
+}
+
+message ArgoListProjectsRequest {}
+
+message ArgoListAppSetsRequest {
+  string project = 1;
+}
+
+message ArgoApplicationsResponse {
+  repeated ArgoApplication items = 1;
+}
+
+message ArgoApplication {
+  string name = 1;
+  string project = 2;
+  string repo_url = 3;
+  string path = 4;
+  string target_revision = 5;
+  string sync_status = 6;
+  string health_status = 7;
+  google.protobuf.Timestamp last_sync = 8;
+}
+
+message ArgoAppProjectsResponse {
+  repeated ArgoAppProject items = 1;
+}
+
+message ArgoAppProject {
+  string name = 1;
+  string description = 2;
+}
+
+message ArgoApplicationSetsResponse {
+  repeated ArgoApplicationSet items = 1;
+}
+
+message ArgoApplicationSet {
+  string name = 1;
+  string project = 2;
+}
+
+// =============================================================================
+// Prometheus Messages
+// =============================================================================
+
+message PromQueryRequest {
+  string query = 1;
+  google.protobuf.Timestamp time = 2;
+}
+
+message PromQueryRangeRequest {
+  string query = 1;
+  google.protobuf.Timestamp start = 2;
+  google.protobuf.Timestamp end = 3;
+  string step = 4;                // duration string, e.g. "15s"
+}
+
+message PromListAlertsRequest {}
+
+message PromListTargetsRequest {}
+
+message PromQueryResponse {
+  string result_type = 1;
+  bytes result = 2;               // JSON-serialized Prometheus result
+}
+
+message PromAlertsResponse {
+  repeated PromAlert alerts = 1;
+}
+
+message PromAlert {
+  string name = 1;
+  string state = 2;             // firing, pending, inactive
+  map<string, string> labels = 3;
+  string summary = 4;
+}
+
+message PromTargetsResponse {
+  repeated PromTarget active = 1;
+  repeated PromTarget dropped = 2;
+}
+
+message PromTarget {
+  string job = 1;
+  string endpoint = 2;
+  string health = 3;              // up, down, unknown
+}
+
+// =============================================================================
+// Grafana Messages
+// =============================================================================
+
+message GrafanaListDashboardsRequest {
+  string folder_uid = 1;
+  string query = 2;
+}
+
+message GrafanaGetDashboardRequest {
+  string uid = 1;
+}
+
+message GrafanaListDataSourcesRequest {}
+
+message GrafanaDashboardsResponse {
+  repeated GrafanaDashboard items = 1;
+}
+
+message GrafanaDashboard {
+  string uid = 1;
+  string title = 2;
+  string folder_uid = 3;
+  string url = 4;
+}
+
+message GrafanaDataSourcesResponse {
+  repeated GrafanaDataSource items = 1;
+}
+
+message GrafanaDataSource {
+  string uid = 1;
+  string name = 2;
+  string type = 3;
+  string url = 4;
+  bool is_default = 5;
+}
+
+// =============================================================================
+// Loki Messages
+// =============================================================================
+
+message LokiQueryRequest {
+  string query = 1;             // LogQL
+  int32 limit = 2;
+  google.protobuf.Timestamp start = 3;
+  google.protobuf.Timestamp end = 4;
+  string direction = 5;           // forward, backward
+  string x_scope_orgid = 6;     // multi-tenant
+}
+
+message LokiQueryRangeRequest {
+  string query = 1;
+  string step = 2;
+  google.protobuf.Timestamp start = 3;
+  google.protobuf.Timestamp end = 4;
+  string x_scope_orgid = 5;
+}
+
+message LokiQueryResponse {
+  repeated LogStream streams = 1;
+  string status = 2;
+}
+
+message LogStream {
+  map<string, string> labels = 1;
+  repeated LogEntry values = 2;
+}
+
+message LogEntry {
+  string timestamp = 1;           // nanoseconds since epoch as string
+  string line = 2;
+}
+
+// =============================================================================
+// Elasticsearch / OpenSearch Messages
+// =============================================================================
+
+message ESListIndicesRequest {}
+
+message ESSearchRequest {
+  string index = 1;
+  string query = 2;               // JSON query body
+  int32 size = 3;
+  int32 from_offset = 4;
+}
+
+message ESHealthRequest {}
+
+message ESIndicesResponse {
+  repeated ESIndex indices = 1;
+}
+
+message ESIndex {
+  string name = 1;
+  string health = 2;              // green, yellow, red
+  string status = 3;
+  int64 docs_count = 4;
+  int64 store_size_bytes = 5;
+}
+
+message ESSearchResponse {
+  int64 took_ms = 1;
+  bool timed_out = 2;
+  int64 total_hits = 3;
+  repeated string hits = 4;     // JSON-serialized hits
+}
+
+message ESHealthResponse {
+  string cluster_name = 1;
+  string status = 2;
+  string timed_out = 3;
+  int32 number_of_nodes = 4;
+  int32 number_of_data_nodes = 5;
+  int32 active_shards = 6;
+  int32 relocating_shards = 7;
+  int32 initializing_shards = 8;
+  int32 unassigned_shards = 9;
+}
+
+// =============================================================================
+// Kibana Messages
+// =============================================================================
+
+message KibanaListSavedObjectsRequest {
+  string type = 1;                // dashboard, visualization, search, etc.
+  int32 per_page = 2;
+  int32 page = 3;
+}
+
+message KibanaListDashboardsRequest {
+  int32 per_page = 1;
+  int32 page = 2;
+}
+
+message KibanaSavedObjectsResponse {
+  int64 total = 1;
+  int32 page = 2;
+  int32 per_page = 3;
+  repeated KibanaSavedObject objects = 4;
+}
+
+message KibanaSavedObject {
+  string id = 1;
+  string type = 2;
+  string title = 3;
+}
+
+message KibanaDashboardsResponse {
+  int64 total = 1;
+  int32 page = 2;
+  int32 per_page = 3;
+  repeated KibanaDashboard objects = 4;
+}
+
+message KibanaDashboard {
+  string id = 1;
+  string title = 2;
+}
+
+// =============================================================================
+// Fluentd Messages
+// =============================================================================
+
+message FluentdMetricsRequest {}
+
+message FluentdPluginsRequest {}
+
+message FluentdMetricsResponse {
+  string version = 1;
+  int64 buffer_queue_length = 2;
+  int64 buffer_total_queued_size = 3;
+  int64 retry_count = 4;
+  int64 emit_count = 5;
+  int64 write_count = 6;
+}
+
+message FluentdPluginsResponse {
+  repeated FluentdPlugin plugins = 1;
+}
+
+message FluentdPlugin {
+  string id = 1;
+  string type = 2;
+  string category = 3;
+}
+
+// =============================================================================
+// Audit Reconciliation Messages
+// =============================================================================
+
+message ReportAuditCountsRequest {
+  string cluster_id = 1;
+  google.protobuf.Timestamp period_start = 2;
+  google.protobuf.Timestamp period_end = 3;
+  repeated IntentCount counts = 4;
+}
+
+message IntentCount {
+  string intent = 1;
+  int64 count = 2;
+}
+
+message ReportAuditCountsResponse {
+  bool reconciled = 1;
+  string mismatch_detail = 2;     // empty if reconciled
+}
